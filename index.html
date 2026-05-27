@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1C1A17">
+<title>AZUCAPP · Gestión interna de Azuca</title>
+
+<!-- Fuentes: Playfair Display (logo + títulos) + DM Sans (cuerpo) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<!-- Íconos Tabler -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.0.0/tabler-icons.min.css">
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============================================
+     VISTA: LOGIN
+============================================ -->
+<div id="vLogin" class="view active">
+  <div class="login-wrap">
+    <div class="brand">
+      <div class="logo">a<span class="logo-accent">z</span>uca<span class="logo-accent">pp</span></div>
+      <div class="tagline">GESTIÓN INTERNA DE AZUCA</div>
+    </div>
+
+    <form class="login-form" id="loginForm" autocomplete="off">
+      <label class="field">
+        <span class="field-label">Usuario</span>
+        <input type="text" id="loginUsuario" autocomplete="username" required>
+      </label>
+
+      <label class="field">
+        <span class="field-label">Contraseña</span>
+        <input type="password" id="loginPassword" autocomplete="current-password" required>
+      </label>
+
+      <button type="submit" class="btn-primary" id="btnLogin">
+        Ingresar
+      </button>
+
+      <div class="login-error" id="loginError"></div>
+    </form>
+
+    <div class="login-footer">Azuca · Grupo Gastronómico · Mendoza</div>
+  </div>
+</div>
+
+<!-- ============================================
+     VISTA: CAMBIO DE CONTRASEÑA OBLIGATORIO
+============================================ -->
+<div id="vChangePass" class="view">
+  <div class="login-wrap">
+    <div class="brand">
+      <div class="logo">a<span class="logo-accent">z</span>uca<span class="logo-accent">pp</span></div>
+      <div class="tagline">CAMBIO DE CONTRASEÑA</div>
+    </div>
+
+    <div class="info-banner">
+      <i class="ti ti-info-circle"></i>
+      <span>Por seguridad, debés cambiar tu contraseña antes de continuar.</span>
+    </div>
+
+    <form class="login-form" id="changePassForm" autocomplete="off">
+      <label class="field">
+        <span class="field-label">Nueva contraseña</span>
+        <input type="password" id="newPass1" minlength="6" required>
+      </label>
+
+      <label class="field">
+        <span class="field-label">Repetir contraseña</span>
+        <input type="password" id="newPass2" minlength="6" required>
+      </label>
+
+      <button type="submit" class="btn-primary">
+        Guardar y continuar
+      </button>
+
+      <div class="login-error" id="changePassError"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ============================================
+     VISTA: DASHBOARD
+============================================ -->
+<div id="vDash" class="view">
+  <div class="dash-wrap">
+    <div class="brand">
+      <div class="logo">a<span class="logo-accent">z</span>uca<span class="logo-accent">pp</span></div>
+      <div class="tagline">GESTIÓN INTERNA DE AZUCA</div>
+    </div>
+
+    <div class="user-info">
+      <span id="userDisplayName">Cargando...</span>
+      ·
+      <i class="ti ti-user"></i>
+      <span id="userRoleLabel">Usuario</span>
+    </div>
+
+    <div class="datetime" id="datetime">—</div>
+
+    <div class="dash-grid" id="dashGrid">
+      <!-- Las tarjetas se generan por JS -->
+    </div>
+
+    <div class="dash-actions">
+      <button class="btn-ghost" onclick="showChangePass()">
+        <i class="ti ti-key"></i> Cambiar contraseña
+      </button>
+      <button class="btn-ghost" onclick="doLogout()">
+        Cerrar sesión
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
+     VISTA: CAMBIO DE CONTRASEÑA VOLUNTARIO
+============================================ -->
+<div id="vChangePassVoluntary" class="view">
+  <div class="login-wrap">
+    <div class="brand">
+      <div class="logo">a<span class="logo-accent">z</span>uca<span class="logo-accent">pp</span></div>
+      <div class="tagline">CAMBIAR CONTRASEÑA</div>
+    </div>
+
+    <form class="login-form" id="changePassVoluntaryForm" autocomplete="off">
+      <label class="field">
+        <span class="field-label">Contraseña actual</span>
+        <input type="password" id="currentPass" required>
+      </label>
+
+      <label class="field">
+        <span class="field-label">Nueva contraseña</span>
+        <input type="password" id="voluntaryPass1" minlength="6" required>
+      </label>
+
+      <label class="field">
+        <span class="field-label">Repetir contraseña</span>
+        <input type="password" id="voluntaryPass2" minlength="6" required>
+      </label>
+
+      <div class="btn-row">
+        <button type="button" class="btn-ghost" onclick="showDashboard()">Cancelar</button>
+        <button type="submit" class="btn-primary">Guardar</button>
+      </div>
+
+      <div class="login-error" id="voluntaryPassError"></div>
+    </form>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
