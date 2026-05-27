@@ -533,26 +533,45 @@ async function renderMiSemana() {
   diasGrid.innerHTML = '<div class="loading">Cargando turnos...</div>';
 
   const dias = diasDeSemana(semanaActual);
-  let turnos = {};
+  let turnos = {};         // por día → turno
+  let localesPorDia = {};  // por día → nombre del local
   let comentGeneral = '';
   let incPorDia = {};
 
   try {
-    // Buscar la semana en roster_semanas
+    // Buscar TODAS las semanas (de cualquier local) con esta fecha de lunes
+    // que tengan turnos para este empleado
     const semanas = await api(
-      `roster_semanas?local=eq.${encodeURIComponent(currentEmpleado.local)}` +
-      `&fecha_lunes=eq.${semanaActual}&select=*`
+      `roster_semanas?fecha_lunes=eq.${semanaActual}&select=id,local,comentario_general`
     );
 
     if (semanas && semanas.length) {
-      comentGeneral = semanas[0].comentario_general || '';
+      // Construir mapa id→local para asignarlo después a cada turno
+      const semanaIdToLocal = {};
+      const semanaIds = [];
+      semanas.forEach(s => {
+        semanaIdToLocal[s.id] = s.local;
+        semanaIds.push(s.id);
+      });
 
-      // Cargar turnos del empleado en esa semana
+      // Buscar todos los turnos del empleado en cualquiera de esas semanas
       const tts = await api(
-        `roster_turnos?semana_id=eq.${semanas[0].id}` +
+        `roster_turnos?semana_id=in.(${semanaIds.join(',')})` +
         `&empleado_id=eq.${currentEmpleado.id}&select=*`
-      );
-      (tts || []).forEach(t => { turnos[t.dia] = t; });
+      ) || [];
+
+      tts.forEach(t => {
+        turnos[t.dia] = t;
+        localesPorDia[t.dia] = semanaIdToLocal[t.semana_id];
+      });
+
+      // Para el comentario general, priorizar el del local principal del empleado
+      const semanaPrincipal = semanas.find(s => s.local === currentEmpleado.local);
+      if (semanaPrincipal && semanaPrincipal.comentario_general) {
+        comentGeneral = semanaPrincipal.comentario_general;
+      } else if (semanas.length === 1 && semanas[0].comentario_general) {
+        comentGeneral = semanas[0].comentario_general;
+      }
     }
 
     // Cargar incidencias del empleado en el rango de la semana
@@ -572,6 +591,10 @@ async function renderMiSemana() {
     return;
   }
 
+  // Detectar si el empleado tiene turnos en distintos locales esta semana
+  const localesUnicos = [...new Set(Object.values(localesPorDia))];
+  const esRotativo = localesUnicos.length > 1;
+
   // Renderizar la grilla
   diasGrid.innerHTML = dias.map((dia, i) => {
     const t = turnos[dia];
@@ -580,6 +603,7 @@ async function renderMiSemana() {
     const hoy = esHoy(dia);
     const pasado = esDiaPasado(dia, t);
     const inc = incPorDia[dia];
+    const localTurno = localesPorDia[dia];
 
     let txt;
     if (esOff) {
@@ -598,11 +622,19 @@ async function renderMiSemana() {
     if (hoy) classes.push('hoy');
     if (pasado) classes.push('pasado');
 
+    // Mostrar el local SOLO si el empleado es rotativo y tiene un turno con local
+    const mostrarLocal = esRotativo && localTurno && !esOff && t && t.hora_entrada;
+    if (mostrarLocal) classes.push('con-local');
+
     const dot = inc
       ? `<span class="inc-dot ${inc.estado}" onclick="verIncidencia(${inc.id})" title="Ver incidencia"></span>`
       : '';
 
     const hoyTag = hoy ? '<span class="hoy-label">HOY</span>' : '';
+
+    const localTag = mostrarLocal
+      ? `<div class="dia-local">${esc(LOCAL_LABELS[localTurno] || localTurno)}</div>`
+      : '';
 
     const comentTurno = (t && t.comentario)
       ? `<div class="dia-comment"><i class="ti ti-message-circle"></i><span>${esc(t.comentario)}</span></div>`
@@ -614,6 +646,7 @@ async function renderMiSemana() {
         <div class="dia-nombre">${DIAS_LARGO[i]}${hoyTag}</div>
         <div class="dia-fecha">${fmtFechaCorta(dia)}</div>
         <div class="dia-hora">${txt}</div>
+        ${localTag}
         ${comentTurno}
       </div>
     `;
