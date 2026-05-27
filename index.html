@@ -6,12 +6,10 @@
 <meta name="theme-color" content="#1C1A17">
 <title>AZUCAPP · Gestión interna de Azuca</title>
 
-<!-- Fuentes: Playfair Display (logo + títulos) + DM Sans (cuerpo) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 
-<!-- Íconos Tabler -->
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
 <link rel="stylesheet" href="styles.css">
@@ -104,9 +102,7 @@
 
     <div class="datetime" id="datetime">—</div>
 
-    <div class="dash-grid" id="dashGrid">
-      <!-- Las tarjetas se generan por JS -->
-    </div>
+    <div class="dash-grid" id="dashGrid"></div>
 
     <div class="dash-actions">
       <button class="btn-ghost" onclick="showChangePass()">
@@ -154,6 +150,123 @@
     </form>
   </div>
 </div>
+
+<!-- ============================================
+     VISTA: MI SEMANA
+============================================ -->
+<div id="vMiSemana" class="view">
+  <div class="module-wrap">
+
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver">
+        <i class="ti ti-arrow-left"></i>
+      </button>
+      <div class="module-title-block">
+        <div class="module-title">Mi semana</div>
+        <div class="module-subtitle" id="miSemanaSubtitle">Cargando...</div>
+      </div>
+    </div>
+
+    <div class="week-nav" id="weekNav">
+      <button class="week-arrow" onclick="cambiarSemanaEmp(-1)" aria-label="Semana anterior">
+        <i class="ti ti-chevron-left"></i>
+      </button>
+      <div class="week-label" id="weekLabel">—</div>
+      <button class="week-arrow" onclick="cambiarSemanaEmp(1)" aria-label="Semana siguiente">
+        <i class="ti ti-chevron-right"></i>
+      </button>
+    </div>
+
+    <div class="dias-grid" id="diasGrid"></div>
+
+    <div class="comentario-general" id="comentarioGeneral" style="display:none"></div>
+
+    <div class="no-empleado" id="noEmpleado" style="display:none">
+      <i class="ti ti-info-circle"></i>
+      <div>
+        <div class="ne-title">No tenés turnos asignados</div>
+        <div class="ne-desc">Tu usuario no está vinculado a un colaborador con turnos. Si esto es un error, contactá a Recursos Humanos.</div>
+      </div>
+    </div>
+
+    <div class="reportar-wrap" id="reportarWrap" style="display:none">
+      <button class="btn-incidencia" onclick="openIncidenciaModal()">
+        <i class="ti ti-alert-triangle"></i>
+        Reportar incidencia
+      </button>
+      <div class="reportar-hint">
+        Ej: llegada tarde, enfermedad, cambio de turno, ausencia
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: REPORTAR INCIDENCIA
+============================================ -->
+<div class="modal-overlay" id="modalIncidencia">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Reportar incidencia</h2>
+      <button class="modal-close" onclick="closeIncidenciaModal()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <label class="field">
+        <span class="field-label">Tipo</span>
+        <select id="incTipo">
+          <option value="tardanza">⏰ Llegada tarde</option>
+          <option value="ausencia">❌ Ausencia</option>
+          <option value="enfermedad">🤒 Enfermedad</option>
+          <option value="cambio_turno">🔄 Cambio de turno</option>
+          <option value="otro">📝 Otro</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span class="field-label">Fecha</span>
+        <input type="date" id="incFecha">
+      </label>
+
+      <label class="field">
+        <span class="field-label">Descripción</span>
+        <textarea id="incDesc" rows="3" placeholder="Explicá brevemente qué pasó..."></textarea>
+      </label>
+
+      <div class="login-error" id="incError"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeIncidenciaModal()">Cancelar</button>
+      <button class="btn-primary" onclick="guardarIncidencia()">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: DETALLE DE INCIDENCIA
+============================================ -->
+<div class="modal-overlay" id="modalIncDetalle">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title" id="incDetTitle">Incidencia</h2>
+      <button class="modal-close" onclick="closeIncDetalleModal()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <div class="modal-body" id="incDetBody"></div>
+
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeIncDetalleModal()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
 
 <script src="app.js"></script>
 </body>

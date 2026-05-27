@@ -1,7 +1,5 @@
 /* ============================================
    AZUCAPP - Estilos
-   Paleta: fondo oscuro #1C1A17, crema #F5F0E8, rust #C4622D
-   Fuentes: Playfair Display (logo y títulos) + DM Sans (cuerpo)
 ============================================ */
 
 :root {
@@ -17,8 +15,8 @@
   --c-text-dark: #1C1A17;
   --c-text-secondary: #5F5E5A;
   --c-error: #E24B4A;
-  --c-error-soft: rgba(226, 75, 74, 0.12);
   --c-success: #1D9E75;
+  --c-warning: #EF9F27;
 
   --c-mod-semana: #7F77DD;
   --c-mod-propina: #EF9F27;
@@ -55,11 +53,16 @@ body {
   padding: 20px 16px;
 }
 
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
 /* Vistas */
 .view {
   display: none;
   width: 100%;
-  max-width: 420px;
+  max-width: 480px;
   margin: 0 auto;
   animation: fadeIn 0.3s ease;
 }
@@ -74,7 +77,7 @@ body {
 }
 
 /* ============================================
-   BRANDING: LOGO Y TAGLINE
+   BRANDING
 ============================================ */
 .brand {
   text-align: center;
@@ -131,7 +134,9 @@ body {
   font-weight: 500;
 }
 
-.field input {
+.field input,
+.field select,
+.field textarea {
   background: var(--c-cream-soft);
   border: 0.5px solid var(--c-cream-border);
   border-radius: var(--r-md);
@@ -141,15 +146,28 @@ body {
   font-family: inherit;
   outline: none;
   transition: border-color 0.2s, background 0.2s;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
-.field input:focus {
+.field textarea {
+  resize: vertical;
+  min-height: 70px;
+  font-family: inherit;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
   border-color: var(--c-rust);
   background: rgba(245, 240, 232, 0.12);
 }
 
-.field input::placeholder {
-  color: var(--c-muted);
+.field select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23D4C4A0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 38px;
 }
 
 .btn-primary {
@@ -161,8 +179,6 @@ body {
   font-size: 14px;
   font-weight: 500;
   letter-spacing: 0.5px;
-  cursor: pointer;
-  font-family: inherit;
   transition: background 0.2s, transform 0.05s;
   margin-top: 8px;
 }
@@ -187,8 +203,6 @@ body {
   border-radius: var(--r-md);
   padding: 10px 16px;
   font-size: 12px;
-  cursor: pointer;
-  font-family: inherit;
   transition: background 0.2s;
 }
 
@@ -302,7 +316,7 @@ body {
   align-items: center;
   transition: transform 0.1s, box-shadow 0.2s;
   border: none;
-  font-family: inherit;
+  width: 100%;
 }
 
 .dash-card:hover {
@@ -349,11 +363,524 @@ body {
 }
 
 /* ============================================
-   ESTADO DE CARGA
+   MÓDULOS - HEADER COMÚN
+============================================ */
+.module-wrap {
+  padding: 20px 0 32px;
+}
+
+.module-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 0.5px solid var(--c-cream-border);
+  margin-bottom: 20px;
+}
+
+.btn-back {
+  background: var(--c-cream-soft);
+  border: 0.5px solid var(--c-cream-border);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-sand);
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.btn-back:hover {
+  background: rgba(245, 240, 232, 0.15);
+}
+
+.btn-back i {
+  font-size: 20px;
+}
+
+.module-title-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.module-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--c-cream);
+  line-height: 1.1;
+}
+
+.module-subtitle {
+  font-size: 12px;
+  color: var(--c-muted);
+  margin-top: 2px;
+  letter-spacing: 0.3px;
+}
+
+/* ============================================
+   MI SEMANA - Navegador de semanas
+============================================ */
+.week-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--c-bg-soft);
+  border-radius: var(--r-md);
+  padding: 6px;
+  margin-bottom: 16px;
+}
+
+.week-arrow {
+  background: transparent;
+  border: none;
+  color: var(--c-sand);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.week-arrow:hover {
+  background: var(--c-cream-soft);
+}
+
+.week-arrow:active {
+  background: rgba(245, 240, 232, 0.18);
+}
+
+.week-arrow i {
+  font-size: 20px;
+}
+
+.week-label {
+  font-size: 13px;
+  color: var(--c-cream);
+  font-weight: 500;
+  text-align: center;
+  letter-spacing: 0.3px;
+  flex: 1;
+}
+
+/* ============================================
+   MI SEMANA - Grilla de días
+============================================ */
+.dias-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.dia-card {
+  background: var(--c-cream);
+  color: var(--c-text-dark);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  align-items: center;
+  position: relative;
+  border-left: 4px solid transparent;
+}
+
+.dia-card.hoy {
+  border-left-color: var(--c-rust);
+  background: #FAF5EC;
+  box-shadow: 0 0 0 1px rgba(196, 98, 45, 0.18);
+}
+
+.dia-card.off {
+  background: #E8E3DA;
+  opacity: 0.85;
+}
+
+.dia-card.off .dia-hora {
+  color: var(--c-text-secondary);
+  font-style: italic;
+}
+
+.dia-card.pasado {
+  opacity: 0.65;
+}
+
+.dia-nombre {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 15px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.dia-nombre .hoy-label {
+  display: inline-block;
+  background: var(--c-rust);
+  color: white;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 9px;
+  letter-spacing: 1px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: 2px;
+  font-weight: 600;
+}
+
+.dia-fecha {
+  font-size: 11px;
+  color: var(--c-text-secondary);
+  letter-spacing: 0.3px;
+}
+
+.dia-hora {
+  grid-row: 1 / 3;
+  grid-column: 2;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--c-text-dark);
+  text-align: right;
+  letter-spacing: 0.5px;
+}
+
+.dia-card.flex .dia-hora {
+  color: var(--c-mod-pedidos);
+  font-size: 14px;
+}
+
+.dia-comment {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--c-text-secondary);
+  background: rgba(0,0,0,0.04);
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  margin-top: 4px;
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.dia-comment i {
+  font-size: 13px;
+  color: var(--c-mod-semana);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.inc-dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid var(--c-cream);
+  box-shadow: 0 0 0 0.5px rgba(0,0,0,0.2);
+}
+
+.inc-dot.pendiente {
+  background: var(--c-warning);
+}
+
+.inc-dot.aprobado {
+  background: var(--c-success);
+}
+
+.inc-dot.rechazado {
+  background: var(--c-error);
+}
+
+/* ============================================
+   MI SEMANA - Comentario general
+============================================ */
+.comentario-general {
+  background: var(--c-cream-soft);
+  border: 0.5px solid var(--c-cream-border);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--c-sand);
+  font-style: italic;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  line-height: 1.4;
+}
+
+.comentario-general i {
+  color: var(--c-mod-biblio);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* ============================================
+   MI SEMANA - Sin empleado
+============================================ */
+.no-empleado {
+  background: var(--c-rust-soft);
+  border: 0.5px solid rgba(196, 98, 45, 0.25);
+  border-radius: var(--r-md);
+  padding: 18px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-top: 16px;
+}
+
+.no-empleado i {
+  color: var(--c-rust);
+  font-size: 22px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.ne-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--c-cream);
+  margin-bottom: 4px;
+}
+
+.ne-desc {
+  font-size: 13px;
+  color: var(--c-sand);
+  line-height: 1.4;
+}
+
+/* ============================================
+   MI SEMANA - Botón reportar incidencia
+============================================ */
+.reportar-wrap {
+  margin-top: 28px;
+  text-align: center;
+}
+
+.btn-incidencia {
+  background: var(--c-rust);
+  color: white;
+  border: none;
+  border-radius: var(--r-md);
+  padding: 14px 28px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(196, 98, 45, 0.25);
+  transition: transform 0.1s, box-shadow 0.2s, background 0.2s;
+}
+
+.btn-incidencia:hover {
+  background: #B05623;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(196, 98, 45, 0.35);
+}
+
+.btn-incidencia i {
+  font-size: 16px;
+}
+
+.reportar-hint {
+  font-size: 11px;
+  color: var(--c-muted);
+  margin-top: 8px;
+  letter-spacing: 0.3px;
+}
+
+/* ============================================
+   MODAL
+============================================ */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fadeIn 0.2s ease;
+}
+
+.modal-overlay.show {
+  display: flex;
+}
+
+.modal-card {
+  background: var(--c-bg-soft);
+  border: 0.5px solid var(--c-cream-border);
+  border-radius: var(--r-lg);
+  width: 100%;
+  max-width: 440px;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.25s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 0.5px solid var(--c-cream-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 19px;
+  font-weight: 500;
+  color: var(--c-cream);
+}
+
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--c-muted);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.modal-close:hover {
+  background: var(--c-cream-soft);
+  color: var(--c-cream);
+}
+
+.modal-close i {
+  font-size: 20px;
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modal-actions {
+  padding: 14px 20px;
+  border-top: 0.5px solid var(--c-cream-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.modal-actions > button {
+  min-width: 100px;
+}
+
+/* Detalle de incidencia */
+.det-line {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 14px;
+}
+
+.det-label {
+  color: var(--c-muted);
+  min-width: 90px;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.det-value {
+  color: var(--c-cream);
+  flex: 1;
+}
+
+.det-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.det-badge.pendiente {
+  background: rgba(239, 159, 39, 0.18);
+  color: var(--c-warning);
+}
+
+.det-badge.aprobado {
+  background: rgba(29, 158, 117, 0.18);
+  color: var(--c-success);
+}
+
+.det-badge.rechazado {
+  background: rgba(226, 75, 74, 0.18);
+  color: var(--c-error);
+}
+
+/* ============================================
+   TOAST
+============================================ */
+.toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--c-bg-soft);
+  color: var(--c-cream);
+  border: 0.5px solid var(--c-cream-border);
+  border-radius: var(--r-md);
+  padding: 12px 20px;
+  font-size: 14px;
+  z-index: 2000;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  opacity: 0;
+  max-width: 90%;
+  text-align: center;
+}
+
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+.toast.success {
+  border-color: var(--c-success);
+  color: var(--c-success);
+}
+
+.toast.error {
+  border-color: var(--c-error);
+  color: var(--c-error);
+}
+
+/* ============================================
+   LOADING
 ============================================ */
 .loading {
   text-align: center;
-  padding: 60px 20px;
+  padding: 40px 20px;
   color: var(--c-muted);
   font-size: 14px;
 }
@@ -376,7 +903,7 @@ body {
 }
 
 /* ============================================
-   RESPONSIVE (tablet/desktop)
+   RESPONSIVE
 ============================================ */
 @media (min-width: 600px) {
   body {
@@ -385,7 +912,7 @@ body {
   }
 
   .view {
-    max-width: 480px;
+    max-width: 520px;
   }
 
   .logo {
@@ -407,5 +934,16 @@ body {
 
   .dash-title {
     font-size: 17px;
+  }
+
+  body:has(.view#vDash.active),
+  body:has(.view#vLogin.active),
+  body:has(.view#vChangePass.active),
+  body:has(.view#vChangePassVoluntary.active) {
+    align-items: center;
+  }
+
+  body:has(.view#vMiSemana.active) {
+    align-items: flex-start;
   }
 }
