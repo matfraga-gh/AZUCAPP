@@ -192,6 +192,12 @@ function esc(s) {
     .replace(/'/g, '&#39;');
 }
 
+// Formato de números con separador de miles (es-AR)
+function formatNumber(n) {
+  const num = Math.round(parseFloat(n) || 0);
+  return num.toLocaleString('es-AR');
+}
+
 // ============================================
 // TOAST
 // ============================================
@@ -226,7 +232,7 @@ const MODULES = [
     title: 'Mi propina',
     desc: 'Propinas acumuladas',
     visible: () => true,
-    action: () => alert('Módulo "Mi propina" - próximamente.')
+    action: () => openMiPropina()
   },
   {
     id: 'biblioteca',
@@ -795,6 +801,164 @@ window.verIncidencia = async function(id) {
 window.closeIncDetalleModal = function() {
   document.getElementById('modalIncDetalle').classList.remove('show');
 };
+
+// ============================================
+// MI PROPINA
+// ============================================
+async function openMiPropina() {
+  showView('vMiPropina');
+  const cont = document.getElementById('propinaContenido');
+  const subtitle = document.getElementById('miPropinaSubtitle');
+  cont.innerHTML = '<div class="loading">Cargando propinas...</div>';
+
+  // Necesita empleado vinculado
+  if (!currentUser.empleado_id) {
+    subtitle.textContent = currentUser.nombre || currentUser.usuario;
+    cont.innerHTML = `
+      <div class="no-empleado">
+        <i class="ti ti-info-circle"></i>
+        <div>
+          <div class="ne-title">No tenés propinas asignadas</div>
+          <div class="ne-desc">Tu usuario no está vinculado a un colaborador. Si esto es un error, contactá a Recursos Humanos.</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // Cargar nombre del colaborador para el subtítulo
+  if (!currentEmpleado && currentUser.empleado_id) {
+    try {
+      const emps = await api(`empleados?id=eq.${currentUser.empleado_id}&select=*`);
+      if (emps && emps.length) currentEmpleado = emps[0];
+    } catch(e) { /* ignore */ }
+  }
+  subtitle.textContent = 'Propinas acumuladas';
+
+  // Cargar asignaciones con datos del cierre
+  let asigs = [];
+  try {
+    asigs = await api(
+      `propinas_asignaciones?empleado_id=eq.${currentUser.empleado_id}` +
+      `&select=*,cierre:cierre_id(fecha,turno,local,pagado,pagado_en)` +
+      `&order=id.desc`
+    ) || [];
+  } catch (e) {
+    cont.innerHTML = '<div class="loading" style="color:var(--c-error)">Error al cargar propinas</div>';
+    return;
+  }
+
+  const pendientes = asigs.filter(a => a.cierre && !a.cierre.pagado && a.monto > 0);
+
+  const hoy = new Date();
+  const limite = new Date(hoy.getFullYear(), hoy.getMonth() - 3, 1);
+  const limiteStr = limite.toISOString().slice(0, 10);
+  const pagadosRecientes = asigs.filter(a =>
+    a.cierre && a.cierre.pagado && a.monto > 0 && a.cierre.fecha >= limiteStr
+  );
+
+  let html = '';
+
+  // Banner de pendientes
+  const totalPendiente = pendientes.reduce((s, a) => s + parseFloat(a.monto || 0), 0);
+  if (pendientes.length) {
+    html += `
+      <div class="propina-banner">
+        <div class="propina-banner-label">Total pendiente de cobro</div>
+        <div class="propina-banner-monto">$${formatNumber(totalPendiente)}</div>
+        <div class="propina-banner-sub">${pendientes.length} ${pendientes.length === 1 ? 'cierre pendiente' : 'cierres pendientes'}</div>
+      </div>`;
+  } else {
+    html += `
+      <div class="propina-empty">
+        <div class="propina-empty-icon">💰</div>
+        <div class="propina-empty-title">No tenés propinas pendientes</div>
+        <div class="propina-empty-desc">Cuando se carguen propinas para vos, las vas a ver acá.</div>
+      </div>`;
+  }
+
+  // Histórico cobrado (últimos 4 meses)
+  const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const buckets = [];
+  for (let i = 0; i < 4; i++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const lbl = `${MESES[d.getMonth()]} ${d.getFullYear()}`;
+    buckets.push({ key, lbl, total: 0, cantidad: 0 });
+  }
+  pagadosRecientes.forEach(a => {
+    const k = a.cierre.fecha.slice(0, 7);
+    const b = buckets.find(x => x.key === k);
+    if (b) { b.total += parseFloat(a.monto || 0); b.cantidad++; }
+  });
+  const totalCobrado = buckets.reduce((s, b) => s + b.total, 0);
+
+  if (totalCobrado > 0 || pendientes.length) {
+    html += `
+      <div class="cobrado-box">
+        <div class="cobrado-header">
+          <div class="cobrado-title"><i class="ti ti-cash"></i> Ya cobrado</div>
+          <div class="cobrado-periodo">Últimos meses</div>
+        </div>
+        <div class="cobrado-grid">
+          ${buckets.map((b, i) => `
+            <div class="cobrado-mes${i === 0 ? ' actual' : ''}">
+              <div class="cobrado-mes-label">${b.lbl}${i === 0 ? ' · Actual' : ''}</div>
+              <div class="cobrado-mes-monto${b.total > 0 ? '' : ' cero'}">$${formatNumber(b.total)}</div>
+              ${b.cantidad ? `<div class="cobrado-mes-cant">${b.cantidad} ${b.cantidad === 1 ? 'cierre' : 'cierres'}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+        <div class="cobrado-total">
+          <span style="color:var(--c-muted)">Total cobrado:</span>
+          <strong>$${formatNumber(totalCobrado)}</strong>
+        </div>
+      </div>`;
+  }
+
+  // Detalle de pendientes por local
+  if (pendientes.length) {
+    const porLocal = {};
+    pendientes.forEach(a => {
+      const loc = a.cierre.local;
+      if (!porLocal[loc]) porLocal[loc] = { total: 0, dias: [] };
+      porLocal[loc].total += parseFloat(a.monto || 0);
+      porLocal[loc].dias.push({
+        fecha: a.cierre.fecha,
+        turno: a.cierre.turno,
+        puntos: parseFloat(a.puntos),
+        monto: parseFloat(a.monto || 0)
+      });
+    });
+    Object.values(porLocal).forEach(l => l.dias.sort((a, b) => b.fecha.localeCompare(a.fecha)));
+
+    const turnoIcon = { mediodia: '🌤', noche: '🌙', evento: '🎉', especial: '⭐' };
+    const turnoLbl = { mediodia: 'Mediodía', noche: 'Noche', evento: 'Evento', especial: 'Especial' };
+
+    html += `<div class="pend-section-title">Detalle de pendientes</div>`;
+    Object.entries(porLocal).forEach(([loc, data]) => {
+      html += `
+        <div class="pend-local">
+          <div class="pend-local-header">
+            <div class="pend-local-name"><i class="ti ti-map-pin"></i> ${esc(LOCAL_LABELS[loc] || loc)}</div>
+            <div class="pend-local-total">$${formatNumber(data.total)}</div>
+          </div>
+          ${data.dias.map(d => {
+            const pts = d.puntos === 1 ? '1 punto' : d.puntos === 0.5 ? '½ punto' : d.puntos + ' pts';
+            return `
+              <div class="pend-dia">
+                <div class="pend-dia-info">
+                  <span class="pend-dia-fecha">${fmtFechaCorta(d.fecha)}</span>
+                  <span class="pend-dia-meta">${turnoIcon[d.turno] || ''} ${turnoLbl[d.turno] || d.turno} · ${pts}</span>
+                </div>
+                <div class="pend-dia-monto">$${formatNumber(d.monto)}</div>
+              </div>`;
+          }).join('')}
+        </div>`;
+    });
+  }
+
+  cont.innerHTML = html;
+}
 
 // ============================================
 // LOGOUT

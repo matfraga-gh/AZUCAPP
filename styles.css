@@ -725,6 +725,230 @@ button {
 }
 
 /* ============================================
+   MI PROPINA
+============================================ */
+.propina-banner {
+  background: linear-gradient(135deg, #C4622D, #A0501F);
+  color: white;
+  border-radius: var(--r-lg);
+  padding: 26px 20px;
+  text-align: center;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 16px rgba(196, 98, 45, 0.3);
+}
+
+.propina-banner-label {
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  opacity: 0.85;
+  margin-bottom: 6px;
+}
+
+.propina-banner-monto {
+  font-size: 38px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.propina-banner-sub {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 8px;
+}
+
+.propina-empty {
+  background: var(--c-cream-soft);
+  border: 0.5px solid var(--c-cream-border);
+  border-radius: var(--r-lg);
+  padding: 32px 20px;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.propina-empty-icon {
+  font-size: 38px;
+  margin-bottom: 10px;
+}
+
+.propina-empty-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 17px;
+  color: var(--c-cream);
+  margin-bottom: 4px;
+}
+
+.propina-empty-desc {
+  font-size: 13px;
+  color: var(--c-muted);
+  line-height: 1.4;
+}
+
+/* Bloque "Ya cobrado" */
+.cobrado-box {
+  background: var(--c-cream-soft);
+  border: 0.5px solid var(--c-cream-border);
+  border-radius: var(--r-lg);
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.cobrado-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.cobrado-title {
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--c-cream);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cobrado-title i {
+  color: var(--c-mod-propina);
+}
+
+.cobrado-periodo {
+  font-size: 11px;
+  color: var(--c-muted);
+}
+
+.cobrado-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.cobrado-mes {
+  background: transparent;
+  border: 0.5px solid var(--c-cream-border);
+  border-radius: var(--r-md);
+  padding: 10px;
+  text-align: center;
+}
+
+.cobrado-mes.actual {
+  background: var(--c-rust-soft);
+  border-color: rgba(196, 98, 45, 0.4);
+}
+
+.cobrado-mes-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--c-muted);
+  margin-bottom: 4px;
+}
+
+.cobrado-mes-monto {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--c-cream);
+}
+
+.cobrado-mes-monto.cero {
+  color: var(--c-muted);
+}
+
+.cobrado-mes-cant {
+  font-size: 10px;
+  color: var(--c-muted);
+  margin-top: 2px;
+}
+
+.cobrado-total {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--c-cream-border);
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--c-cream);
+}
+
+/* Detalle de pendientes por local */
+.pend-section-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--c-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+
+.pend-local {
+  background: var(--c-cream);
+  color: var(--c-text-dark);
+  border-radius: var(--r-lg);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.pend-local-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 0.5px solid rgba(0,0,0,0.1);
+  margin-bottom: 10px;
+}
+
+.pend-local-name {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-weight: 500;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pend-local-name i {
+  color: var(--c-rust);
+  font-size: 15px;
+}
+
+.pend-local-total {
+  font-weight: 700;
+  color: var(--c-rust);
+  font-size: 17px;
+}
+
+.pend-dia {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 0;
+  font-size: 13px;
+}
+
+.pend-dia-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pend-dia-fecha {
+  font-weight: 600;
+  color: var(--c-text-dark);
+}
+
+.pend-dia-meta {
+  font-size: 11px;
+  color: var(--c-text-secondary);
+}
+
+.pend-dia-monto {
+  font-weight: 600;
+  color: var(--c-text-dark);
+}
+
+/* ============================================
    MODAL
 ============================================ */
 .modal-overlay {
