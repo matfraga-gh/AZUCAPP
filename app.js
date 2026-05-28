@@ -987,28 +987,13 @@ const ADMIN_SECTIONS = [
     action: () => openAdminUsuarios()
   },
   {
-    id: 'permisos',
+    id: 'editores',
     icon: 'ti-shield-check',
-    color: '#D85A30',
-    title: 'Permisos por módulo',
-    desc: 'Editor/Admin de Recetas, Pedidos, Rosters',
-    activa: false
-  },
-  {
-    id: 'edit-propinas',
-    icon: 'ti-cash',
-    color: '#EF9F27',
-    title: 'Editores de Propinas',
-    desc: 'Quiénes cargan cierres de propinas',
-    activa: false
-  },
-  {
-    id: 'edit-biblio',
-    icon: 'ti-books',
     color: '#5DCAA5',
-    title: 'Editores de Biblioteca',
-    desc: 'Quiénes suben contenido',
-    activa: false
+    title: 'Editores y permisos',
+    desc: 'Asignar qué puede editar cada Editor',
+    activa: true,
+    action: () => openAdminEditores()
   },
   {
     id: 'locales',
@@ -1432,6 +1417,206 @@ window.toggleActivoUser = async function(id) {
     await cargarUsuarios();
   } catch (err) {
     toast('Error al cambiar estado', 'error');
+  }
+};
+
+// ============================================
+// ADMINISTRACIÓN - Editores y permisos
+// ============================================
+const LOCALES_DISPONIBLES = [
+  '1-AZUCA','2-AZAFRAN','3-NIETO','4-VIÑA COBOS','5-TRAPICHE','VINOBIEN'
+];
+
+let EDITORES_CACHE = [];
+let LOCALES_EDITANDO_ID = null;
+
+const PERMISOS_DEF = [
+  { key: 'editor_rosters',    label: 'Rosters',       icon: 'ti-calendar-event', tipo: 'editor' },
+  { key: 'editor_propinas',   label: 'Propinas',      icon: 'ti-cash',           tipo: 'editor' },
+  { key: 'editor_biblioteca', label: 'Biblioteca',    icon: 'ti-books',          tipo: 'editor' },
+  { key: 'editor_recetas',    label: 'Recetas',       icon: 'ti-chef-hat',       tipo: 'editor' },
+  { key: 'admin_recetas',     label: 'Admin Recetas', icon: 'ti-shield',         tipo: 'admin' },
+  { key: 'editor_pedidos',    label: 'Pedidos',       icon: 'ti-shopping-cart',  tipo: 'editor' },
+  { key: 'admin_pedidos',     label: 'Admin Pedidos', icon: 'ti-shield',         tipo: 'admin' }
+];
+
+async function openAdminEditores() {
+  showView('vAdminEditores');
+  await cargarEditores();
+}
+window.openAdminEditores = openAdminEditores;
+
+async function cargarEditores() {
+  const lista = document.getElementById('editoresLista');
+  lista.innerHTML = '<div class="loading">Cargando editores...</div>';
+
+  try {
+    EDITORES_CACHE = await api(
+      `roster_usuarios?perfil=eq.editor&activo=eq.true&select=*&order=nombre.asc`
+    ) || [];
+    renderEditores();
+  } catch (e) {
+    lista.innerHTML = '<div class="empty-list" style="color:var(--c-error)">Error al cargar editores</div>';
+  }
+}
+
+function renderEditores() {
+  const lista = document.getElementById('editoresLista');
+  document.getElementById('editoresCount').textContent =
+    EDITORES_CACHE.length + (EDITORES_CACHE.length === 1 ? ' editor' : ' editores');
+
+  if (!EDITORES_CACHE.length) {
+    lista.innerHTML = `
+      <div class="editor-empty">
+        <div class="editor-empty-icon"><i class="ti ti-users-group"></i></div>
+        <div class="editor-empty-title">No hay editores asignados</div>
+        <div class="editor-empty-desc">
+          Para que alguien aparezca acá, andá a <strong>Usuarios</strong> y cambiale el perfil a <strong>Editor</strong>.
+        </div>
+      </div>`;
+    return;
+  }
+
+  lista.innerHTML = EDITORES_CACHE.map(u => {
+    const inicial = (u.nombre || u.usuario || '?').trim().charAt(0).toUpperCase();
+    const locales = u.locales_asignados || [];
+    const localesTxt = locales.length
+      ? locales.map(l => LOCAL_LABELS[l] || l).join(', ')
+      : 'Sin locales asignados';
+    const localesIco = locales.length ? 'ti-map-pin' : 'ti-map-pin-off';
+
+    const perms = PERMISOS_DEF.map(p => {
+      const activo = !!u[p.key];
+      const cls = 'permiso-check' + (activo ? ' activo' : '') + (p.tipo === 'admin' ? ' admin-perm' : '');
+      const icon = activo ? 'ti-check' : p.icon;
+      return `
+        <label class="${cls}" onclick="togglePermiso(${u.id}, '${p.key}', this)">
+          <i class="ti ${icon}"></i>
+          <span>${p.label}</span>
+        </label>`;
+    }).join('');
+
+    return `
+      <div class="editor-card" data-id="${u.id}">
+        <div class="editor-card-head">
+          <div class="editor-card-avatar">${esc(inicial)}</div>
+          <div class="editor-card-info">
+            <div class="editor-card-name">${esc(u.nombre || u.usuario)}</div>
+            <div class="editor-card-meta">@${esc(u.usuario)}</div>
+          </div>
+        </div>
+
+        <div class="editor-card-locales">
+          <i class="ti ${localesIco}"></i>
+          <span>${esc(localesTxt)}</span>
+          <button class="editar-locales" onclick="abrirEditarLocales(${u.id})">Editar</button>
+        </div>
+
+        <div class="permisos-grid">
+          ${perms}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+window.togglePermiso = async function(userId, key, labelEl) {
+  const user = EDITORES_CACHE.find(u => u.id === userId);
+  if (!user) return;
+
+  const nuevoValor = !user[key];
+
+  // Update visual inmediato
+  labelEl.classList.toggle('activo', nuevoValor);
+  const icon = labelEl.querySelector('i.ti');
+  if (nuevoValor) {
+    icon.classList.remove(...Array.from(icon.classList).filter(c => c.startsWith('ti-')));
+    icon.classList.add('ti-check');
+  } else {
+    const def = PERMISOS_DEF.find(p => p.key === key);
+    icon.classList.remove(...Array.from(icon.classList).filter(c => c.startsWith('ti-')));
+    icon.classList.add(def.icon);
+  }
+
+  // Actualizar caché local
+  user[key] = nuevoValor;
+
+  // Guardar en BD
+  try {
+    await api(`roster_usuarios?id=eq.${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ [key]: nuevoValor })
+    });
+  } catch (err) {
+    toast('Error al guardar permiso', 'error');
+    // Revertir cambio visual
+    user[key] = !nuevoValor;
+    labelEl.classList.toggle('activo', !nuevoValor);
+  }
+};
+
+// ============================================
+// MODAL: EDITAR LOCALES DE UN EDITOR
+// ============================================
+window.abrirEditarLocales = function(userId) {
+  const user = EDITORES_CACHE.find(u => u.id === userId);
+  if (!user) return;
+  LOCALES_EDITANDO_ID = userId;
+
+  document.getElementById('localesUserName').innerHTML =
+    `<strong>${esc(user.nombre || user.usuario)}</strong>`;
+
+  const asignados = user.locales_asignados || [];
+
+  document.getElementById('localesGrid').innerHTML = LOCALES_DISPONIBLES.map(loc => {
+    const activo = asignados.includes(loc);
+    return `
+      <label class="local-check${activo ? ' activo' : ''}" data-local="${loc}">
+        <input type="checkbox" ${activo ? 'checked' : ''}>
+        ${esc(LOCAL_LABELS[loc] || loc)}
+      </label>`;
+  }).join('');
+
+  // Toggle visual
+  document.querySelectorAll('#localesGrid .local-check').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      el.classList.toggle('activo');
+      const cb = el.querySelector('input');
+      cb.checked = el.classList.contains('activo');
+    });
+  });
+
+  document.getElementById('localesError').textContent = '';
+  document.getElementById('modalLocales').classList.add('show');
+};
+
+window.closeLocalesModal = function() {
+  document.getElementById('modalLocales').classList.remove('show');
+};
+
+window.guardarLocales = async function() {
+  if (!LOCALES_EDITANDO_ID) return;
+  const errBox = document.getElementById('localesError');
+  errBox.textContent = '';
+
+  const checks = document.querySelectorAll('#localesGrid .local-check.activo');
+  const nuevos = Array.from(checks).map(c => c.dataset.local);
+
+  try {
+    await api(`roster_usuarios?id=eq.${LOCALES_EDITANDO_ID}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ locales_asignados: nuevos.length ? nuevos : null })
+    });
+
+    // Actualizar caché
+    const user = EDITORES_CACHE.find(u => u.id === LOCALES_EDITANDO_ID);
+    if (user) user.locales_asignados = nuevos;
+
+    closeLocalesModal();
+    toast('✓ Locales actualizados', 'success');
+    renderEditores();
+  } catch (err) {
+    errBox.textContent = 'Error al guardar: ' + err.message;
   }
 };
 

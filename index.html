@@ -286,6 +286,64 @@
 </div>
 
 <!-- ============================================
+     VISTA: ADMINISTRACIÓN - Editores y permisos
+============================================ -->
+<div id="vAdminEditores" class="view">
+  <div class="module-wrap">
+
+    <div class="module-header">
+      <button class="btn-back" onclick="openAdministracion()" aria-label="Volver">
+        <i class="ti ti-arrow-left"></i>
+      </button>
+      <div class="module-title-block">
+        <div class="module-title">Editores y permisos</div>
+        <div class="module-subtitle" id="editoresCount">Cargando...</div>
+      </div>
+    </div>
+
+    <div class="info-banner" style="margin-top:0;margin-bottom:14px;">
+      <i class="ti ti-info-circle"></i>
+      <span>Mostrando solo usuarios con perfil <strong>Editor</strong>. Para sumar a alguien, cambiale el perfil desde Usuarios.</span>
+    </div>
+
+    <div id="editoresLista">
+      <div class="loading">Cargando editores...</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: EDITAR LOCALES DE UN EDITOR
+============================================ -->
+<div class="modal-overlay" id="modalLocales">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Locales asignados</h2>
+      <button class="modal-close" onclick="closeLocalesModal()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <p class="modal-text" id="localesUserName">—</p>
+      <p class="modal-text" style="font-size:12px;color:var(--c-muted);">
+        Elegí los locales donde esta persona puede operar.
+      </p>
+
+      <div class="locales-grid" id="localesGrid"></div>
+
+      <div class="login-error" id="localesError"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeLocalesModal()">Cancelar</button>
+      <button class="btn-primary" onclick="guardarLocales()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
      MODAL: CREAR / EDITAR USUARIO
 ============================================ -->
 <div class="modal-overlay" id="modalUserForm">
