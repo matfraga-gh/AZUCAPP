@@ -226,6 +226,159 @@
 </div>
 
 <!-- ============================================
+     VISTA: ADMINISTRACIÓN - Panel principal
+============================================ -->
+<div id="vAdmin" class="view">
+  <div class="module-wrap">
+
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver">
+        <i class="ti ti-arrow-left"></i>
+      </button>
+      <div class="module-title-block">
+        <div class="module-title">Administración</div>
+        <div class="module-subtitle">Gestión de la aplicación</div>
+      </div>
+    </div>
+
+    <div class="admin-grid" id="adminGrid"></div>
+
+  </div>
+</div>
+
+<!-- ============================================
+     VISTA: ADMINISTRACIÓN - Usuarios
+============================================ -->
+<div id="vAdminUsuarios" class="view">
+  <div class="module-wrap">
+
+    <div class="module-header">
+      <button class="btn-back" onclick="openAdministracion()" aria-label="Volver">
+        <i class="ti ti-arrow-left"></i>
+      </button>
+      <div class="module-title-block">
+        <div class="module-title">Usuarios</div>
+        <div class="module-subtitle" id="usuariosCount">Cargando...</div>
+      </div>
+    </div>
+
+    <div class="admin-toolbar">
+      <input type="search" id="userSearch" placeholder="Buscar por nombre o usuario..." class="search-input">
+      <button class="btn-primary btn-icon-only" onclick="abrirCrearUsuario()" title="Crear usuario">
+        <i class="ti ti-plus"></i>
+      </button>
+    </div>
+
+    <div class="filter-pills">
+      <button class="pill active" data-filter="todos">Todos</button>
+      <button class="pill" data-filter="master">Master</button>
+      <button class="pill" data-filter="admin">Admin</button>
+      <button class="pill" data-filter="editor">Editor</button>
+      <button class="pill" data-filter="usuario">Usuario</button>
+      <button class="pill" data-filter="inactivos">Inactivos</button>
+    </div>
+
+    <div id="usuariosLista">
+      <div class="loading">Cargando usuarios...</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: CREAR / EDITAR USUARIO
+============================================ -->
+<div class="modal-overlay" id="modalUserForm">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title" id="userFormTitle">Nuevo usuario</h2>
+      <button class="modal-close" onclick="closeUserFormModal()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <label class="field">
+        <span class="field-label">Nombre completo</span>
+        <input type="text" id="userNombre" placeholder="Ej: Florencia Cahiza">
+      </label>
+
+      <label class="field">
+        <span class="field-label">Usuario (para login)</span>
+        <input type="text" id="userUsuario" placeholder="Ej: cahflo" autocapitalize="off">
+      </label>
+
+      <label class="field" id="userPasswordField">
+        <span class="field-label">Contraseña inicial</span>
+        <input type="text" id="userPassword" placeholder="Mínimo 6 caracteres">
+        <small class="field-hint">El usuario deberá cambiarla en su primer login.</small>
+      </label>
+
+      <label class="field">
+        <span class="field-label">Perfil</span>
+        <select id="userPerfil">
+          <option value="usuario">Usuario (colaborador común)</option>
+          <option value="editor">Editor</option>
+          <option value="admin">Admin (gestión completa)</option>
+          <option value="master" id="optMaster">Master (máximo nivel)</option>
+        </select>
+        <small class="field-hint" id="userPerfilHint">El perfil define qué puede hacer la persona.</small>
+      </label>
+
+      <label class="field">
+        <span class="field-label">Vincular a colaborador</span>
+        <select id="userEmpleado">
+          <option value="">Sin vincular (no tiene turnos)</option>
+        </select>
+        <small class="field-hint">Necesario para que vea sus turnos en "Mi semana".</small>
+      </label>
+
+      <div class="login-error" id="userFormError"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeUserFormModal()">Cancelar</button>
+      <button class="btn-primary" onclick="guardarUsuario()" id="btnGuardarUser">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: RESET PASSWORD
+============================================ -->
+<div class="modal-overlay" id="modalResetPass">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Resetear contraseña</h2>
+      <button class="modal-close" onclick="closeResetPassModal()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <p class="modal-text" id="resetPassUser">Usuario: —</p>
+
+      <div class="info-banner">
+        <i class="ti ti-info-circle"></i>
+        <span>Le asignás una contraseña nueva. La persona deberá cambiarla al ingresar.</span>
+      </div>
+
+      <label class="field">
+        <span class="field-label">Nueva contraseña</span>
+        <input type="text" id="resetPassValue" placeholder="Mínimo 6 caracteres">
+      </label>
+
+      <div class="login-error" id="resetPassError"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeResetPassModal()">Cancelar</button>
+      <button class="btn-primary" onclick="confirmarResetPass()">Resetear</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
      MODAL: REPORTAR INCIDENCIA
 ============================================ -->
 <div class="modal-overlay" id="modalIncidencia">

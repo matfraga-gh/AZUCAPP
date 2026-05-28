@@ -268,7 +268,7 @@ const MODULES = [
     title: 'Administración',
     desc: 'Usuarios y permisos',
     visible: () => isMaster() || isAdmin(),
-    action: () => alert('Módulo "Administración" - próximamente.')
+    action: () => openAdministracion()
   }
 ];
 
@@ -971,6 +971,468 @@ async function openMiPropina() {
 // Función placeholder para abrir gestión de propinas
 window.abrirGestionPropinas = function() {
   toast('Gestión de propinas - próximamente disponible');
+};
+
+// ============================================
+// ADMINISTRACIÓN - Panel principal
+// ============================================
+const ADMIN_SECTIONS = [
+  {
+    id: 'usuarios',
+    icon: 'ti-users',
+    color: '#7F77DD',
+    title: 'Usuarios',
+    desc: 'Crear, editar, resetear contraseñas',
+    activa: true,
+    action: () => openAdminUsuarios()
+  },
+  {
+    id: 'permisos',
+    icon: 'ti-shield-check',
+    color: '#D85A30',
+    title: 'Permisos por módulo',
+    desc: 'Editor/Admin de Recetas, Pedidos, Rosters',
+    activa: false
+  },
+  {
+    id: 'edit-propinas',
+    icon: 'ti-cash',
+    color: '#EF9F27',
+    title: 'Editores de Propinas',
+    desc: 'Quiénes cargan cierres de propinas',
+    activa: false
+  },
+  {
+    id: 'edit-biblio',
+    icon: 'ti-books',
+    color: '#5DCAA5',
+    title: 'Editores de Biblioteca',
+    desc: 'Quiénes suben contenido',
+    activa: false
+  },
+  {
+    id: 'locales',
+    icon: 'ti-building-store',
+    color: '#C4622D',
+    title: 'Locales',
+    desc: 'Gestionar locales del grupo',
+    activa: false,
+    soloMaster: true
+  },
+  {
+    id: 'historial',
+    icon: 'ti-history',
+    color: '#B4B2A9',
+    title: 'Historial',
+    desc: 'Auditoría de cambios',
+    activa: false
+  }
+];
+
+function openAdministracion() {
+  if (!isMaster() && !isAdmin()) {
+    showDashboard();
+    return;
+  }
+
+  const grid = document.getElementById('adminGrid');
+  grid.innerHTML = ADMIN_SECTIONS
+    .filter(s => !s.soloMaster || isMaster())
+    .map(s => {
+      const cls = 'admin-card' + (s.activa ? '' : ' disabled');
+      const arrowOrTag = s.activa
+        ? `<div class="admin-card-arrow"><i class="ti ti-chevron-right"></i></div>`
+        : `<span class="pronto-tag">Pronto</span>`;
+      return `
+        <button class="${cls}" data-id="${s.id}">
+          <div class="admin-card-icon" style="background:${s.color}22">
+            <i class="ti ${s.icon}" style="color:${s.color}"></i>
+          </div>
+          <div class="admin-card-text">
+            <div class="admin-card-title">${s.title}</div>
+            <div class="admin-card-desc">${s.desc}</div>
+          </div>
+          ${arrowOrTag}
+        </button>`;
+    }).join('');
+
+  grid.querySelectorAll('.admin-card').forEach(c => {
+    c.addEventListener('click', () => {
+      const id = c.dataset.id;
+      const sec = ADMIN_SECTIONS.find(s => s.id === id);
+      if (sec && sec.activa && sec.action) {
+        sec.action();
+      } else {
+        toast('Próximamente disponible');
+      }
+    });
+  });
+
+  showView('vAdmin');
+}
+
+window.openAdministracion = openAdministracion;
+
+// ============================================
+// ADMINISTRACIÓN - Usuarios
+// ============================================
+let ADMIN_USUARIOS_CACHE = [];
+let ADMIN_EMPLEADOS_CACHE = [];
+let ADMIN_FILTRO_ACTUAL = 'todos';
+let EDITANDO_USER_ID = null;
+let RESET_USER_ID = null;
+
+async function openAdminUsuarios() {
+  showView('vAdminUsuarios');
+  document.getElementById('userSearch').value = '';
+  ADMIN_FILTRO_ACTUAL = 'todos';
+  // Reset pills visualmente
+  document.querySelectorAll('.filter-pills .pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.filter === 'todos');
+  });
+
+  await cargarUsuarios();
+  await cargarEmpleados();
+}
+
+async function cargarUsuarios() {
+  const lista = document.getElementById('usuariosLista');
+  lista.innerHTML = '<div class="loading">Cargando usuarios...</div>';
+
+  try {
+    ADMIN_USUARIOS_CACHE = await api('roster_usuarios?select=*&order=nombre.asc') || [];
+    renderUsuarios();
+  } catch (e) {
+    lista.innerHTML = '<div class="empty-list" style="color:var(--c-error)">Error al cargar usuarios</div>';
+  }
+}
+
+async function cargarEmpleados() {
+  try {
+    ADMIN_EMPLEADOS_CACHE = await api('empleados?activo=eq.true&select=id,nombre,apellido,local,sector&order=nombre.asc') || [];
+  } catch (e) {
+    console.warn('Error al cargar empleados:', e);
+    ADMIN_EMPLEADOS_CACHE = [];
+  }
+}
+
+function renderUsuarios() {
+  const lista = document.getElementById('usuariosLista');
+  const search = (document.getElementById('userSearch').value || '').toLowerCase().trim();
+
+  let users = ADMIN_USUARIOS_CACHE.slice();
+
+  // Filtro por pill
+  if (ADMIN_FILTRO_ACTUAL === 'inactivos') {
+    users = users.filter(u => !u.activo);
+  } else if (ADMIN_FILTRO_ACTUAL !== 'todos') {
+    users = users.filter(u => u.activo && u.perfil === ADMIN_FILTRO_ACTUAL);
+  } else {
+    users = users.filter(u => u.activo);
+  }
+
+  // Filtro por búsqueda
+  if (search) {
+    users = users.filter(u => {
+      const n = (u.nombre || '').toLowerCase();
+      const us = (u.usuario || '').toLowerCase();
+      return n.includes(search) || us.includes(search);
+    });
+  }
+
+  // Header con conteo
+  document.getElementById('usuariosCount').textContent =
+    users.length + (users.length === 1 ? ' usuario' : ' usuarios');
+
+  if (!users.length) {
+    lista.innerHTML = `<div class="empty-list">No se encontraron usuarios${search ? ' con ese criterio' : ''}</div>`;
+    return;
+  }
+
+  const perfilLabels = {
+    master: 'Master',
+    admin: 'Admin',
+    editor: 'Editor',
+    usuario: 'Usuario'
+  };
+
+  lista.innerHTML = users.map(u => {
+    const inicial = (u.nombre || u.usuario || '?').trim().charAt(0).toUpperCase();
+    const inactiveCls = u.activo ? '' : ' inactive';
+    const perfilCls = 'p-' + (u.perfil || 'usuario');
+    const labelPerfil = perfilLabels[u.perfil] || 'Usuario';
+    const inactiveTag = u.activo ? '' : ' · INACTIVO';
+    const empleadoTag = u.empleado_id ? ' · vinculado' : '';
+
+    // Botón activar/desactivar
+    const toggleBtn = u.id === currentUser.id
+      ? '' // no podés desactivarte a vos mismo
+      : `<button class="btn-row-action" onclick="event.stopPropagation();toggleActivoUser(${u.id})"
+            title="${u.activo ? 'Desactivar' : 'Activar'}">
+          <i class="ti ti-${u.activo ? 'user-off' : 'user-check'}"></i>
+        </button>`;
+
+    return `
+      <div class="user-row${inactiveCls}" data-id="${u.id}">
+        <div class="user-avatar ${perfilCls}">${esc(inicial)}</div>
+        <div class="user-info">
+          <div class="user-name">${esc(u.nombre || u.usuario)}</div>
+          <div class="user-meta">@${esc(u.usuario)} · ${labelPerfil}${empleadoTag}${inactiveTag}</div>
+        </div>
+        <div class="user-actions">
+          <button class="btn-row-action" onclick="event.stopPropagation();abrirEditarUsuario(${u.id})" title="Editar">
+            <i class="ti ti-edit"></i>
+          </button>
+          <button class="btn-row-action" onclick="event.stopPropagation();abrirResetPass(${u.id})" title="Resetear contraseña">
+            <i class="ti ti-key"></i>
+          </button>
+          ${toggleBtn}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// Search en tiempo real
+document.getElementById('userSearch').addEventListener('input', () => renderUsuarios());
+
+// Filtros con pills
+document.querySelectorAll('.filter-pills .pill').forEach(p => {
+  p.addEventListener('click', () => {
+    document.querySelectorAll('.filter-pills .pill').forEach(x => x.classList.remove('active'));
+    p.classList.add('active');
+    ADMIN_FILTRO_ACTUAL = p.dataset.filter;
+    renderUsuarios();
+  });
+});
+
+// ============================================
+// MODAL CREAR / EDITAR USUARIO
+// ============================================
+window.abrirCrearUsuario = function() {
+  EDITANDO_USER_ID = null;
+  document.getElementById('userFormTitle').textContent = 'Nuevo usuario';
+  document.getElementById('userNombre').value = '';
+  document.getElementById('userUsuario').value = '';
+  document.getElementById('userPassword').value = '';
+  document.getElementById('userPerfil').value = 'usuario';
+  document.getElementById('userEmpleado').innerHTML = '<option value="">Sin vincular (no tiene turnos)</option>' +
+    ADMIN_EMPLEADOS_CACHE.map(e => {
+      const lbl = `${e.nombre || ''} ${e.apellido || ''}`.trim() + (e.local ? ' · ' + (LOCAL_LABELS[e.local] || e.local) : '');
+      return `<option value="${e.id}">${esc(lbl)}</option>`;
+    }).join('');
+  document.getElementById('userEmpleado').value = '';
+  document.getElementById('userPasswordField').style.display = '';
+  document.getElementById('userFormError').textContent = '';
+
+  // Si no es Master, no puede crear Masters
+  const optMaster = document.getElementById('optMaster');
+  optMaster.disabled = !isMaster();
+  optMaster.textContent = isMaster() ? 'Master (máximo nivel)' : 'Master (solo Master puede crear Masters)';
+
+  document.getElementById('modalUserForm').classList.add('show');
+};
+
+window.abrirEditarUsuario = function(id) {
+  const u = ADMIN_USUARIOS_CACHE.find(x => x.id === id);
+  if (!u) return;
+  EDITANDO_USER_ID = id;
+  document.getElementById('userFormTitle').textContent = 'Editar usuario';
+  document.getElementById('userNombre').value = u.nombre || '';
+  document.getElementById('userUsuario').value = u.usuario || '';
+  document.getElementById('userPassword').value = '';
+  document.getElementById('userPerfil').value = u.perfil || 'usuario';
+
+  document.getElementById('userEmpleado').innerHTML = '<option value="">Sin vincular (no tiene turnos)</option>' +
+    ADMIN_EMPLEADOS_CACHE.map(e => {
+      const lbl = `${e.nombre || ''} ${e.apellido || ''}`.trim() + (e.local ? ' · ' + (LOCAL_LABELS[e.local] || e.local) : '');
+      return `<option value="${e.id}">${esc(lbl)}</option>`;
+    }).join('');
+  document.getElementById('userEmpleado').value = u.empleado_id || '';
+
+  // En edición, ocultar password (se cambia con el botón de reset)
+  document.getElementById('userPasswordField').style.display = 'none';
+  document.getElementById('userFormError').textContent = '';
+
+  // Reglas: solo Master puede asignar Master
+  const optMaster = document.getElementById('optMaster');
+  optMaster.disabled = !isMaster();
+  optMaster.textContent = isMaster() ? 'Master (máximo nivel)' : 'Master (solo Master puede asignar Master)';
+
+  document.getElementById('modalUserForm').classList.add('show');
+};
+
+window.closeUserFormModal = function() {
+  document.getElementById('modalUserForm').classList.remove('show');
+};
+
+window.guardarUsuario = async function() {
+  const errBox = document.getElementById('userFormError');
+  errBox.textContent = '';
+
+  const nombre = document.getElementById('userNombre').value.trim();
+  const usuario = document.getElementById('userUsuario').value.trim().toLowerCase();
+  const perfil = document.getElementById('userPerfil').value;
+  const empleadoId = document.getElementById('userEmpleado').value;
+  const password = document.getElementById('userPassword').value;
+
+  if (!nombre) { errBox.textContent = 'Falta el nombre'; return; }
+  if (!usuario) { errBox.textContent = 'Falta el usuario'; return; }
+  if (!/^[a-z0-9_.-]+$/i.test(usuario)) {
+    errBox.textContent = 'El usuario solo puede tener letras, números, _ . -';
+    return;
+  }
+
+  // Validar permisos para perfil Master
+  if (perfil === 'master' && !isMaster()) {
+    errBox.textContent = 'Solo un Master puede asignar el perfil Master';
+    return;
+  }
+
+  try {
+    const btn = document.getElementById('btnGuardarUser');
+    btn.disabled = true;
+    btn.textContent = 'Guardando...';
+
+    if (EDITANDO_USER_ID) {
+      // Editando: verificar conflictos de username SOLO si cambió
+      const original = ADMIN_USUARIOS_CACHE.find(u => u.id === EDITANDO_USER_ID);
+      if (usuario !== (original.usuario || '').toLowerCase()) {
+        const existentes = await api(`roster_usuarios?usuario=eq.${encodeURIComponent(usuario)}&select=id`);
+        if (existentes && existentes.length) {
+          throw new Error('Ese usuario ya existe');
+        }
+      }
+
+      await api(`roster_usuarios?id=eq.${EDITANDO_USER_ID}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          nombre,
+          usuario,
+          perfil,
+          empleado_id: empleadoId ? parseInt(empleadoId) : null
+        })
+      });
+
+      toast('✓ Usuario actualizado', 'success');
+    } else {
+      // Creando: requiere password
+      if (!password || password.length < 6) {
+        errBox.textContent = 'La contraseña debe tener al menos 6 caracteres';
+        btn.disabled = false;
+        btn.textContent = 'Guardar';
+        return;
+      }
+
+      // Verificar que no exista
+      const existentes = await api(`roster_usuarios?usuario=eq.${encodeURIComponent(usuario)}&select=id`);
+      if (existentes && existentes.length) {
+        throw new Error('Ese usuario ya existe');
+      }
+
+      const passHash = await sha256(password);
+
+      await api('roster_usuarios', {
+        method: 'POST',
+        body: JSON.stringify({
+          usuario,
+          nombre,
+          perfil,
+          password_hash: passHash,
+          empleado_id: empleadoId ? parseInt(empleadoId) : null,
+          debe_cambiar_password: true,
+          activo: true
+        })
+      });
+
+      toast('✓ Usuario creado', 'success');
+    }
+
+    closeUserFormModal();
+    await cargarUsuarios();
+  } catch (err) {
+    errBox.textContent = err.message || 'Error al guardar';
+  } finally {
+    const btn = document.getElementById('btnGuardarUser');
+    btn.disabled = false;
+    btn.textContent = 'Guardar';
+  }
+};
+
+// ============================================
+// MODAL RESET PASSWORD
+// ============================================
+window.abrirResetPass = function(id) {
+  const u = ADMIN_USUARIOS_CACHE.find(x => x.id === id);
+  if (!u) return;
+  RESET_USER_ID = id;
+  document.getElementById('resetPassUser').textContent = `Usuario: ${u.nombre || u.usuario} (@${u.usuario})`;
+  document.getElementById('resetPassValue').value = '';
+  document.getElementById('resetPassError').textContent = '';
+  document.getElementById('modalResetPass').classList.add('show');
+};
+
+window.closeResetPassModal = function() {
+  document.getElementById('modalResetPass').classList.remove('show');
+};
+
+window.confirmarResetPass = async function() {
+  const errBox = document.getElementById('resetPassError');
+  errBox.textContent = '';
+  const nueva = document.getElementById('resetPassValue').value;
+
+  if (!nueva || nueva.length < 6) {
+    errBox.textContent = 'Debe tener al menos 6 caracteres';
+    return;
+  }
+
+  try {
+    const hash = await sha256(nueva);
+    await api(`roster_usuarios?id=eq.${RESET_USER_ID}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        password_hash: hash,
+        debe_cambiar_password: true
+      })
+    });
+    closeResetPassModal();
+    toast('✓ Contraseña reseteada', 'success');
+    await cargarUsuarios();
+  } catch (err) {
+    errBox.textContent = err.message || 'Error al resetear';
+  }
+};
+
+// ============================================
+// ACTIVAR / DESACTIVAR USUARIO
+// ============================================
+window.toggleActivoUser = async function(id) {
+  const u = ADMIN_USUARIOS_CACHE.find(x => x.id === id);
+  if (!u) return;
+  if (u.id === currentUser.id) {
+    toast('No podés desactivar tu propia cuenta', 'error');
+    return;
+  }
+
+  // Aviso especial si se está por desactivar a un Master
+  if (u.activo && u.perfil === 'master') {
+    if (!confirm(`⚠️ ATENCIÓN: estás por desactivar a un Master (${u.nombre}).\n\nSi te quedás sin Masters, NADIE va a poder crear nuevos Masters ni editar Locales.\n\n¿Estás 100% seguro?`)) {
+      return;
+    }
+  } else {
+    const accion = u.activo ? 'desactivar' : 'activar';
+    if (!confirm(`¿${accion.charAt(0).toUpperCase() + accion.slice(1)} a ${u.nombre || u.usuario}?`)) return;
+  }
+
+  try {
+    await api(`roster_usuarios?id=eq.${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ activo: !u.activo })
+    });
+    toast(`✓ Usuario ${u.activo ? 'desactivado' : 'activado'}`, 'success');
+    await cargarUsuarios();
+  } catch (err) {
+    toast('Error al cambiar estado', 'error');
+  }
 };
 
 // ============================================
