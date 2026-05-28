@@ -858,7 +858,15 @@ async function openMiPropina() {
 
   let html = '';
 
-  // Banner de pendientes
+  // ===== 1. BOTÓN DE GESTIÓN (solo Master o Admin por ahora) =====
+  if (isMaster() || isAdmin()) {
+    html += `
+      <button class="btn-gestion" onclick="abrirGestionPropinas()">
+        <i class="ti ti-settings"></i> GESTIÓN DE PROPINAS
+      </button>`;
+  }
+
+  // ===== 2. BANNER PENDIENTE =====
   const totalPendiente = pendientes.reduce((s, a) => s + parseFloat(a.monto || 0), 0);
   if (pendientes.length) {
     html += `
@@ -876,46 +884,7 @@ async function openMiPropina() {
       </div>`;
   }
 
-  // Histórico cobrado (últimos 4 meses)
-  const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-  const buckets = [];
-  for (let i = 0; i < 4; i++) {
-    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const lbl = `${MESES[d.getMonth()]} ${d.getFullYear()}`;
-    buckets.push({ key, lbl, total: 0, cantidad: 0 });
-  }
-  pagadosRecientes.forEach(a => {
-    const k = a.cierre.fecha.slice(0, 7);
-    const b = buckets.find(x => x.key === k);
-    if (b) { b.total += parseFloat(a.monto || 0); b.cantidad++; }
-  });
-  const totalCobrado = buckets.reduce((s, b) => s + b.total, 0);
-
-  if (totalCobrado > 0 || pendientes.length) {
-    html += `
-      <div class="cobrado-box">
-        <div class="cobrado-header">
-          <div class="cobrado-title"><i class="ti ti-cash"></i> Ya cobrado</div>
-          <div class="cobrado-periodo">Últimos meses</div>
-        </div>
-        <div class="cobrado-grid">
-          ${buckets.map((b, i) => `
-            <div class="cobrado-mes${i === 0 ? ' actual' : ''}">
-              <div class="cobrado-mes-label">${b.lbl}${i === 0 ? ' · Actual' : ''}</div>
-              <div class="cobrado-mes-monto${b.total > 0 ? '' : ' cero'}">$${formatNumber(b.total)}</div>
-              ${b.cantidad ? `<div class="cobrado-mes-cant">${b.cantidad} ${b.cantidad === 1 ? 'cierre' : 'cierres'}</div>` : ''}
-            </div>
-          `).join('')}
-        </div>
-        <div class="cobrado-total">
-          <span style="color:var(--c-muted)">Total cobrado:</span>
-          <strong>$${formatNumber(totalCobrado)}</strong>
-        </div>
-      </div>`;
-  }
-
-  // Detalle de pendientes por local
+  // ===== 3. DETALLE DE PENDIENTES POR LOCAL =====
   if (pendientes.length) {
     const porLocal = {};
     pendientes.forEach(a => {
@@ -957,8 +926,52 @@ async function openMiPropina() {
     });
   }
 
+  // ===== 4. HISTÓRICO COBRADO (últimos 4 meses) =====
+  const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const buckets = [];
+  for (let i = 0; i < 4; i++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const lbl = `${MESES[d.getMonth()]} ${d.getFullYear()}`;
+    buckets.push({ key, lbl, total: 0, cantidad: 0 });
+  }
+  pagadosRecientes.forEach(a => {
+    const k = a.cierre.fecha.slice(0, 7);
+    const b = buckets.find(x => x.key === k);
+    if (b) { b.total += parseFloat(a.monto || 0); b.cantidad++; }
+  });
+  const totalCobrado = buckets.reduce((s, b) => s + b.total, 0);
+
+  if (totalCobrado > 0 || pendientes.length) {
+    html += `
+      <div class="cobrado-box">
+        <div class="cobrado-header">
+          <div class="cobrado-title"><i class="ti ti-cash"></i> Histórico cobrado</div>
+          <div class="cobrado-periodo">Últimos meses</div>
+        </div>
+        <div class="cobrado-grid">
+          ${buckets.map((b, i) => `
+            <div class="cobrado-mes${i === 0 ? ' actual' : ''}">
+              <div class="cobrado-mes-label">${b.lbl}${i === 0 ? ' · Actual' : ''}</div>
+              <div class="cobrado-mes-monto${b.total > 0 ? '' : ' cero'}">$${formatNumber(b.total)}</div>
+              ${b.cantidad ? `<div class="cobrado-mes-cant">${b.cantidad} ${b.cantidad === 1 ? 'cierre' : 'cierres'}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+        <div class="cobrado-total">
+          <span style="color:var(--c-muted)">Total cobrado:</span>
+          <strong>$${formatNumber(totalCobrado)}</strong>
+        </div>
+      </div>`;
+  }
+
   cont.innerHTML = html;
 }
+
+// Función placeholder para abrir gestión de propinas
+window.abrirGestionPropinas = function() {
+  toast('Gestión de propinas - próximamente disponible');
+};
 
 // ============================================
 // LOGOUT
