@@ -249,7 +249,7 @@ const MODULES = [
     color: '#D85A30',
     title: 'Mis recetas',
     desc: 'Recetas y menús del local',
-    visible: () => isMaster() || currentUser.editor_recetas || currentUser.admin_recetas,
+    visible: () => isMaster() || isAdmin() || currentUser.editor_recetas,
     action: () => alert('Módulo "Mis recetas" - próximamente.')
   },
   {
@@ -258,7 +258,7 @@ const MODULES = [
     color: '#378ADD',
     title: 'Mis pedidos',
     desc: 'Requerimientos y stock',
-    visible: () => isMaster() || currentUser.editor_pedidos || currentUser.admin_pedidos,
+    visible: () => isMaster() || isAdmin() || currentUser.editor_pedidos,
     action: () => alert('Módulo "Mis pedidos" - próximamente.')
   },
   {
@@ -1435,9 +1435,7 @@ const PERMISOS_DEF = [
   { key: 'editor_propinas',   label: 'Propinas',      icon: 'ti-cash',           tipo: 'editor' },
   { key: 'editor_biblioteca', label: 'Biblioteca',    icon: 'ti-books',          tipo: 'editor' },
   { key: 'editor_recetas',    label: 'Recetas',       icon: 'ti-chef-hat',       tipo: 'editor' },
-  { key: 'admin_recetas',     label: 'Admin Recetas', icon: 'ti-shield',         tipo: 'admin' },
-  { key: 'editor_pedidos',    label: 'Pedidos',       icon: 'ti-shopping-cart',  tipo: 'editor' },
-  { key: 'admin_pedidos',     label: 'Admin Pedidos', icon: 'ti-shield',         tipo: 'admin' }
+  { key: 'editor_pedidos',    label: 'Pedidos',       icon: 'ti-shopping-cart',  tipo: 'editor' }
 ];
 
 async function openAdminEditores() {
