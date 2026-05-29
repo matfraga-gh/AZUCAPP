@@ -240,8 +240,8 @@ const MODULES = [
     color: '#5DCAA5',
     title: 'Mi biblioteca',
     desc: 'Capacitación y recursos',
-    visible: () => true,
-    action: () => alert('Módulo "Mi biblioteca" - próximamente.')
+    visible: () => isMaster() || isAdmin() || (currentUser.locales_asignados && currentUser.locales_asignados.length > 0),
+    action: () => openMiBiblioteca()
   },
   {
     id: 'recetas',
@@ -1697,6 +1697,554 @@ async function init() {
     }
   }, 60000);
 }
+
+// ============================================
+// MÓDULO: BIBLIOTECA
+// ============================================
+
+let BIB_CATEGORIAS = [];     // cache de categorías
+let BIB_CONTENIDOS = [];     // cache de contenidos visibles
+let BIB_FILTRO_CAT = null;   // null = "Todas", o id de categoría
+let BIB_EDITANDO_CONT = null; // contenido que se está editando (o null = nuevo)
+let BIB_EDITANDO_CAT = null;  // categoría que se está editando (o null = nueva)
+let BIB_TIPO_SEL = 'pdf';    // tipo seleccionado en modal
+let BIB_LOCALES_SEL = [];    // locales seleccionados en modal
+let BIB_ICONO_SEL = 'ti-folder'; // ícono seleccionado en modal categoría
+
+// Definición de tipos de contenido
+const BIB_TIPOS = [
+  { key: 'pdf',   label: 'PDF',   icon: 'ti-file-text',        cls: 'bib-icon-pdf' },
+  { key: 'doc',   label: 'Doc',   icon: 'ti-file-description', cls: 'bib-icon-doc' },
+  { key: 'video', label: 'Video', icon: 'ti-brand-youtube',    cls: 'bib-icon-video' },
+  { key: 'audio', label: 'Audio', icon: 'ti-brand-spotify',    cls: 'bib-icon-audio' }
+];
+
+// Íconos disponibles para categorías
+const BIB_ICONOS_CAT = [
+  'ti-folder', 'ti-building-bank', 'ti-school', 'ti-clipboard-list',
+  'ti-shield', 'ti-sparkles', 'ti-chef-hat', 'ti-tools',
+  'ti-heart', 'ti-flame', 'ti-bell', 'ti-bookmark',
+  'ti-star', 'ti-bulb', 'ti-trophy', 'ti-coffee',
+  'ti-map', 'ti-camera', 'ti-music', 'ti-message',
+  'ti-calendar', 'ti-target', 'ti-rocket', 'ti-leaf'
+];
+
+// ¿Puede el usuario administrar la biblioteca?
+function puedeAdminBib() {
+  return isMaster() || isAdmin() || currentUser.editor_biblioteca === true;
+}
+
+// ¿Puede gestionar categorías y borrar? (solo Admin/Master)
+function puedeAdminBibCat() {
+  return isMaster() || isAdmin();
+}
+
+// Locales del usuario actual (o todos si es master/admin)
+function localesUsuarioActual() {
+  if (isMaster() || isAdmin()) return LOCALES_DISPONIBLES.slice();
+  return currentUser.locales_asignados || [];
+}
+
+// ============================================
+// VISTA USUARIO: Mi Biblioteca
+// ============================================
+async function openMiBiblioteca() {
+  showView('vBiblioteca');
+  const cont = document.getElementById('bibContenido');
+  const chips = document.getElementById('bibChips');
+  cont.innerHTML = '<div class="loading">Cargando biblioteca...</div>';
+  chips.innerHTML = '';
+
+  // Botón "Administrar" solo para quienes pueden
+  const btnAdmin = document.getElementById('btnAdminBib');
+  btnAdmin.style.display = puedeAdminBib() ? 'inline-flex' : 'none';
+
+  // Cargar categorías y contenidos en paralelo
+  try {
+    const [cats, conts] = await Promise.all([
+      api('biblioteca_categorias?activo=eq.true&order=orden.asc'),
+      api('biblioteca_contenidos?activo=eq.true&order=creado_en.desc')
+    ]);
+    BIB_CATEGORIAS = cats || [];
+    BIB_CONTENIDOS = conts || [];
+  } catch (e) {
+    cont.innerHTML = '<div class="loading" style="color:var(--c-error)">Error al cargar biblioteca</div>';
+    return;
+  }
+
+  // Filtrar contenidos por locales del usuario
+  const localesUser = localesUsuarioActual();
+  const visibles = BIB_CONTENIDOS.filter(c => {
+    if (isMaster() || isAdmin()) return true;
+    if (!c.locales || c.locales.length === 0) return false;
+    return c.locales.some(loc => localesUser.includes(loc));
+  });
+
+  // Render chips de categorías
+  renderBibChips(visibles);
+  renderBibContenidos(visibles);
+}
+
+function renderBibChips(visibles) {
+  const chips = document.getElementById('bibChips');
+  // Solo mostrar categorías que tengan al menos un contenido visible
+  const catsConContenido = BIB_CATEGORIAS.filter(cat =>
+    visibles.some(c => c.categoria_id === cat.id)
+  );
+
+  let html = `<button class="bib-chip ${BIB_FILTRO_CAT === null ? 'active' : ''}" onclick="filtrarBibCat(null)">Todas</button>`;
+  catsConContenido.forEach(cat => {
+    html += `<button class="bib-chip ${BIB_FILTRO_CAT === cat.id ? 'active' : ''}" onclick="filtrarBibCat(${cat.id})">
+      <i class="ti ${esc(cat.icono || 'ti-folder')}"></i>${esc(cat.nombre)}
+    </button>`;
+  });
+  chips.innerHTML = html;
+}
+
+function filtrarBibCat(catId) {
+  BIB_FILTRO_CAT = catId;
+  // Re-render con filtro aplicado
+  const localesUser = localesUsuarioActual();
+  const visibles = BIB_CONTENIDOS.filter(c => {
+    if (isMaster() || isAdmin()) return true;
+    if (!c.locales || c.locales.length === 0) return false;
+    return c.locales.some(loc => localesUser.includes(loc));
+  });
+  renderBibChips(visibles);
+  renderBibContenidos(visibles);
+}
+
+function renderBibContenidos(visibles) {
+  const cont = document.getElementById('bibContenido');
+  const filtrados = BIB_FILTRO_CAT === null
+    ? visibles
+    : visibles.filter(c => c.categoria_id === BIB_FILTRO_CAT);
+
+  if (filtrados.length === 0) {
+    cont.innerHTML = `
+      <div class="bib-empty">
+        <i class="ti ti-books-off"></i>
+        <div class="bib-empty-title">No hay contenido disponible</div>
+        <div class="bib-empty-desc">${BIB_FILTRO_CAT === null
+          ? 'Cuando se cargue material, aparecerá acá.'
+          : 'No hay material en esta categoría para tus locales.'}</div>
+      </div>`;
+    return;
+  }
+
+  let html = '<div class="bib-grid">';
+  filtrados.forEach(c => {
+    const tipo = BIB_TIPOS.find(t => t.key === c.tipo) || BIB_TIPOS[0];
+    const cat = BIB_CATEGORIAS.find(k => k.id === c.categoria_id);
+    html += `
+      <a class="bib-card" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">
+        <div class="bib-card-top">
+          <div class="bib-card-icon ${tipo.cls}"><i class="ti ${tipo.icon}"></i></div>
+          <span class="bib-card-tipo">${tipo.label}</span>
+        </div>
+        <div class="bib-card-titulo">${esc(c.titulo)}</div>
+        <div class="bib-card-cat">
+          <i class="ti ${esc(cat ? cat.icono : 'ti-folder')}"></i>
+          ${esc(cat ? cat.nombre : 'Sin categoría')}
+        </div>
+      </a>`;
+  });
+  html += '</div>';
+  cont.innerHTML = html;
+}
+
+// ============================================
+// VISTA ADMIN: Administrar Biblioteca
+// ============================================
+async function openAdminBiblioteca() {
+  if (!puedeAdminBib()) {
+    toast('No tenés permiso', 'error');
+    return;
+  }
+  showView('vAdminBiblioteca');
+
+  // Tab de categorías solo visible para Admin/Master
+  document.getElementById('bibTabCategorias').style.display =
+    puedeAdminBibCat() ? 'inline-flex' : 'none';
+
+  // Subtítulo según rol
+  document.getElementById('adminBibSubtitle').textContent =
+    puedeAdminBibCat() ? 'Gestión de contenidos y categorías' : 'Gestión de contenidos';
+
+  // Mostrar tab contenidos por defecto
+  switchBibTab('contenidos');
+
+  // Cargar datos
+  await recargarBibAdmin();
+}
+
+async function recargarBibAdmin() {
+  try {
+    const [cats, conts] = await Promise.all([
+      api('biblioteca_categorias?activo=eq.true&order=orden.asc'),
+      api('biblioteca_contenidos?activo=eq.true&order=creado_en.desc')
+    ]);
+    BIB_CATEGORIAS = cats || [];
+    BIB_CONTENIDOS = conts || [];
+  } catch (e) {
+    toast('Error al cargar datos', 'error');
+    return;
+  }
+  renderBibAdminLista();
+  renderBibAdminCategorias();
+}
+
+function switchBibTab(tab) {
+  const tabCont = document.getElementById('bibTabContenidos');
+  const tabCat  = document.getElementById('bibTabCategorias');
+  const panCont = document.getElementById('bibPanelContenidos');
+  const panCat  = document.getElementById('bibPanelCategorias');
+
+  if (tab === 'contenidos') {
+    tabCont.classList.add('active');
+    tabCat.classList.remove('active');
+    panCont.style.display = 'block';
+    panCat.style.display = 'none';
+  } else {
+    tabCont.classList.remove('active');
+    tabCat.classList.add('active');
+    panCont.style.display = 'none';
+    panCat.style.display = 'block';
+  }
+}
+
+function renderBibAdminLista() {
+  const cont = document.getElementById('bibAdminLista');
+  if (BIB_CONTENIDOS.length === 0) {
+    cont.innerHTML = `
+      <div class="bib-empty">
+        <i class="ti ti-files-off"></i>
+        <div class="bib-empty-title">No hay contenidos cargados</div>
+        <div class="bib-empty-desc">Tocá "Agregar contenido" para sumar el primero.</div>
+      </div>`;
+    return;
+  }
+
+  let html = '';
+  BIB_CONTENIDOS.forEach(c => {
+    const tipo = BIB_TIPOS.find(t => t.key === c.tipo) || BIB_TIPOS[0];
+    const cat = BIB_CATEGORIAS.find(k => k.id === c.categoria_id);
+    const locTxt = (!c.locales || c.locales.length === 0)
+      ? 'Sin locales'
+      : (c.locales.length === LOCALES_DISPONIBLES.length
+          ? 'Todos los locales'
+          : c.locales.length + ' local' + (c.locales.length > 1 ? 'es' : ''));
+
+    const btnDelete = puedeAdminBibCat()
+      ? `<button class="bib-btn-delete" onclick="borrarContenido(${c.id})" title="Borrar"><i class="ti ti-trash"></i></button>`
+      : '';
+
+    html += `
+      <div class="bib-admin-item">
+        <div class="bib-admin-item-icon ${tipo.cls}"><i class="ti ${tipo.icon}"></i></div>
+        <div class="bib-admin-item-info">
+          <div class="bib-admin-item-titulo">${esc(c.titulo)}</div>
+          <div class="bib-admin-item-meta">${esc(cat ? cat.nombre : 'Sin categoría')} · ${locTxt}</div>
+        </div>
+        <div class="bib-admin-item-actions">
+          <button class="bib-btn-edit" onclick="openModalContenido(${c.id})" title="Editar"><i class="ti ti-edit"></i></button>
+          ${btnDelete}
+        </div>
+      </div>`;
+  });
+  cont.innerHTML = html;
+}
+
+function renderBibAdminCategorias() {
+  const cont = document.getElementById('bibAdminCategorias');
+  if (BIB_CATEGORIAS.length === 0) {
+    cont.innerHTML = `
+      <div class="bib-empty">
+        <i class="ti ti-folder-off"></i>
+        <div class="bib-empty-title">No hay categorías</div>
+        <div class="bib-empty-desc">Creá la primera categoría para empezar a organizar el contenido.</div>
+      </div>`;
+    return;
+  }
+
+  let html = '';
+  BIB_CATEGORIAS.forEach(cat => {
+    const count = BIB_CONTENIDOS.filter(c => c.categoria_id === cat.id).length;
+    html += `
+      <div class="bib-cat-item">
+        <div class="bib-cat-icon-box"><i class="ti ${esc(cat.icono || 'ti-folder')}"></i></div>
+        <div class="bib-cat-nombre">${esc(cat.nombre)}</div>
+        <div class="bib-cat-count">${count} contenido${count !== 1 ? 's' : ''}</div>
+        <div class="bib-admin-item-actions">
+          <button class="bib-btn-edit" onclick="openModalCategoria(${cat.id})" title="Editar"><i class="ti ti-edit"></i></button>
+          <button class="bib-btn-delete" onclick="borrarCategoria(${cat.id})" title="Borrar"><i class="ti ti-trash"></i></button>
+        </div>
+      </div>`;
+  });
+  cont.innerHTML = html;
+}
+
+// ============================================
+// MODAL: AGREGAR / EDITAR CONTENIDO
+// ============================================
+function openModalContenido(contId) {
+  BIB_EDITANDO_CONT = contId;
+  const c = contId ? BIB_CONTENIDOS.find(x => x.id === contId) : null;
+
+  document.getElementById('modalContenidoTitle').textContent = c ? 'Editar contenido' : 'Nuevo contenido';
+  document.getElementById('contTitulo').value = c ? c.titulo : '';
+  document.getElementById('contUrl').value = c ? c.url : '';
+
+  // Categorías
+  const selectCat = document.getElementById('contCategoria');
+  selectCat.innerHTML = BIB_CATEGORIAS.map(cat =>
+    `<option value="${cat.id}">${esc(cat.nombre)}</option>`
+  ).join('');
+  if (c) selectCat.value = c.categoria_id;
+  else if (BIB_CATEGORIAS.length) selectCat.value = BIB_CATEGORIAS[0].id;
+
+  // Tipo
+  BIB_TIPO_SEL = c ? c.tipo : 'pdf';
+  renderTipoGrid();
+  actualizarHintUrl();
+
+  // Locales
+  BIB_LOCALES_SEL = c && c.locales ? c.locales.slice() : [];
+  renderLocalesChips();
+
+  document.getElementById('modalContenido').style.display = 'flex';
+}
+
+function closeModalContenido() {
+  document.getElementById('modalContenido').style.display = 'none';
+  BIB_EDITANDO_CONT = null;
+}
+
+function renderTipoGrid() {
+  const cont = document.getElementById('contTipoGrid');
+  cont.innerHTML = BIB_TIPOS.map(t => `
+    <button class="tipo-btn ${BIB_TIPO_SEL === t.key ? 'active' : ''}" onclick="selectTipo('${t.key}')">
+      <i class="ti ${t.icon}"></i>${t.label}
+    </button>
+  `).join('');
+}
+
+function selectTipo(key) {
+  BIB_TIPO_SEL = key;
+  renderTipoGrid();
+  actualizarHintUrl();
+}
+
+function actualizarHintUrl() {
+  const hint = document.getElementById('contUrlHint');
+  const placeholders = {
+    pdf:   'Ej: link de Google Drive, Dropbox o cualquier PDF online',
+    doc:   'Ej: link de Google Docs, Word online o similar',
+    video: 'Ej: link de YouTube o Vimeo',
+    audio: 'Ej: link de Spotify, Apple Podcasts, etc.'
+  };
+  hint.textContent = placeholders[BIB_TIPO_SEL] || 'Pegá el link completo';
+}
+
+function renderLocalesChips() {
+  const cont = document.getElementById('contLocales');
+  cont.innerHTML = LOCALES_DISPONIBLES.map(loc => {
+    const activo = BIB_LOCALES_SEL.includes(loc);
+    return `<button class="loc-chip ${activo ? 'active' : ''}" onclick="toggleLocalChip('${loc}')">
+      ${activo ? '<i class="ti ti-check"></i>' : ''}${esc(LOCAL_LABELS[loc] || loc)}
+    </button>`;
+  }).join('');
+}
+
+function toggleLocalChip(loc) {
+  const idx = BIB_LOCALES_SEL.indexOf(loc);
+  if (idx >= 0) BIB_LOCALES_SEL.splice(idx, 1);
+  else BIB_LOCALES_SEL.push(loc);
+  renderLocalesChips();
+}
+
+async function guardarContenido() {
+  const titulo = document.getElementById('contTitulo').value.trim();
+  const url = document.getElementById('contUrl').value.trim();
+  const categoria_id = parseInt(document.getElementById('contCategoria').value, 10);
+
+  if (!titulo) { toast('Falta el título', 'error'); return; }
+  if (!url) { toast('Falta el link', 'error'); return; }
+  if (!/^https?:\/\//i.test(url)) { toast('El link debe empezar con http:// o https://', 'error'); return; }
+  if (!categoria_id) { toast('Elegí una categoría', 'error'); return; }
+  if (BIB_LOCALES_SEL.length === 0) { toast('Elegí al menos un local', 'error'); return; }
+
+  const btn = document.getElementById('btnGuardarContenido');
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  const body = {
+    titulo,
+    categoria_id,
+    tipo: BIB_TIPO_SEL,
+    url,
+    locales: BIB_LOCALES_SEL,
+    actualizado_en: new Date().toISOString()
+  };
+
+  try {
+    if (BIB_EDITANDO_CONT) {
+      // UPDATE
+      await api(`biblioteca_contenidos?id=eq.${BIB_EDITANDO_CONT}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body)
+      });
+      toast('Contenido actualizado');
+    } else {
+      // INSERT
+      body.creado_por = currentUser.id;
+      await api('biblioteca_contenidos', {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
+      toast('Contenido agregado');
+    }
+    closeModalContenido();
+    await recargarBibAdmin();
+  } catch (e) {
+    toast('Error al guardar', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Guardar';
+  }
+}
+
+async function borrarContenido(id) {
+  const c = BIB_CONTENIDOS.find(x => x.id === id);
+  if (!c) return;
+  if (!confirm(`¿Borrar "${c.titulo}"?\n\nNo se puede deshacer.`)) return;
+
+  try {
+    // Soft delete
+    await api(`biblioteca_contenidos?id=eq.${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ activo: false, actualizado_en: new Date().toISOString() })
+    });
+    toast('Contenido borrado');
+    await recargarBibAdmin();
+  } catch (e) {
+    toast('Error al borrar', 'error');
+  }
+}
+
+// ============================================
+// MODAL: AGREGAR / EDITAR CATEGORÍA
+// ============================================
+function openModalCategoria(catId) {
+  if (!puedeAdminBibCat()) return;
+  BIB_EDITANDO_CAT = catId;
+  const c = catId ? BIB_CATEGORIAS.find(x => x.id === catId) : null;
+
+  document.getElementById('modalCategoriaTitle').textContent = c ? 'Editar categoría' : 'Nueva categoría';
+  document.getElementById('catNombre').value = c ? c.nombre : '';
+
+  BIB_ICONO_SEL = c ? (c.icono || 'ti-folder') : 'ti-folder';
+  renderIconPicker();
+
+  document.getElementById('modalCategoria').style.display = 'flex';
+}
+
+function closeModalCategoria() {
+  document.getElementById('modalCategoria').style.display = 'none';
+  BIB_EDITANDO_CAT = null;
+}
+
+function renderIconPicker() {
+  const cont = document.getElementById('catIconPicker');
+  cont.innerHTML = BIB_ICONOS_CAT.map(ic => `
+    <div class="icon-opt ${BIB_ICONO_SEL === ic ? 'active' : ''}" onclick="selectIcono('${ic}')">
+      <i class="ti ${ic}"></i>
+    </div>
+  `).join('');
+}
+
+function selectIcono(ic) {
+  BIB_ICONO_SEL = ic;
+  renderIconPicker();
+}
+
+async function guardarCategoria() {
+  const nombre = document.getElementById('catNombre').value.trim();
+  if (!nombre) { toast('Falta el nombre', 'error'); return; }
+
+  const btn = document.getElementById('btnGuardarCategoria');
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  const body = { nombre, icono: BIB_ICONO_SEL };
+
+  try {
+    if (BIB_EDITANDO_CAT) {
+      await api(`biblioteca_categorias?id=eq.${BIB_EDITANDO_CAT}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body)
+      });
+      toast('Categoría actualizada');
+    } else {
+      // Orden = el siguiente al máximo actual
+      const maxOrden = BIB_CATEGORIAS.reduce((m, c) => Math.max(m, c.orden || 0), 0);
+      body.orden = maxOrden + 1;
+      await api('biblioteca_categorias', {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
+      toast('Categoría creada');
+    }
+    closeModalCategoria();
+    await recargarBibAdmin();
+  } catch (e) {
+    toast('Error al guardar', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Guardar';
+  }
+}
+
+async function borrarCategoria(id) {
+  const cat = BIB_CATEGORIAS.find(c => c.id === id);
+  if (!cat) return;
+
+  const contCount = BIB_CONTENIDOS.filter(c => c.categoria_id === id).length;
+  if (contCount > 0) {
+    alert(`No se puede borrar la categoría "${cat.nombre}" porque tiene ${contCount} contenido(s) asignado(s).\n\nMové o borrá esos contenidos primero.`);
+    return;
+  }
+
+  if (!confirm(`¿Borrar la categoría "${cat.nombre}"?\n\nNo se puede deshacer.`)) return;
+
+  try {
+    await api(`biblioteca_categorias?id=eq.${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ activo: false })
+    });
+    toast('Categoría borrada');
+    await recargarBibAdmin();
+  } catch (e) {
+    toast('Error al borrar', 'error');
+  }
+}
+
+// Exponer funciones globalmente (para onclick desde HTML)
+window.openMiBiblioteca = openMiBiblioteca;
+window.openAdminBiblioteca = openAdminBiblioteca;
+window.filtrarBibCat = filtrarBibCat;
+window.switchBibTab = switchBibTab;
+window.openModalContenido = openModalContenido;
+window.closeModalContenido = closeModalContenido;
+window.selectTipo = selectTipo;
+window.toggleLocalChip = toggleLocalChip;
+window.guardarContenido = guardarContenido;
+window.borrarContenido = borrarContenido;
+window.openModalCategoria = openModalCategoria;
+window.closeModalCategoria = closeModalCategoria;
+window.selectIcono = selectIcono;
+window.guardarCategoria = guardarCategoria;
+window.borrarCategoria = borrarCategoria;
 
 init();
 

@@ -500,6 +500,160 @@
   </div>
 </div>
 
+<!-- ============================================
+     VISTA: MI BIBLIOTECA (usuario común)
+============================================ -->
+<div id="vBiblioteca" class="view">
+  <div class="module-wrap">
+
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver">
+        <i class="ti ti-arrow-left"></i>
+      </button>
+      <div class="module-title-block">
+        <div class="module-title">Mi Biblioteca</div>
+        <div class="module-subtitle">Material de capacitación, procedimientos y novedades</div>
+      </div>
+      <button class="btn-admin-bib" id="btnAdminBib" onclick="openAdminBiblioteca()" style="display:none">
+        <i class="ti ti-settings"></i> Administrar
+      </button>
+    </div>
+
+    <div id="bibChips" class="bib-chips"></div>
+
+    <div id="bibContenido">
+      <div class="loading">Cargando biblioteca...</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================================
+     VISTA: ADMINISTRAR BIBLIOTECA
+============================================ -->
+<div id="vAdminBiblioteca" class="view">
+  <div class="module-wrap">
+
+    <div class="module-header">
+      <button class="btn-back" onclick="openMiBiblioteca()" aria-label="Volver">
+        <i class="ti ti-arrow-left"></i>
+      </button>
+      <div class="module-title-block">
+        <div class="module-title">Administrar Biblioteca</div>
+        <div class="module-subtitle" id="adminBibSubtitle">Gestión de contenidos</div>
+      </div>
+    </div>
+
+    <div class="bib-tabs">
+      <button class="bib-tab active" id="bibTabContenidos" onclick="switchBibTab('contenidos')">
+        <i class="ti ti-files"></i> Contenidos
+      </button>
+      <button class="bib-tab" id="bibTabCategorias" onclick="switchBibTab('categorias')" style="display:none">
+        <i class="ti ti-folders"></i> Categorías
+      </button>
+    </div>
+
+    <!-- Tab contenidos -->
+    <div id="bibPanelContenidos">
+      <button class="btn-primary-full" onclick="openModalContenido(null)">
+        <i class="ti ti-plus"></i> Agregar contenido
+      </button>
+      <div id="bibAdminLista">
+        <div class="loading">Cargando contenidos...</div>
+      </div>
+    </div>
+
+    <!-- Tab categorías -->
+    <div id="bibPanelCategorias" style="display:none">
+      <button class="btn-primary-full" onclick="openModalCategoria(null)">
+        <i class="ti ti-plus"></i> Nueva categoría
+      </button>
+      <div id="bibAdminCategorias">
+        <div class="loading">Cargando categorías...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: AGREGAR / EDITAR CONTENIDO
+============================================ -->
+<div id="modalContenido" class="modal-overlay" style="display:none">
+  <div class="modal-card modal-bib">
+    <div class="modal-header">
+      <div class="modal-title" id="modalContenidoTitle">Nuevo contenido</div>
+      <button class="modal-close" onclick="closeModalContenido()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Título</label>
+        <input type="text" id="contTitulo" class="form-input" placeholder="Ej: Manual de uniforme 2026" maxlength="120">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Categoría</label>
+        <select id="contCategoria" class="form-input"></select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Tipo de contenido</label>
+        <div class="tipo-grid" id="contTipoGrid"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Link (URL)</label>
+        <input type="url" id="contUrl" class="form-input" placeholder="https://...">
+        <div class="form-hint" id="contUrlHint">Pegá el link completo (Drive, Dropbox, YouTube, Spotify, etc.)</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Locales que pueden verlo</label>
+        <div class="locales-chips" id="contLocales"></div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModalContenido()">Cancelar</button>
+      <button class="btn-primary" id="btnGuardarContenido" onclick="guardarContenido()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: AGREGAR / EDITAR CATEGORÍA
+============================================ -->
+<div id="modalCategoria" class="modal-overlay" style="display:none">
+  <div class="modal-card modal-bib-cat">
+    <div class="modal-header">
+      <div class="modal-title" id="modalCategoriaTitle">Nueva categoría</div>
+      <button class="modal-close" onclick="closeModalCategoria()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Nombre</label>
+        <input type="text" id="catNombre" class="form-input" placeholder="Ej: Marketing" maxlength="60">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Ícono</label>
+        <div class="icon-picker" id="catIconPicker"></div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModalCategoria()">Cancelar</button>
+      <button class="btn-primary" id="btnGuardarCategoria" onclick="guardarCategoria()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="app.js"></script>
