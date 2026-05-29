@@ -725,6 +725,23 @@
   </div>
 </div>
 
+<!-- ============================================
+     MODAL: CONFIRMACIÓN / ALERTA UNIVERSAL
+============================================ -->
+<div id="modalConfirm" class="modal-overlay" style="display:none">
+  <div class="modal-card modal-confirm" data-prevent-close>
+    <div class="modal-confirm-icon" id="confirmIcon">
+      <i class="ti ti-alert-circle"></i>
+    </div>
+    <div class="modal-confirm-title" id="confirmTitle">¿Estás seguro?</div>
+    <div class="modal-confirm-msg" id="confirmMsg"></div>
+    <div class="modal-confirm-actions" id="confirmActions">
+      <button class="btn-ghost" id="confirmBtnCancel" onclick="closeConfirm(false)">Cancelar</button>
+      <button class="btn-primary" id="confirmBtnOk" onclick="closeConfirm(true)">Confirmar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="app.js"></script>

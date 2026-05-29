@@ -237,15 +237,168 @@ function formatNumber(n) {
 // TOAST
 // ============================================
 let toastTimeout = null;
-function toast(msg, kind = '') {
+const TOAST_ICONS = {
+  success: 'ti-circle-check',
+  error: 'ti-alert-circle',
+  warning: 'ti-alert-triangle',
+  '': 'ti-info-circle'
+};
+function toast(msg, kind = 'success') {
   const el = document.getElementById('toast');
-  el.className = 'toast show ' + kind;
-  el.textContent = msg;
+  // Si no se pasa kind, asumimos success (es lo más común al guardar)
+  const k = kind || 'success';
+  const icon = TOAST_ICONS[k] || TOAST_ICONS.success;
+  el.className = 'toast show ' + k;
+  el.innerHTML = `<i class="ti ${icon}"></i><span>${esc(msg)}</span>`;
   if (toastTimeout) clearTimeout(toastTimeout);
+  // Toasts de error duran más para que se alcancen a leer
+  const duracion = k === 'error' ? 4500 : 3200;
   toastTimeout = setTimeout(() => {
     el.className = 'toast';
-  }, 2800);
+  }, duracion);
 }
+
+// ============================================
+// MODAL DE CONFIRMACIÓN / ALERTA UNIVERSAL
+// ============================================
+let _confirmResolve = null;
+
+/**
+ * showConfirm(opciones) - muestra un modal de confirmación.
+ * Devuelve una Promise<boolean>: true si confirma, false si cancela.
+ * opciones: { title, msg, type, okLabel, cancelLabel, danger }
+ *   - type: 'warning' (default), 'danger', 'info', 'success'
+ *   - danger: si true, el botón OK se pinta rojo
+ */
+function showConfirm(opciones = {}) {
+  return new Promise((resolve) => {
+    _confirmResolve = resolve;
+    const {
+      title = '¿Estás seguro?',
+      msg = '',
+      type = 'warning',
+      okLabel = 'Confirmar',
+      cancelLabel = 'Cancelar',
+      danger = false
+    } = opciones;
+
+    const iconBox = document.getElementById('confirmIcon');
+    const iconI = iconBox.querySelector('i');
+    iconBox.className = 'modal-confirm-icon ' + (type === 'warning' ? '' : type);
+
+    const ICONS = {
+      warning: 'ti-alert-triangle',
+      danger:  'ti-alert-octagon',
+      info:    'ti-info-circle',
+      success: 'ti-circle-check'
+    };
+    iconI.className = 'ti ' + (ICONS[type] || ICONS.warning);
+
+    document.getElementById('confirmTitle').textContent = title;
+    document.getElementById('confirmMsg').textContent = msg;
+
+    const btnOk = document.getElementById('confirmBtnOk');
+    const btnCancel = document.getElementById('confirmBtnCancel');
+    btnOk.textContent = okLabel;
+    btnCancel.textContent = cancelLabel;
+    btnOk.className = danger ? 'btn-danger' : 'btn-primary';
+
+    document.getElementById('modalConfirm').style.display = 'flex';
+  });
+}
+
+/**
+ * showAlert(opciones) - como showConfirm pero solo botón OK (informativo).
+ * opciones: { title, msg, type, okLabel }
+ */
+function showAlert(opciones = {}) {
+  return new Promise((resolve) => {
+    _confirmResolve = resolve;
+    const {
+      title = 'Atención',
+      msg = '',
+      type = 'info',
+      okLabel = 'Entendido'
+    } = opciones;
+
+    const iconBox = document.getElementById('confirmIcon');
+    const iconI = iconBox.querySelector('i');
+    iconBox.className = 'modal-confirm-icon ' + (type === 'warning' ? '' : type);
+
+    const ICONS = {
+      warning: 'ti-alert-triangle',
+      danger:  'ti-alert-octagon',
+      info:    'ti-info-circle',
+      success: 'ti-circle-check'
+    };
+    iconI.className = 'ti ' + (ICONS[type] || ICONS.info);
+
+    document.getElementById('confirmTitle').textContent = title;
+    document.getElementById('confirmMsg').textContent = msg;
+
+    // Ocultar botón cancelar, dejar solo OK
+    document.getElementById('confirmBtnCancel').style.display = 'none';
+    const btnOk = document.getElementById('confirmBtnOk');
+    btnOk.textContent = okLabel;
+    btnOk.className = 'btn-primary';
+
+    document.getElementById('modalConfirm').style.display = 'flex';
+  });
+}
+
+function closeConfirm(result) {
+  document.getElementById('modalConfirm').style.display = 'none';
+  // Restaurar botón cancelar para próximas confirmaciones
+  document.getElementById('confirmBtnCancel').style.display = '';
+  if (_confirmResolve) {
+    const r = _confirmResolve;
+    _confirmResolve = null;
+    r(result);
+  }
+}
+
+// ============================================
+// CIERRE UNIFICADO DE MODALES
+// (click afuera + tecla Escape)
+// ============================================
+document.addEventListener('click', (e) => {
+  // Si el click es directamente sobre el overlay (no en el contenido), cerrarlo
+  if (e.target.classList && e.target.classList.contains('modal-overlay')) {
+    const card = e.target.querySelector('.modal-card');
+    if (card && card.hasAttribute('data-prevent-close')) return;
+    e.target.style.display = 'none';
+    // Si era el modal de confirmación, resolver como cancelar
+    if (e.target.id === 'modalConfirm' && _confirmResolve) {
+      const r = _confirmResolve;
+      _confirmResolve = null;
+      r(false);
+    }
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    // Buscar el modal abierto más reciente y cerrarlo
+    const modales = document.querySelectorAll('.modal-overlay');
+    for (let i = modales.length - 1; i >= 0; i--) {
+      const m = modales[i];
+      if (m.style.display === 'flex') {
+        m.style.display = 'none';
+        if (m.id === 'modalConfirm' && _confirmResolve) {
+          const r = _confirmResolve;
+          _confirmResolve = null;
+          r(false);
+        }
+        break;
+      }
+    }
+  }
+});
+
+// Exponer al window
+window.closeConfirm = closeConfirm;
+window.showConfirm = showConfirm;
+window.showAlert = showAlert;
 
 // ============================================
 // MÓDULOS DEL DASHBOARD
@@ -285,7 +438,7 @@ const MODULES = [
     title: 'Mis recetas',
     desc: 'Recetas y menús del local',
     visible: () => isMaster() || isAdmin() || currentUser.editor_recetas,
-    action: () => alert('Módulo "Mis recetas" - próximamente.')
+    action: () => toast('Módulo "Mis recetas" - próximamente', 'warning')
   },
   {
     id: 'pedidos',
@@ -294,7 +447,7 @@ const MODULES = [
     title: 'Mis pedidos',
     desc: 'Requerimientos y stock',
     visible: () => isMaster() || isAdmin() || currentUser.editor_pedidos,
-    action: () => alert('Módulo "Mis pedidos" - próximamente.')
+    action: () => toast('Módulo "Mis pedidos" - próximamente', 'warning')
   },
   {
     id: 'admin',
@@ -1440,12 +1593,25 @@ window.toggleActivoUser = async function(id) {
 
   // Aviso especial si se está por desactivar a un Master
   if (u.activo && u.perfil === 'master') {
-    if (!confirm(`⚠️ ATENCIÓN: estás por desactivar a un Master (${u.nombre}).\n\nSi te quedás sin Masters, NADIE va a poder crear nuevos Masters ni editar Locales.\n\n¿Estás 100% seguro?`)) {
-      return;
-    }
+    const ok = await showConfirm({
+      title: 'Desactivar a un Master',
+      msg: `Estás por desactivar a un Master (${u.nombre}).\n\nSi te quedás sin Masters, NADIE va a poder crear nuevos Masters ni editar Locales.\n\n¿Seguro que querés continuar?`,
+      type: 'danger',
+      danger: true,
+      okLabel: 'Sí, desactivar',
+      cancelLabel: 'Cancelar'
+    });
+    if (!ok) return;
   } else {
     const accion = u.activo ? 'desactivar' : 'activar';
-    if (!confirm(`¿${accion.charAt(0).toUpperCase() + accion.slice(1)} a ${u.nombre || u.usuario}?`)) return;
+    const ok = await showConfirm({
+      title: `¿${accion.charAt(0).toUpperCase() + accion.slice(1)} usuario?`,
+      msg: `Vas a ${accion} a ${u.nombre || u.usuario}.`,
+      type: u.activo ? 'warning' : 'info',
+      okLabel: u.activo ? 'Desactivar' : 'Activar',
+      danger: u.activo
+    });
+    if (!ok) return;
   }
 
   try {
@@ -1660,8 +1826,15 @@ window.guardarLocales = async function() {
 // ============================================
 // LOGOUT
 // ============================================
-window.doLogout = function() {
-  if (!confirm('¿Cerrar sesión?')) return;
+window.doLogout = async function() {
+  const ok = await showConfirm({
+    title: '¿Cerrar sesión?',
+    msg: 'Vas a salir de AZUCAPP. Tendrás que volver a iniciar sesión.',
+    type: 'info',
+    okLabel: 'Cerrar sesión',
+    cancelLabel: 'Cancelar'
+  });
+  if (!ok) return;
   clearSession();
   currentUser = null;
   currentEmpleado = null;
@@ -2166,7 +2339,15 @@ async function guardarContenido() {
 async function borrarContenido(id) {
   const c = BIB_CONTENIDOS.find(x => x.id === id);
   if (!c) return;
-  if (!confirm(`¿Borrar "${c.titulo}"?\n\nNo se puede deshacer.`)) return;
+  const ok = await showConfirm({
+    title: '¿Borrar contenido?',
+    msg: `Vas a eliminar "${c.titulo}".\n\nEsta acción no se puede deshacer.`,
+    type: 'danger',
+    danger: true,
+    okLabel: 'Borrar',
+    cancelLabel: 'Cancelar'
+  });
+  if (!ok) return;
 
   try {
     // Soft delete
@@ -2260,11 +2441,24 @@ async function borrarCategoria(id) {
 
   const contCount = BIB_CONTENIDOS.filter(c => c.categoria_id === id).length;
   if (contCount > 0) {
-    alert(`No se puede borrar la categoría "${cat.nombre}" porque tiene ${contCount} contenido(s) asignado(s).\n\nMové o borrá esos contenidos primero.`);
+    await showAlert({
+      title: 'No se puede borrar',
+      msg: `La categoría "${cat.nombre}" tiene ${contCount} contenido(s) asignado(s).\n\nMové o borrá esos contenidos primero.`,
+      type: 'warning',
+      okLabel: 'Entendido'
+    });
     return;
   }
 
-  if (!confirm(`¿Borrar la categoría "${cat.nombre}"?\n\nNo se puede deshacer.`)) return;
+  const ok = await showConfirm({
+    title: '¿Borrar categoría?',
+    msg: `Vas a eliminar la categoría "${cat.nombre}".\n\nEsta acción no se puede deshacer.`,
+    type: 'danger',
+    danger: true,
+    okLabel: 'Borrar',
+    cancelLabel: 'Cancelar'
+  });
+  if (!ok) return;
 
   try {
     await api(`biblioteca_categorias?id=eq.${id}`, {
