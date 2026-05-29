@@ -314,6 +314,80 @@
 </div>
 
 <!-- ============================================
+     VISTA: ADMINISTRACIÓN - Locales
+============================================ -->
+<div id="vAdminLocales" class="view">
+  <div class="module-wrap">
+
+    <div class="module-header">
+      <button class="btn-back" onclick="openAdministracion()" aria-label="Volver">
+        <i class="ti ti-arrow-left"></i>
+      </button>
+      <div class="module-title-block">
+        <div class="module-title">Locales</div>
+        <div class="module-subtitle" id="localesAdminCount">Cargando...</div>
+      </div>
+    </div>
+
+    <div class="info-banner" style="margin-top:0;margin-bottom:14px;">
+      <i class="ti ti-info-circle"></i>
+      <span>Editá el nombre visible de cada local. Los locales <strong>reservados</strong> aparecen ocultos hasta que los actives.</span>
+    </div>
+
+    <div id="localesAdminLista">
+      <div class="loading">Cargando locales...</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: EDITAR LOCAL
+============================================ -->
+<div id="modalLocal" class="modal-overlay" style="display:none">
+  <div class="modal-card modal-bib-cat">
+    <div class="modal-header">
+      <div class="modal-title">Editar local</div>
+      <button class="modal-close" onclick="closeModalLocal()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Identificador interno (slug)</label>
+        <input type="text" id="localSlug" class="form-input" disabled style="opacity:0.6">
+        <div class="form-hint">Este identificador no se puede cambiar. Es lo que la app usa internamente.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Nombre visible</label>
+        <input type="text" id="localNombre" class="form-input" placeholder="Ej: Azuca" maxlength="60">
+        <div class="form-hint">Lo que ve el usuario en toda la app.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Estado</label>
+        <div class="local-toggle">
+          <button class="local-toggle-btn" id="localToggleActivo" onclick="setLocalActivo(true)">
+            <i class="ti ti-eye"></i> Activo
+          </button>
+          <button class="local-toggle-btn" id="localToggleInactivo" onclick="setLocalActivo(false)">
+            <i class="ti ti-eye-off"></i> Oculto
+          </button>
+        </div>
+        <div class="form-hint" id="localEstadoHint">Cuando está activo, aparece en toda la app.</div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModalLocal()">Cancelar</button>
+      <button class="btn-primary" id="btnGuardarLocal" onclick="guardarLocal()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
      MODAL: EDITAR LOCALES DE UN EDITOR
 ============================================ -->
 <div class="modal-overlay" id="modalLocales">

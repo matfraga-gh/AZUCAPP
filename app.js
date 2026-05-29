@@ -15,14 +15,49 @@ const DIAS_CORTO = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const DIAS_LARGO = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const MESES_CORTO = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
-const LOCAL_LABELS = {
-  '1-AZUCA': 'Azuca',
-  '2-AZAFRAN': 'Azafrán',
-  '3-NIETO': 'Nieto Senetiner',
-  '4-VIÑA COBOS': 'Viña Cobos',
-  '5-TRAPICHE': 'Espacio Trapiche',
-  'VINOBIEN': 'Vinobien'
-};
+// Lista de locales - se carga dinámicamente desde la base al iniciar sesión
+// LOCALES_DB es el array completo de objetos {slug, nombre, orden, activo}
+// LOCAL_LABELS es un diccionario {slug: nombre_visible} que se construye a partir de LOCALES_DB
+let LOCALES_DB = [];
+let LOCAL_LABELS = {};
+
+// Helpers para acceder a los locales
+function getLocalesActivos() {
+  // Devuelve los slugs de los locales activos (para usar en selectores normales)
+  return LOCALES_DB.filter(l => l.activo).map(l => l.slug);
+}
+
+function getLocalesTodos() {
+  // Devuelve los slugs de todos los locales (activos + reservados) - para Admin
+  return LOCALES_DB.map(l => l.slug);
+}
+
+function localLabel(slug) {
+  // Devuelve el nombre visible de un slug (o el slug si no encuentra match)
+  return LOCAL_LABELS[slug] || slug;
+}
+
+async function cargarLocalesDesdeBase() {
+  try {
+    const data = await api('locales?order=orden.asc');
+    LOCALES_DB = data || [];
+    LOCAL_LABELS = {};
+    LOCALES_DB.forEach(l => { LOCAL_LABELS[l.slug] = l.nombre; });
+  } catch (e) {
+    console.error('Error al cargar locales:', e);
+    // Fallback de emergencia para que la app no se rompa si falla la query
+    LOCALES_DB = [
+      { slug: '1-AZUCA',     nombre: 'Azuca',            orden: 1, activo: true },
+      { slug: '2-AZAFRAN',   nombre: 'Azafrán',          orden: 2, activo: true },
+      { slug: '3-NIETO',     nombre: 'Nieto Senetiner',  orden: 3, activo: true },
+      { slug: '4-VIÑA COBOS', nombre: 'Viña Cobos',      orden: 4, activo: true },
+      { slug: '5-TRAPICHE',  nombre: 'Espacio Trapiche', orden: 5, activo: true },
+      { slug: 'VINOBIEN',    nombre: 'Vinobien',         orden: 6, activo: true }
+    ];
+    LOCAL_LABELS = {};
+    LOCALES_DB.forEach(l => { LOCAL_LABELS[l.slug] = l.nombre; });
+  }
+}
 
 const TIPOS_INCIDENCIA = {
   tardanza: '⏰ Llegada tarde',
@@ -304,6 +339,10 @@ async function doLogin(usuario, password) {
 
     currentUser = user;
     saveSession(user);
+
+    // Cargar lista de locales desde la base (necesario para que toda la app
+    // muestre los nombres correctos de los locales)
+    await cargarLocalesDesdeBase();
 
     if (user.debe_cambiar_password) {
       showView('vChangePass');
@@ -1001,8 +1040,9 @@ const ADMIN_SECTIONS = [
     color: '#C4622D',
     title: 'Locales',
     desc: 'Gestionar locales del grupo',
-    activa: false,
-    soloMaster: true
+    activa: true,
+    soloMaster: true,
+    action: () => openAdminLocales()
   },
   {
     id: 'historial',
@@ -1423,9 +1463,8 @@ window.toggleActivoUser = async function(id) {
 // ============================================
 // ADMINISTRACIÓN - Editores y permisos
 // ============================================
-const LOCALES_DISPONIBLES = [
-  '1-AZUCA','2-AZAFRAN','3-NIETO','4-VIÑA COBOS','5-TRAPICHE','VINOBIEN'
-];
+// LOCALES_DISPONIBLES ya no es una constante: ahora se obtiene dinámicamente
+// con getLocalesActivos() desde la base.
 
 let EDITORES_CACHE = [];
 let LOCALES_EDITANDO_ID = null;
@@ -1565,7 +1604,7 @@ window.abrirEditarLocales = function(userId) {
 
   const asignados = user.locales_asignados || [];
 
-  document.getElementById('localesGrid').innerHTML = LOCALES_DISPONIBLES.map(loc => {
+  document.getElementById('localesGrid').innerHTML = getLocalesActivos().map(loc => {
     const activo = asignados.includes(loc);
     return `
       <label class="local-check${activo ? ' activo' : ''}" data-local="${loc}">
@@ -1674,6 +1713,9 @@ async function init() {
         currentUser = fresh[0];
         saveSession(currentUser);
 
+        // Cargar lista de locales antes de mostrar nada
+        await cargarLocalesDesdeBase();
+
         if (currentUser.debe_cambiar_password) {
           showView('vChangePass');
         } else {
@@ -1741,7 +1783,7 @@ function puedeAdminBibCat() {
 
 // Locales del usuario actual (o todos si es master/admin)
 function localesUsuarioActual() {
-  if (isMaster() || isAdmin()) return LOCALES_DISPONIBLES.slice();
+  if (isMaster() || isAdmin()) return getLocalesActivos();
   return currentUser.locales_asignados || [];
 }
 
@@ -1754,10 +1796,6 @@ async function openMiBiblioteca() {
   const chips = document.getElementById('bibChips');
   cont.innerHTML = '<div class="loading">Cargando biblioteca...</div>';
   chips.innerHTML = '';
-
-  // Botón "Administrar" solo para quienes pueden
-  const btnAdmin = document.getElementById('btnAdminBib');
-  btnAdmin.style.display = puedeAdminBib() ? 'inline-flex' : 'none';
 
   // Cargar categorías y contenidos en paralelo
   try {
@@ -1820,8 +1858,18 @@ function renderBibContenidos(visibles) {
     ? visibles
     : visibles.filter(c => c.categoria_id === BIB_FILTRO_CAT);
 
+  let html = '';
+
+  // ===== BOTÓN DE GESTIÓN (solo Editor con permiso, Admin o Master) =====
+  if (puedeAdminBib()) {
+    html += `
+      <button class="btn-gestion" onclick="openAdminBiblioteca()">
+        <i class="ti ti-settings"></i> GESTIÓN DE BIBLIOTECA
+      </button>`;
+  }
+
   if (filtrados.length === 0) {
-    cont.innerHTML = `
+    html += `
       <div class="bib-empty">
         <i class="ti ti-books-off"></i>
         <div class="bib-empty-title">No hay contenido disponible</div>
@@ -1829,10 +1877,11 @@ function renderBibContenidos(visibles) {
           ? 'Cuando se cargue material, aparecerá acá.'
           : 'No hay material en esta categoría para tus locales.'}</div>
       </div>`;
+    cont.innerHTML = html;
     return;
   }
 
-  let html = '<div class="bib-grid">';
+  html += '<div class="bib-grid">';
   filtrados.forEach(c => {
     const tipo = BIB_TIPOS.find(t => t.key === c.tipo) || BIB_TIPOS[0];
     const cat = BIB_CATEGORIAS.find(k => k.id === c.categoria_id);
@@ -1931,7 +1980,7 @@ function renderBibAdminLista() {
     const cat = BIB_CATEGORIAS.find(k => k.id === c.categoria_id);
     const locTxt = (!c.locales || c.locales.length === 0)
       ? 'Sin locales'
-      : (c.locales.length === LOCALES_DISPONIBLES.length
+      : (c.locales.length === getLocalesActivos().length
           ? 'Todos los locales'
           : c.locales.length + ' local' + (c.locales.length > 1 ? 'es' : ''));
 
@@ -2048,7 +2097,7 @@ function actualizarHintUrl() {
 
 function renderLocalesChips() {
   const cont = document.getElementById('contLocales');
-  cont.innerHTML = LOCALES_DISPONIBLES.map(loc => {
+  cont.innerHTML = getLocalesActivos().map(loc => {
     const activo = BIB_LOCALES_SEL.includes(loc);
     return `<button class="loc-chip ${activo ? 'active' : ''}" onclick="toggleLocalChip('${loc}')">
       ${activo ? '<i class="ti ti-check"></i>' : ''}${esc(LOCAL_LABELS[loc] || loc)}
@@ -2245,6 +2294,143 @@ window.closeModalCategoria = closeModalCategoria;
 window.selectIcono = selectIcono;
 window.guardarCategoria = guardarCategoria;
 window.borrarCategoria = borrarCategoria;
+
+// ============================================
+// ADMIN: GESTIÓN DE LOCALES
+// ============================================
+
+let LOCAL_EDITANDO = null;   // slug del local que se está editando
+let LOCAL_ACTIVO_SEL = true; // estado seleccionado en el modal
+
+async function openAdminLocales() {
+  if (!isMaster()) {
+    toast('Solo Master puede gestionar locales', 'error');
+    showDashboard();
+    return;
+  }
+  showView('vAdminLocales');
+  await recargarLocalesAdmin();
+}
+
+async function recargarLocalesAdmin() {
+  // Refrescar caché en memoria
+  await cargarLocalesDesdeBase();
+  renderLocalesAdmin();
+}
+
+function renderLocalesAdmin() {
+  const cont = document.getElementById('localesAdminLista');
+  const count = document.getElementById('localesAdminCount');
+
+  const activos = LOCALES_DB.filter(l => l.activo).length;
+  count.textContent = `${activos} activo${activos !== 1 ? 's' : ''} de ${LOCALES_DB.length}`;
+
+  if (LOCALES_DB.length === 0) {
+    cont.innerHTML = `<div class="bib-empty">
+      <i class="ti ti-building-skyscraper"></i>
+      <div class="bib-empty-title">No hay locales cargados</div>
+      <div class="bib-empty-desc">Algo raro pasó con la base. Avisá al equipo técnico.</div>
+    </div>`;
+    return;
+  }
+
+  let html = '';
+  LOCALES_DB.forEach(l => {
+    const cls = 'local-admin-item' + (l.activo ? '' : ' inactivo');
+    const badgeCls = l.activo ? 'activo' : 'inactivo';
+    const badgeTxt = l.activo ? 'Activo' : 'Oculto';
+    const icon = l.activo ? 'ti-building-store' : 'ti-building-store';
+    html += `
+      <div class="${cls}">
+        <div class="local-admin-item-icon"><i class="ti ${icon}"></i></div>
+        <div class="local-admin-item-info">
+          <div class="local-admin-item-nombre">
+            ${esc(l.nombre)}
+            <span class="local-badge ${badgeCls}">${badgeTxt}</span>
+          </div>
+          <div class="local-admin-item-slug">${esc(l.slug)}</div>
+        </div>
+        <div class="bib-admin-item-actions">
+          <button class="bib-btn-edit" onclick="openModalLocal('${esc(l.slug).replace(/'/g, "\\'")}')" title="Editar">
+            <i class="ti ti-edit"></i>
+          </button>
+        </div>
+      </div>`;
+  });
+  cont.innerHTML = html;
+}
+
+function openModalLocal(slug) {
+  const l = LOCALES_DB.find(x => x.slug === slug);
+  if (!l) { toast('Local no encontrado', 'error'); return; }
+
+  LOCAL_EDITANDO = slug;
+  LOCAL_ACTIVO_SEL = l.activo;
+
+  document.getElementById('localSlug').value = l.slug;
+  document.getElementById('localNombre').value = l.nombre;
+  actualizarToggleLocal();
+  document.getElementById('modalLocal').style.display = 'flex';
+}
+
+function closeModalLocal() {
+  document.getElementById('modalLocal').style.display = 'none';
+  LOCAL_EDITANDO = null;
+}
+
+function setLocalActivo(val) {
+  LOCAL_ACTIVO_SEL = val;
+  actualizarToggleLocal();
+}
+
+function actualizarToggleLocal() {
+  const btnAct = document.getElementById('localToggleActivo');
+  const btnIna = document.getElementById('localToggleInactivo');
+  const hint = document.getElementById('localEstadoHint');
+
+  btnAct.classList.toggle('active', LOCAL_ACTIVO_SEL);
+  btnIna.classList.toggle('active-off', !LOCAL_ACTIVO_SEL);
+
+  hint.textContent = LOCAL_ACTIVO_SEL
+    ? 'Cuando está activo, aparece en toda la app.'
+    : 'Oculto: no aparece en ningún selector de la app.';
+}
+
+async function guardarLocal() {
+  if (!LOCAL_EDITANDO) return;
+  const nombre = document.getElementById('localNombre').value.trim();
+  if (!nombre) { toast('Falta el nombre', 'error'); return; }
+
+  const btn = document.getElementById('btnGuardarLocal');
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  try {
+    await api(`locales?slug=eq.${encodeURIComponent(LOCAL_EDITANDO)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        nombre,
+        activo: LOCAL_ACTIVO_SEL,
+        actualizado_en: new Date().toISOString()
+      })
+    });
+    toast('Local actualizado');
+    closeModalLocal();
+    await recargarLocalesAdmin();
+  } catch (e) {
+    toast('Error al guardar', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Guardar';
+  }
+}
+
+// Exponer funciones globalmente
+window.openAdminLocales = openAdminLocales;
+window.openModalLocal = openModalLocal;
+window.closeModalLocal = closeModalLocal;
+window.setLocalActivo = setLocalActivo;
+window.guardarLocal = guardarLocal;
 
 init();
 

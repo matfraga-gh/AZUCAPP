@@ -1724,28 +1724,6 @@ button {
    MÓDULO: BIBLIOTECA
 ============================================ */
 
-/* Botón "Administrar" en header del usuario */
-.btn-admin-bib {
-  margin-left: auto;
-  background: rgba(93, 202, 165, 0.15);
-  color: #5DCAA5;
-  border: 1px solid rgba(93, 202, 165, 0.3);
-  padding: 8px 14px;
-  border-radius: 8px;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.15s ease;
-}
-.btn-admin-bib:hover {
-  background: rgba(93, 202, 165, 0.25);
-}
-.btn-admin-bib i { font-size: 16px; }
-
 /* Chips de categorías (filtros) */
 .bib-chips {
   display: flex;
@@ -2155,6 +2133,110 @@ button {
   .bib-grid { grid-template-columns: 1fr; }
   .tipo-grid { grid-template-columns: 1fr 1fr; }
   .icon-picker { grid-template-columns: repeat(4, 1fr); }
-  .btn-admin-bib { padding: 6px 10px; font-size: 12px; }
-  .btn-admin-bib span { display: none; }
+}
+
+/* ============================================
+   MÓDULO: ADMIN LOCALES
+============================================ */
+
+.local-admin-item {
+  background: #2A2724;
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  border: 1px solid transparent;
+  transition: border-color 0.15s ease;
+}
+.local-admin-item.inactivo {
+  opacity: 0.55;
+  border-color: rgba(245, 240, 232, 0.08);
+}
+.local-admin-item-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: rgba(196, 98, 45, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #C4622D;
+  flex-shrink: 0;
+}
+.local-admin-item-icon i { font-size: 18px; }
+.local-admin-item.inactivo .local-admin-item-icon {
+  background: rgba(180, 178, 169, 0.15);
+  color: #B4B2A9;
+}
+.local-admin-item-info {
+  flex: 1;
+  min-width: 0;
+}
+.local-admin-item-nombre {
+  color: var(--c-crema);
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.local-admin-item-slug {
+  color: #888780;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+}
+.local-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+.local-badge.activo {
+  background: rgba(93, 202, 165, 0.18);
+  color: #5DCAA5;
+}
+.local-badge.inactivo {
+  background: rgba(180, 178, 169, 0.15);
+  color: #B4B2A9;
+}
+
+/* Toggle Activo/Inactivo en modal */
+.local-toggle {
+  display: flex;
+  gap: 6px;
+}
+.local-toggle-btn {
+  flex: 1;
+  background: #1C1A17;
+  border: 1px solid rgba(245, 240, 232, 0.15);
+  padding: 10px;
+  border-radius: 6px;
+  color: #888780;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+.local-toggle-btn:hover { border-color: rgba(245, 240, 232, 0.3); }
+.local-toggle-btn i { font-size: 14px; }
+.local-toggle-btn.active {
+  background: #5DCAA5;
+  color: #04342C;
+  border-color: #5DCAA5;
+  font-weight: 500;
+}
+.local-toggle-btn.active-off {
+  background: #B4B2A9;
+  color: #1C1A17;
+  border-color: #B4B2A9;
+  font-weight: 500;
 }
