@@ -1727,7 +1727,7 @@ button {
 }
 .bib-chip {
   background: transparent;
-  color: var(--c-crema);
+  color: var(--c-cream);
   border: 1px solid rgba(245, 240, 232, 0.2);
   padding: 8px 14px;
   border-radius: 20px;
@@ -1794,7 +1794,7 @@ button {
   letter-spacing: 0.5px;
 }
 .bib-card-titulo {
-  color: var(--c-crema);
+  color: var(--c-cream);
   font-size: 15px;
   font-weight: 500;
   margin-bottom: 6px;
@@ -1831,7 +1831,7 @@ button {
 }
 .bib-empty-title {
   font-size: 15px;
-  color: var(--c-crema);
+  color: var(--c-cream);
   margin-bottom: 6px;
   font-weight: 500;
 }
@@ -1868,14 +1868,14 @@ button {
 .bib-tab i { font-size: 14px; }
 .bib-tab.active {
   background: #C4622D;
-  color: var(--c-crema);
+  color: var(--c-cream);
   font-weight: 500;
 }
 
 /* Botón primario fullwidth (Agregar contenido) */
 .btn-primary-full {
   background: #C4622D;
-  color: var(--c-crema);
+  color: var(--c-cream);
   border: none;
   padding: 14px;
   border-radius: 10px;
@@ -1919,7 +1919,7 @@ button {
   min-width: 0;
 }
 .bib-admin-item-titulo {
-  color: var(--c-crema);
+  color: var(--c-cream);
   font-size: 14px;
   font-weight: 500;
   margin-bottom: 2px;
@@ -1982,7 +1982,7 @@ button {
 .bib-cat-icon-box i { font-size: 18px; }
 .bib-cat-nombre {
   flex: 1;
-  color: var(--c-crema);
+  color: var(--c-cream);
   font-size: 14px;
   font-weight: 500;
 }
@@ -2017,7 +2017,7 @@ button {
   border: 1px solid rgba(245, 240, 232, 0.15);
   border-radius: 6px;
   padding: 10px 12px;
-  color: var(--c-crema);
+  color: var(--c-cream);
   font-family: inherit;
   font-size: 13px;
   box-sizing: border-box;
@@ -2059,7 +2059,7 @@ button {
 .tipo-btn.active {
   background: #C4622D;
   border-color: #C4622D;
-  color: var(--c-crema);
+  color: var(--c-cream);
   font-weight: 500;
 }
 
@@ -2085,7 +2085,7 @@ button {
 }
 .loc-chip:hover {
   border-color: rgba(245, 240, 232, 0.4);
-  color: var(--c-crema);
+  color: var(--c-cream);
 }
 .loc-chip.active {
   background: #5DCAA5;
@@ -2113,7 +2113,7 @@ button {
   color: #888780;
   transition: all 0.15s ease;
 }
-.icon-opt:hover { border-color: rgba(245, 240, 232, 0.3); color: var(--c-crema); }
+.icon-opt:hover { border-color: rgba(245, 240, 232, 0.3); color: var(--c-cream); }
 .icon-opt.active {
   background: rgba(93, 202, 165, 0.15);
   border-color: #5DCAA5;
@@ -2168,7 +2168,7 @@ button {
   min-width: 0;
 }
 .local-admin-item-nombre {
-  color: var(--c-crema);
+  color: var(--c-cream);
   font-size: 14px;
   font-weight: 500;
   margin-bottom: 2px;
@@ -2269,7 +2269,7 @@ button {
   color: #5DCAA5;
 }
 .modal-confirm-title {
-  color: var(--c-crema);
+  color: var(--c-cream);
   font-size: 18px;
   font-weight: 600;
   margin-bottom: 8px;
@@ -2345,7 +2345,7 @@ button {
   min-width: 0;
 }
 .user-pill-name {
-  color: var(--c-crema);
+  color: var(--c-cream);
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
@@ -2394,7 +2394,7 @@ button {
   letter-spacing: 1px;
 }
 .perfil-nombre {
-  color: var(--c-crema);
+  color: var(--c-cream);
   font-size: 20px;
   font-family: 'Playfair Display', serif;
   font-weight: 600;
@@ -2453,7 +2453,7 @@ button {
   flex-shrink: 0;
 }
 .perfil-row-value {
-  color: var(--c-crema);
+  color: var(--c-cream);
   font-size: 13px;
   text-align: right;
   word-break: break-word;
@@ -2470,7 +2470,7 @@ button {
   gap: 12px;
   cursor: pointer;
   font-family: inherit;
-  color: var(--c-crema);
+  color: var(--c-cream);
   text-align: left;
   border-radius: 8px;
   transition: background 0.15s ease;
@@ -2499,7 +2499,7 @@ button {
   min-width: 0;
 }
 .perfil-action-title {
-  color: var(--c-crema);
+  color: var(--c-cream);
   font-size: 14px;
   font-weight: 500;
   margin-bottom: 2px;
