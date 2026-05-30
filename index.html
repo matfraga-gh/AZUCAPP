@@ -93,25 +93,92 @@
       <div class="tagline">GESTIÓN INTERNA DE AZUCA</div>
     </div>
 
-    <div class="user-info">
-      <span id="userDisplayName">Cargando...</span>
-      ·
-      <i class="ti ti-user"></i>
-      <span id="userRoleLabel">Usuario</span>
-    </div>
+    <button class="user-pill" id="userPillBtn" onclick="openMiPerfil()">
+      <div class="user-pill-avatar" id="userPillAvatar"></div>
+      <div class="user-pill-info">
+        <div class="user-pill-name" id="userPillName">Cargando...</div>
+        <div class="user-pill-role" id="userPillRole">—</div>
+      </div>
+      <i class="ti ti-chevron-right"></i>
+    </button>
 
     <div class="datetime" id="datetime">—</div>
 
     <div class="dash-grid" id="dashGrid"></div>
 
-    <div class="dash-actions">
-      <button class="btn-ghost" onclick="showChangePass()">
-        <i class="ti ti-key"></i> Cambiar contraseña
+  </div>
+</div>
+
+<!-- ============================================
+     VISTA: MI PERFIL
+============================================ -->
+<div id="vMiPerfil" class="view">
+  <div class="module-wrap">
+
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver">
+        <i class="ti ti-arrow-left"></i>
       </button>
-      <button class="btn-ghost" onclick="doLogout()">
-        Cerrar sesión
+      <div class="module-title-block">
+        <div class="module-title">Mi Perfil</div>
+        <div class="module-subtitle">Tu información y configuración</div>
+      </div>
+    </div>
+
+    <!-- Tarjeta principal con avatar y datos básicos -->
+    <div class="perfil-hero">
+      <div class="perfil-avatar" id="perfilAvatar"></div>
+      <div class="perfil-nombre" id="perfilNombre">—</div>
+      <div class="perfil-usuario" id="perfilUsuario">—</div>
+      <div class="perfil-badge" id="perfilBadge">—</div>
+    </div>
+
+    <!-- Sección: Información -->
+    <div class="perfil-section">
+      <div class="perfil-section-title">
+        <i class="ti ti-info-circle"></i> Mi información
+      </div>
+      <div class="perfil-row">
+        <span class="perfil-row-label">Empleado</span>
+        <span class="perfil-row-value" id="perfilEmpleado">—</span>
+      </div>
+      <div class="perfil-row">
+        <span class="perfil-row-label">Perfil</span>
+        <span class="perfil-row-value" id="perfilTipo">—</span>
+      </div>
+      <div class="perfil-row" id="perfilLocalesRow">
+        <span class="perfil-row-label">Locales asignados</span>
+        <span class="perfil-row-value" id="perfilLocales">—</span>
+      </div>
+    </div>
+
+    <!-- Sección: Seguridad -->
+    <div class="perfil-section">
+      <div class="perfil-section-title">
+        <i class="ti ti-shield-lock"></i> Seguridad
+      </div>
+      <button class="perfil-action-btn" onclick="showChangePass()">
+        <i class="ti ti-key"></i>
+        <div class="perfil-action-text">
+          <div class="perfil-action-title">Cambiar contraseña</div>
+          <div class="perfil-action-desc">Actualizá tu contraseña de acceso</div>
+        </div>
+        <i class="ti ti-chevron-right"></i>
       </button>
     </div>
+
+    <!-- Sección: Salir -->
+    <div class="perfil-section">
+      <button class="perfil-action-btn danger" onclick="doLogout()">
+        <i class="ti ti-logout"></i>
+        <div class="perfil-action-text">
+          <div class="perfil-action-title">Cerrar sesión</div>
+          <div class="perfil-action-desc">Salir de AZUCAPP</div>
+        </div>
+        <i class="ti ti-chevron-right"></i>
+      </button>
+    </div>
+
   </div>
 </div>
 
@@ -142,7 +209,7 @@
       </label>
 
       <div class="btn-row">
-        <button type="button" class="btn-ghost" onclick="showDashboard()">Cancelar</button>
+        <button type="button" class="btn-ghost" onclick="openMiPerfil()">Cancelar</button>
         <button type="submit" class="btn-primary">Guardar</button>
       </div>
 

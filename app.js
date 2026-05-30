@@ -609,7 +609,7 @@ document.getElementById('changePassVoluntaryForm').addEventListener('submit', as
     document.getElementById('voluntaryPass1').value = '';
     document.getElementById('voluntaryPass2').value = '';
 
-    showDashboard();
+    openMiPerfil();
     toast('Contraseña actualizada', 'success');
   } catch (err) {
     errBox.textContent = 'Error al guardar: ' + err.message;
@@ -625,22 +625,105 @@ function showDashboard() {
     return;
   }
 
-  document.getElementById('userDisplayName').textContent =
-    currentUser.nombre || currentUser.usuario;
-
+  const nombre = currentUser.nombre || currentUser.usuario;
+  const perfil = currentUser.perfil || 'usuario';
   const roleLabel = {
     master: 'Master',
     admin: 'Admin',
     editor: 'Editor',
     usuario: 'Usuario'
-  }[currentUser.perfil] || 'Usuario';
+  }[perfil] || 'Usuario';
 
-  document.getElementById('userRoleLabel').textContent = roleLabel;
+  // User pill
+  document.getElementById('userPillName').textContent = nombre;
+  document.getElementById('userPillRole').textContent = roleLabel;
+
+  // Avatar: inicial + color según perfil
+  const avatarEl = document.getElementById('userPillAvatar');
+  avatarEl.textContent = obtenerIniciales(nombre);
+  avatarEl.className = 'user-pill-avatar avatar-' + perfil;
+
   document.getElementById('datetime').textContent = fmtDateTime(new Date());
 
   renderDashboardCards();
   showView('vDash');
 }
+
+// Devuelve hasta 2 iniciales del nombre (ej: "Matías Fraga" → "MF")
+function obtenerIniciales(nombre) {
+  if (!nombre) return '?';
+  const partes = nombre.trim().split(/\s+/);
+  if (partes.length === 1) return partes[0].charAt(0).toUpperCase();
+  return (partes[0].charAt(0) + partes[partes.length - 1].charAt(0)).toUpperCase();
+}
+
+// ============================================
+// MI PERFIL
+// ============================================
+async function openMiPerfil() {
+  if (!currentUser) {
+    showView('vLogin');
+    return;
+  }
+
+  const nombre = currentUser.nombre || currentUser.usuario;
+  const perfil = currentUser.perfil || 'usuario';
+  const roleLabel = {
+    master: 'Master',
+    admin: 'Admin',
+    editor: 'Editor',
+    usuario: 'Usuario'
+  }[perfil] || 'Usuario';
+
+  // Avatar grande
+  const avatar = document.getElementById('perfilAvatar');
+  avatar.textContent = obtenerIniciales(nombre);
+  avatar.className = 'perfil-avatar avatar-' + perfil;
+
+  // Datos básicos
+  document.getElementById('perfilNombre').textContent = nombre;
+  document.getElementById('perfilUsuario').textContent = '@' + (currentUser.usuario || '');
+
+  const badge = document.getElementById('perfilBadge');
+  badge.textContent = roleLabel;
+  badge.className = 'perfil-badge ' + perfil;
+
+  // Empleado
+  document.getElementById('perfilEmpleado').textContent =
+    currentUser.empleado_id ? '#' + currentUser.empleado_id : 'Sin asignar';
+
+  // Tipo de perfil expandido
+  const perfilDescripciones = {
+    master:  'Master · Control total',
+    admin:   'Admin · Administra todo menos Locales',
+    editor:  'Editor · Permisos según módulo',
+    usuario: 'Usuario · Solo lectura de lo propio'
+  };
+  document.getElementById('perfilTipo').textContent =
+    perfilDescripciones[perfil] || roleLabel;
+
+  // Locales asignados
+  const filaLocales = document.getElementById('perfilLocalesRow');
+  const elLocales = document.getElementById('perfilLocales');
+
+  if (perfil === 'master' || perfil === 'admin') {
+    elLocales.textContent = 'Todos los locales';
+  } else {
+    const locs = currentUser.locales_asignados || [];
+    if (locs.length === 0) {
+      elLocales.textContent = 'Sin locales asignados';
+      elLocales.style.color = '#E24B4A';
+    } else {
+      const nombresVisibles = locs.map(slug => localLabel(slug)).join(', ');
+      elLocales.textContent = nombresVisibles;
+      elLocales.style.color = '';
+    }
+  }
+
+  showView('vMiPerfil');
+}
+
+window.openMiPerfil = openMiPerfil;
 
 function renderDashboardCards() {
   const grid = document.getElementById('dashGrid');
