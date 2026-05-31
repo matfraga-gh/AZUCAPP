@@ -1243,10 +1243,376 @@ async function openMiPropina() {
   cont.innerHTML = html;
 }
 
-// Función placeholder para abrir gestión de propinas
-window.abrirGestionPropinas = function() {
-  toast('Gestión de propinas - próximamente disponible');
-};
+// ============================================
+// GESTIÓN DE PROPINAS
+// ============================================
+
+let PROP_CIERRES = [];
+let PROP_LOCAL_SEL = null;  // local seleccionado para filtrar
+let PROP_CONFIG = null;     // cache de propinas_config
+
+// ¿Quién puede entrar al módulo?
+function puedeGestionarPropinas() {
+  return isMaster() || isAdmin() || currentUser.editor_propinas === true;
+}
+
+// ¿Quién puede tocar configuración y marcar como pagado?
+function puedeAdminPropinas() {
+  return isMaster() || isAdmin();
+}
+
+// Locales que puede operar este usuario
+function localesPropinasUsuario() {
+  if (isMaster() || isAdmin()) return getLocalesActivos();
+  // Editor: solo sus locales asignados que estén activos
+  const asignados = currentUser.locales_asignados || [];
+  return asignados.filter(loc => getLocalesActivos().includes(loc));
+}
+
+async function abrirGestionPropinas() {
+  if (!puedeGestionarPropinas()) {
+    toast('No tenés permiso para gestionar propinas', 'error');
+    return;
+  }
+
+  showView('vGestionPropinas');
+  document.getElementById('propGestTabla').innerHTML = '<div class="loading">Cargando cierres...</div>';
+  document.getElementById('propGestKpis').innerHTML = '';
+
+  // Cargar config + cierres en paralelo
+  try {
+    const [configs, cierres] = await Promise.all([
+      api('propinas_config?id=eq.1'),
+      api('propinas_cierres?order=fecha.desc,id.desc')
+    ]);
+    PROP_CONFIG = (configs && configs[0]) ? configs[0] : null;
+    PROP_CIERRES = cierres || [];
+  } catch (e) {
+    document.getElementById('propGestTabla').innerHTML =
+      '<div class="loading" style="color:var(--c-error)">Error al cargar datos</div>';
+    return;
+  }
+
+  // Pre-seleccionar el primer local del usuario si no hay selección
+  const localesUser = localesPropinasUsuario();
+  if (!PROP_LOCAL_SEL || !localesUser.includes(PROP_LOCAL_SEL)) {
+    PROP_LOCAL_SEL = localesUser[0] || null;
+  }
+
+  renderPropGestHeader();
+  renderPropGestLocales();
+  renderPropGestKpis();
+  renderPropGestTabla();
+}
+
+function renderPropGestHeader() {
+  const subtitle = document.getElementById('propGestSubtitle');
+  // Agregar botón Configurar al header si tiene permiso
+  const headerBlock = subtitle.parentElement.parentElement;
+
+  // Eliminar botón previo si existe (para evitar duplicados al re-renderizar)
+  const oldBtn = headerBlock.querySelector('.btn-config-propinas');
+  if (oldBtn) oldBtn.remove();
+
+  if (puedeAdminPropinas()) {
+    const btn = document.createElement('button');
+    btn.className = 'btn-config-propinas';
+    btn.title = 'Configurar tipos de cambio';
+    btn.innerHTML = '<i class="ti ti-settings"></i>';
+    btn.onclick = openConfigPropinas;
+    headerBlock.appendChild(btn);
+  }
+
+  subtitle.textContent = puedeAdminPropinas()
+    ? 'Cierres registrados · podés editarlos y marcar como pagados'
+    : 'Cierres registrados de tus locales';
+}
+
+function renderPropGestLocales() {
+  const cont = document.getElementById('propGestLocales');
+  const locales = localesPropinasUsuario();
+
+  if (locales.length === 0) {
+    cont.innerHTML = '<div class="bib-empty"><i class="ti ti-map-pin-off"></i><div class="bib-empty-title">No tenés locales asignados</div></div>';
+    return;
+  }
+
+  if (locales.length === 1) {
+    // Si solo tiene un local, no mostrar selector
+    cont.innerHTML = '';
+    return;
+  }
+
+  cont.innerHTML = locales.map(slug => `
+    <button class="bib-chip ${PROP_LOCAL_SEL === slug ? 'active' : ''}"
+            onclick="selectPropLocal('${esc(slug).replace(/'/g, "\\'")}')">
+      <i class="ti ti-map-pin"></i>${esc(localLabel(slug))}
+    </button>
+  `).join('');
+}
+
+function selectPropLocal(slug) {
+  PROP_LOCAL_SEL = slug;
+  renderPropGestLocales();
+  renderPropGestKpis();
+  renderPropGestTabla();
+}
+
+function cierresLocalActual() {
+  if (!PROP_LOCAL_SEL) return [];
+  return PROP_CIERRES.filter(c => c.local === PROP_LOCAL_SEL);
+}
+
+function renderPropGestKpis() {
+  const cont = document.getElementById('propGestKpis');
+  const cierres = cierresLocalActual();
+
+  const total = cierres.length;
+  const pendientes = cierres.filter(c => !c.pagado).length;
+  const pagados = total - pendientes;
+
+  const bruto = cierres.reduce((s, c) => s + parseFloat(c.total_bruto || 0), 0);
+  const netoPendiente = cierres.filter(c => !c.pagado).reduce((s, c) => s + parseFloat(c.total_neto || 0), 0);
+  const netoPagado = cierres.filter(c => c.pagado).reduce((s, c) => s + parseFloat(c.total_neto || 0), 0);
+
+  cont.innerHTML = `
+    <div class="kpi-card">
+      <div class="kpi-label">Cierres</div>
+      <div class="kpi-value">${total}</div>
+      <div class="kpi-sub">${pendientes} pendiente${pendientes !== 1 ? 's' : ''} · ${pagados} pagado${pagados !== 1 ? 's' : ''}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Total bruto acumulado</div>
+      <div class="kpi-value">$${formatNumber(bruto)}</div>
+    </div>
+    <div class="kpi-card highlight">
+      <div class="kpi-label">Neto a liquidar</div>
+      <div class="kpi-value">$${formatNumber(netoPendiente)}</div>
+      <div class="kpi-sub">+$${formatNumber(netoPagado)} ya pagados</div>
+    </div>
+  `;
+}
+
+function renderPropGestTabla() {
+  const cont = document.getElementById('propGestTabla');
+  const cierres = cierresLocalActual();
+
+  if (cierres.length === 0) {
+    cont.innerHTML = `
+      <div class="prop-empty">
+        <i class="ti ti-cash-off"></i>
+        <div class="prop-empty-title">No hay cierres todavía</div>
+        <div class="prop-empty-desc">${PROP_LOCAL_SEL
+          ? 'Cuando se cargue el primer cierre de ' + localLabel(PROP_LOCAL_SEL) + ', aparecerá acá.'
+          : 'Elegí un local para ver sus cierres.'}</div>
+      </div>`;
+    return;
+  }
+
+  const TURNOS_LABEL = {
+    mediodia: '🍲 Mediodía',
+    'mediodía': '🍲 Mediodía',
+    noche: '🌙 Noche',
+    evento: '🎉 Evento',
+    especial: '⭐ Especial'
+  };
+
+  let html = `
+    <div class="prop-tabla">
+      <div class="prop-tabla-header">
+        <span>Fecha</span>
+        <span>Turno</span>
+        <span>Bruto</span>
+        <span>Neto</span>
+        <span>Puntos</span>
+        <span>Estado</span>
+      </div>`;
+
+  cierres.forEach(c => {
+    const fecha = c.fecha ? fmtFechaCorta(c.fecha) : '—';
+    const turnoKey = (c.turno || '').toLowerCase();
+    const turnoLabel = TURNOS_LABEL[turnoKey] || (c.turno || '—');
+    const estadoCls = c.pagado ? 'pagado' : 'cerrado';
+    const estadoTxt = c.pagado ? '✓ Pagado' : 'Cerrado';
+
+    // Solo Admin/Master puede togglear pagado
+    const estadoClickable = puedeAdminPropinas() ? `onclick="togglePagado(${c.id})"` : '';
+    const estadoTitle = puedeAdminPropinas()
+      ? (c.pagado ? 'title="Click para volver a Cerrado"' : 'title="Click para marcar como Pagado"')
+      : '';
+
+    html += `
+      <div class="prop-tabla-row">
+        <span class="prop-fecha">${fecha}</span>
+        <span class="prop-turno">${turnoLabel}</span>
+        <span class="prop-monto">$${formatNumber(c.total_bruto || 0)}</span>
+        <span class="prop-monto">$${formatNumber(c.total_neto || 0)}</span>
+        <span>${c.total_puntos || 0}</span>
+        <span class="prop-estado ${estadoCls}" ${estadoClickable} ${estadoTitle}>${estadoTxt}</span>
+      </div>`;
+  });
+
+  html += '</div>';
+  cont.innerHTML = html;
+}
+
+// Helper para formatear fecha corta tipo "18-may"
+function fmtFechaCorta(isoDate) {
+  if (!isoDate) return '—';
+  const d = new Date(isoDate + 'T00:00:00');
+  const dia = d.getDate();
+  const mes = MESES_CORTO[d.getMonth()];
+  return `${dia}-${mes}`;
+}
+
+// Toggle pagado / cerrado
+async function togglePagado(cierreId) {
+  if (!puedeAdminPropinas()) return;
+  const c = PROP_CIERRES.find(x => x.id === cierreId);
+  if (!c) return;
+
+  if (!c.pagado) {
+    // Confirmar marcar como pagado
+    const ok = await showConfirm({
+      title: '¿Marcar como pagado?',
+      msg: `Cierre del ${fmtFechaCorta(c.fecha)} · ${c.turno}\nNeto: $${formatNumber(c.total_neto || 0)}\n\nAl marcar como pagado, los empleados dejarán de verlo en sus pendientes.`,
+      type: 'success',
+      okLabel: 'Sí, marcar pagado',
+      cancelLabel: 'Cancelar'
+    });
+    if (!ok) return;
+  } else {
+    // Confirmar revertir a cerrado
+    const ok = await showConfirm({
+      title: '¿Revertir a Cerrado?',
+      msg: `Cierre del ${fmtFechaCorta(c.fecha)} · ${c.turno}\n\nAl revertir, volverá a aparecer como pendiente en los empleados.`,
+      type: 'warning',
+      okLabel: 'Revertir',
+      cancelLabel: 'Cancelar',
+      danger: true
+    });
+    if (!ok) return;
+  }
+
+  try {
+    const body = c.pagado
+      ? { pagado: false, pagado_en: null, pagado_por: null, actualizado_en: new Date().toISOString() }
+      : { pagado: true, pagado_en: new Date().toISOString(), pagado_por: currentUser.id, actualizado_en: new Date().toISOString() };
+
+    await api(`propinas_cierres?id=eq.${cierreId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body)
+    });
+
+    // Actualizar cache local
+    Object.assign(c, body);
+
+    toast(c.pagado ? 'Marcado como pagado' : 'Vuelto a Cerrado');
+    renderPropGestKpis();
+    renderPropGestTabla();
+  } catch (e) {
+    toast('Error al actualizar', 'error');
+  }
+}
+
+// Placeholder para nuevo cierre (Fase 2)
+function nuevoCierrePlaceholder() {
+  toast('Carga de cierres - próximamente (Fase 2)', 'warning');
+}
+
+// ============================================
+// CONFIGURACIÓN DE PROPINAS
+// ============================================
+async function openConfigPropinas() {
+  if (!puedeAdminPropinas()) return;
+
+  // Si no hay config cargada, traerla
+  if (!PROP_CONFIG) {
+    try {
+      const data = await api('propinas_config?id=eq.1');
+      PROP_CONFIG = (data && data[0]) ? data[0] : null;
+    } catch (e) {
+      toast('Error al cargar configuración', 'error');
+      return;
+    }
+  }
+
+  if (!PROP_CONFIG) {
+    toast('No se encontró configuración', 'error');
+    return;
+  }
+
+  document.getElementById('configUSD').value = PROP_CONFIG.cambio_usd || '';
+  document.getElementById('configEUR').value = PROP_CONFIG.cambio_eur || '';
+  document.getElementById('configBRL').value = PROP_CONFIG.cambio_brl || '';
+  document.getElementById('configPct').value = PROP_CONFIG.porcentaje_admin || '';
+
+  // Última actualización
+  const ultima = PROP_CONFIG.actualizado_en
+    ? `Última actualización: ${new Date(PROP_CONFIG.actualizado_en).toLocaleString('es-AR', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      })}`
+    : 'Sin actualización previa';
+  document.getElementById('configUltima').textContent = ultima;
+
+  document.getElementById('modalConfigPropinas').style.display = 'flex';
+}
+
+function closeConfigPropinas() {
+  document.getElementById('modalConfigPropinas').style.display = 'none';
+}
+
+async function guardarConfigPropinas() {
+  const usd = parseFloat(document.getElementById('configUSD').value);
+  const eur = parseFloat(document.getElementById('configEUR').value);
+  const brl = parseFloat(document.getElementById('configBRL').value);
+  const pct = parseFloat(document.getElementById('configPct').value);
+
+  if (isNaN(usd) || usd <= 0) { toast('USD inválido', 'error'); return; }
+  if (isNaN(eur) || eur <= 0) { toast('EUR inválido', 'error'); return; }
+  if (isNaN(brl) || brl <= 0) { toast('BRL inválido', 'error'); return; }
+  if (isNaN(pct) || pct < 0 || pct > 100) { toast('Porcentaje inválido (0-100)', 'error'); return; }
+
+  const btn = document.getElementById('btnGuardarConfig');
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  try {
+    const body = {
+      cambio_usd: usd,
+      cambio_eur: eur,
+      cambio_brl: brl,
+      porcentaje_admin: pct,
+      actualizado_en: new Date().toISOString(),
+      actualizado_por: currentUser.id
+    };
+    await api('propinas_config?id=eq.1', {
+      method: 'PATCH',
+      body: JSON.stringify(body)
+    });
+
+    // Actualizar cache
+    PROP_CONFIG = Object.assign({}, PROP_CONFIG, body);
+
+    toast('Configuración actualizada');
+    closeConfigPropinas();
+  } catch (e) {
+    toast('Error al guardar', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Guardar configuración';
+  }
+}
+
+// Exponer al window
+window.abrirGestionPropinas = abrirGestionPropinas;
+window.selectPropLocal = selectPropLocal;
+window.togglePagado = togglePagado;
+window.nuevoCierrePlaceholder = nuevoCierrePlaceholder;
+window.openConfigPropinas = openConfigPropinas;
+window.closeConfigPropinas = closeConfigPropinas;
+window.guardarConfigPropinas = guardarConfigPropinas;
 
 // ============================================
 // ADMINISTRACIÓN - Panel principal

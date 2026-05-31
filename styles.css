@@ -2512,3 +2512,187 @@ button {
   color: var(--c-muted);
   font-size: 16px;
 }
+
+/* ============================================
+   GESTIÓN DE PROPINAS
+============================================ */
+
+/* Grid de KPIs */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+@media (max-width: 600px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+}
+
+.kpi-card {
+  background: var(--c-bg-soft);
+  border: 1px solid rgba(245,240,232,0.08);
+  border-radius: 12px;
+  padding: 14px;
+}
+.kpi-card.highlight {
+  background: linear-gradient(135deg, var(--c-bg-soft), rgba(93,202,165,0.08));
+  border-color: rgba(93,202,165,0.3);
+}
+
+.kpi-label {
+  color: var(--c-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.kpi-value {
+  color: var(--c-cream);
+  font-size: 22px;
+  font-weight: 600;
+  font-family: 'Playfair Display', serif;
+  line-height: 1.1;
+}
+.kpi-card.highlight .kpi-value { color: #5DCAA5; }
+.kpi-sub {
+  color: var(--c-muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+/* Tabla de cierres */
+.prop-tabla {
+  background: var(--c-bg-soft);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(245,240,232,0.08);
+}
+.prop-tabla-header {
+  background: rgba(0,0,0,0.25);
+  padding: 10px 14px;
+  display: grid;
+  grid-template-columns: 70px 90px 90px 100px 60px 90px;
+  gap: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--c-muted);
+  font-weight: 600;
+}
+.prop-tabla-row {
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: 70px 90px 90px 100px 60px 90px;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--c-cream);
+  border-top: 1px solid rgba(245,240,232,0.05);
+  transition: background 0.15s;
+}
+.prop-tabla-row:hover {
+  background: rgba(245,240,232,0.03);
+}
+.prop-fecha { font-weight: 600; }
+.prop-turno { color: var(--c-muted); font-size: 12px; }
+.prop-monto { font-weight: 500; }
+
+/* Badge de estado */
+.prop-estado {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.prop-estado.cerrado {
+  background: rgba(180,178,169,0.15);
+  color: #B4B2A9;
+}
+.prop-estado.pagado {
+  background: rgba(93,202,165,0.18);
+  color: #5DCAA5;
+}
+.prop-estado.cerrado:hover {
+  background: rgba(196,98,45,0.2);
+  color: #C4622D;
+}
+
+/* Estado vacío */
+.prop-empty {
+  background: rgba(245,240,232,0.04);
+  border-radius: 12px;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--c-muted);
+  margin-bottom: 14px;
+}
+.prop-empty i {
+  font-size: 36px;
+  color: #EF9F27;
+  margin-bottom: 12px;
+  display: block;
+}
+.prop-empty-title {
+  font-size: 15px;
+  color: var(--c-cream);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+.prop-empty-desc {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Mobile: tabla más compacta */
+@media (max-width: 600px) {
+  .prop-tabla-header,
+  .prop-tabla-row {
+    grid-template-columns: 1fr 1fr 80px;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .prop-tabla-header > span:nth-child(3),
+  .prop-tabla-header > span:nth-child(4),
+  .prop-tabla-row > span:nth-child(3),
+  .prop-tabla-row > span:nth-child(4) {
+    display: none;
+  }
+}
+
+/* Botón ⚙️ configurar en header de Gestión Propinas */
+.btn-config-propinas {
+  margin-left: auto;
+  background: rgba(127, 119, 221, 0.15);
+  color: #7F77DD;
+  border: 1px solid rgba(127, 119, 221, 0.3);
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.btn-config-propinas:hover {
+  background: rgba(127, 119, 221, 0.25);
+}
+.btn-config-propinas i { font-size: 18px; }
+
+/* Grilla 2 columnas para inputs lado a lado */
+.form-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 480px) {
+  .form-row-2 { grid-template-columns: 1fr; }
+}
