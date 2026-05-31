@@ -1102,7 +1102,6 @@ async function openMiPropina() {
   const cont = document.getElementById('propinaContenido');
   const subtitle = document.getElementById('miPropinaSubtitle');
   cont.innerHTML = '<div class="loading">Cargando propinas...</div>';
-
   // Necesita empleado vinculado
   if (!currentUser.empleado_id) {
     subtitle.textContent = currentUser.nombre || currentUser.usuario;
@@ -1623,6 +1622,7 @@ async function guardarConfigPropinas() {
 }
 
 // Exponer al window
+window.openMiPropina = openMiPropina;
 window.abrirGestionPropinas = abrirGestionPropinas;
 window.selectPropLocal = selectPropLocal;
 window.togglePagado = togglePagado;
