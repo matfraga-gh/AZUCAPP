@@ -2696,3 +2696,39 @@ button {
 @media (max-width: 480px) {
   .form-row-2 { grid-template-columns: 1fr; }
 }
+
+/* ============================================
+   SALUDO PERSONALIZADO EN DASHBOARD
+============================================ */
+.greeting {
+  text-align: center;
+  margin: 24px auto 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.greeting-text {
+  font-family: 'Playfair Display', serif;
+  font-size: 22px;
+  color: var(--c-cream);
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+.greeting-emoji {
+  font-size: 22px;
+  display: inline-block;
+  animation: greeting-wave 1.2s ease-in-out;
+  transform-origin: 70% 70%;
+}
+@keyframes greeting-wave {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(14deg); }
+  40% { transform: rotate(-8deg); }
+  60% { transform: rotate(14deg); }
+  80% { transform: rotate(-4deg); }
+}
+
+/* Achicar margen superior de la user-pill ya que hay saludo arriba */
+.greeting + .user-pill { margin-top: 8px; }

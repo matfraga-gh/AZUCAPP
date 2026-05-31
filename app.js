@@ -634,6 +634,23 @@ function showDashboard() {
     usuario: 'Usuario'
   }[perfil] || 'Usuario';
 
+  // Saludo según hora del día + nombre de pila
+  const primerNombre = nombre.trim().split(/\s+/)[0];
+  const hora = new Date().getHours();
+  let saludo, emoji;
+  if (hora >= 5 && hora < 12) {
+    saludo = 'Buenos días';
+    emoji = '☀️';
+  } else if (hora >= 12 && hora < 20) {
+    saludo = 'Buenas tardes';
+    emoji = '🌤️';
+  } else {
+    saludo = 'Buenas noches';
+    emoji = '🌙';
+  }
+  document.getElementById('greetingText').textContent = `${saludo}, ${primerNombre}`;
+  document.getElementById('greetingEmoji').textContent = emoji;
+
   // User pill
   document.getElementById('userPillName').textContent = nombre;
   document.getElementById('userPillRole').textContent = roleLabel;
