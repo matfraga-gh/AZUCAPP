@@ -2732,3 +2732,166 @@ button {
 
 /* Achicar margen superior de la user-pill ya que hay saludo arriba */
 .greeting + .user-pill { margin-top: 8px; }
+
+/* ============================================
+   ADMIN: INSUMOS
+============================================ */
+
+/* Filtros */
+.insumos-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+.ins-filter-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+@media (max-width: 480px) {
+  .ins-filter-row { grid-template-columns: 1fr; }
+}
+
+/* Cards de insumos */
+.insumo-card {
+  background: #2A2724;
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(245, 240, 232, 0.06);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  transition: border-color 0.15s ease;
+}
+.insumo-card:hover {
+  border-color: rgba(245, 240, 232, 0.15);
+}
+.insumo-card.pendiente {
+  border-left: 3px solid #EF9F27;
+}
+.insumo-card.validado {
+  border-left: 3px solid #5DCAA5;
+}
+
+.insumo-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(239, 159, 39, 0.12);
+  color: #EF9F27;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.insumo-icon i { font-size: 18px; }
+
+.insumo-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.insumo-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+.insumo-nombre {
+  color: var(--c-cream);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.insumo-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.insumo-badge.validado {
+  background: rgba(93, 202, 165, 0.18);
+  color: #5DCAA5;
+}
+.insumo-badge.pendiente {
+  background: rgba(239, 159, 39, 0.18);
+  color: #EF9F27;
+}
+
+.insumo-meta {
+  color: var(--c-muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+.insumo-meta strong {
+  color: var(--c-cream);
+}
+
+.insumo-precio {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--c-muted);
+  flex-wrap: wrap;
+}
+.insumo-precio-monto {
+  color: var(--c-cream);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.insumo-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+/* Paginación */
+.pager {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  margin: 16px 0;
+  flex-wrap: wrap;
+}
+.pager-btn {
+  background: transparent;
+  border: 1px solid rgba(245, 240, 232, 0.15);
+  color: var(--c-cream);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  min-width: 36px;
+}
+.pager-btn:hover {
+  border-color: rgba(245, 240, 232, 0.3);
+}
+.pager-btn.active {
+  background: #C4622D;
+  border-color: #C4622D;
+  color: var(--c-cream);
+  font-weight: 600;
+}
+.pager-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pager-info {
+  color: var(--c-muted);
+  font-size: 12px;
+  margin: 0 8px;
+}

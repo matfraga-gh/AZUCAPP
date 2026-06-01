@@ -495,6 +495,142 @@
 </div>
 
 <!-- ============================================
+     VISTA: ADMINISTRACIÓN - Insumos
+============================================ -->
+<div id="vAdminInsumos" class="view">
+  <div class="module-wrap">
+
+    <div class="module-header">
+      <button class="btn-back" onclick="openAdministracion()" aria-label="Volver">
+        <i class="ti ti-arrow-left"></i>
+      </button>
+      <div class="module-title-block">
+        <div class="module-title">Insumos</div>
+        <div class="module-subtitle" id="insumosCount">Cargando...</div>
+      </div>
+    </div>
+
+    <div class="info-banner" style="margin-top:0; margin-bottom:14px;">
+      <i class="ti ti-info-circle"></i>
+      <span>Cargá los insumos con sus precios y formatos. Solo los insumos <strong>validados</strong> se pueden usar en sub-elaboraciones y platos.</span>
+    </div>
+
+    <!-- Botón crear nuevo -->
+    <button class="btn-primary-full" onclick="openModalInsumo(null)">
+      <i class="ti ti-plus"></i> Nuevo insumo
+    </button>
+
+    <!-- Filtros -->
+    <div class="insumos-filters">
+      <input type="text" id="insumoBuscar" class="form-input" placeholder="Buscar por nombre o proveedor..." oninput="onBuscarInsumo()">
+      <div class="ins-filter-row">
+        <select id="insumoSubfamilia" class="form-input" onchange="onFiltroInsumo()">
+          <option value="">Todas las subfamilias</option>
+        </select>
+        <select id="insumoEstado" class="form-input" onchange="onFiltroInsumo()">
+          <option value="">Todos los estados</option>
+          <option value="validado">✓ Validados</option>
+          <option value="pendiente">⏳ Pendientes</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Lista -->
+    <div id="insumosLista">
+      <div class="loading">Cargando insumos...</div>
+    </div>
+
+    <!-- Paginación -->
+    <div id="insumosPager" class="pager"></div>
+
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: CREAR / EDITAR INSUMO
+============================================ -->
+<div id="modalInsumo" class="modal-overlay" style="display:none">
+  <div class="modal-card modal-bib">
+    <div class="modal-header">
+      <div class="modal-title" id="modalInsumoTitle">Nuevo insumo</div>
+      <button class="modal-close" onclick="closeModalInsumo()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Nombre del insumo</label>
+        <input type="text" id="insNombre" class="form-input" placeholder="Ej: ACEITE DE OLIVA" maxlength="120">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Formato / Presentación comercial</label>
+        <input type="text" id="insFormato" class="form-input" placeholder="Ej: BIDON 5 LITROS, BOLSA KILO" maxlength="120">
+      </div>
+
+      <div class="form-row-2">
+        <div class="form-group">
+          <label class="form-label">Unidad base</label>
+          <select id="insUnidad" class="form-input">
+            <option value="kg">kg — kilos</option>
+            <option value="gr">gr — gramos</option>
+            <option value="lt">lt — litros</option>
+            <option value="ml">ml — mililitros</option>
+            <option value="u">u — unidades</option>
+            <option value="porcion">porcion</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cantidad por envase</label>
+          <input type="number" id="insCantidad" class="form-input" step="0.01" min="0" placeholder="1">
+          <div class="form-hint" id="insCantidadHint">Ej: si el envase tiene 5 litros, poné 5</div>
+        </div>
+      </div>
+
+      <div class="form-row-2">
+        <div class="form-group">
+          <label class="form-label">Costo del envase ($)</label>
+          <input type="number" id="insCosto" class="form-input" step="0.01" min="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Costo / unidad base</label>
+          <input type="text" id="insCostoUnidad" class="form-input" disabled style="opacity:0.7">
+          <div class="form-hint">Calculado automáticamente</div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Proveedor</label>
+        <input type="text" id="insProveedor" class="form-input" placeholder="Ej: AVARMAY S.A.S." maxlength="120">
+      </div>
+
+      <div class="form-row-2">
+        <div class="form-group">
+          <label class="form-label">Subfamilia</label>
+          <select id="insSubfamilia" class="form-input"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Código HiOPOS (opcional)</label>
+          <input type="text" id="insCodigo" class="form-input" placeholder="Ej: AZ-00108" maxlength="40">
+        </div>
+      </div>
+
+      <div class="info-banner" style="margin:8px 0;">
+        <i class="ti ti-info-circle"></i>
+        <span><strong>Cómo funciona:</strong> cargás el precio del envase y cuántas unidades base trae. El sistema calcula el costo por unidad base automáticamente. En recetas, cocina solo ve el insumo si está validado.</span>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModalInsumo()">Cancelar</button>
+      <button class="btn-ghost" id="btnInsumoSinValidar" onclick="guardarInsumo(false)">Guardar sin validar</button>
+      <button class="btn-primary" id="btnInsumoValidar" onclick="guardarInsumo(true)">✓ Validar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
      MODAL: EDITAR LOCALES DE UN EDITOR
 ============================================ -->
 <div class="modal-overlay" id="modalLocales">

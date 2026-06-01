@@ -1664,6 +1664,15 @@ const ADMIN_SECTIONS = [
     action: () => openAdminLocales()
   },
   {
+    id: 'insumos',
+    icon: 'ti-package',
+    color: '#EF9F27',
+    title: 'Insumos',
+    desc: 'Catálogo de insumos y proveedores',
+    activa: true,
+    action: () => openAdminInsumos()
+  },
+  {
     id: 'historial',
     icon: 'ti-history',
     color: '#B4B2A9',
@@ -3091,6 +3100,396 @@ window.openModalLocal = openModalLocal;
 window.closeModalLocal = closeModalLocal;
 window.setLocalActivo = setLocalActivo;
 window.guardarLocal = guardarLocal;
+
+// ============================================
+// ADMIN: INSUMOS (catálogo de ingredientes)
+// ============================================
+
+let INSUMOS_DB = [];          // cache completo de insumos cargados
+let INSUMOS_FILTRO_TEXTO = '';
+let INSUMOS_FILTRO_SUBFAMILIA = '';
+let INSUMOS_FILTRO_ESTADO = '';
+let INSUMOS_PAGE = 0;
+const INSUMOS_PAGE_SIZE = 30;
+let INSUMO_EDITANDO = null;   // null = nuevo, o id del insumo
+let INSUMOS_SUBFAMILIAS_CACHE = []; // subfamilias únicas del catálogo
+let INSUMOS_BUSCAR_TIMEOUT = null;
+
+// ¿Quién puede gestionar insumos?
+function puedeGestionarInsumos() {
+  return isMaster() || isAdmin();
+}
+
+async function openAdminInsumos() {
+  if (!puedeGestionarInsumos()) {
+    toast('Solo Master/Admin puede gestionar insumos', 'error');
+    showDashboard();
+    return;
+  }
+
+  showView('vAdminInsumos');
+
+  // Reset filtros si es primera vez
+  document.getElementById('insumoBuscar').value = INSUMOS_FILTRO_TEXTO;
+  document.getElementById('insumoEstado').value = INSUMOS_FILTRO_ESTADO;
+
+  document.getElementById('insumosLista').innerHTML = '<div class="loading">Cargando insumos...</div>';
+  document.getElementById('insumosCount').textContent = 'Cargando...';
+
+  await cargarInsumos();
+  await cargarSubfamiliasUnicas();
+  renderInsumosLista();
+}
+
+// Carga TODOS los insumos activos (con paginación local después)
+async function cargarInsumos() {
+  try {
+    // En lugar de traer 7295, traemos los activos (1015)
+    // Si llega a ser lento, podemos hacer paginación server-side
+    const data = await api('ingredientes?activo=eq.true&order=nombre.asc');
+    INSUMOS_DB = data || [];
+  } catch (e) {
+    console.error('Error cargando insumos:', e);
+    document.getElementById('insumosLista').innerHTML =
+      '<div class="loading" style="color:var(--c-error)">Error al cargar insumos</div>';
+    INSUMOS_DB = [];
+  }
+}
+
+async function cargarSubfamiliasUnicas() {
+  // Calcular subfamilias únicas a partir del cache
+  const unicas = [...new Set(INSUMOS_DB.map(i => i.subfamilia).filter(Boolean))].sort();
+  INSUMOS_SUBFAMILIAS_CACHE = unicas;
+
+  const select = document.getElementById('insumoSubfamilia');
+  select.innerHTML = '<option value="">Todas las subfamilias</option>' +
+    unicas.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  if (INSUMOS_FILTRO_SUBFAMILIA) select.value = INSUMOS_FILTRO_SUBFAMILIA;
+}
+
+function insumosFiltrados() {
+  const txt = INSUMOS_FILTRO_TEXTO.toLowerCase().trim();
+  // Normalizamos para tolerancia a tildes y mayúsculas
+  const norm = s => (s || '').toString().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const txtN = norm(txt);
+
+  return INSUMOS_DB.filter(i => {
+    // Filtro estado
+    if (INSUMOS_FILTRO_ESTADO === 'validado' && !i.validado) return false;
+    if (INSUMOS_FILTRO_ESTADO === 'pendiente' && i.validado) return false;
+    // Filtro subfamilia
+    if (INSUMOS_FILTRO_SUBFAMILIA && i.subfamilia !== INSUMOS_FILTRO_SUBFAMILIA) return false;
+    // Filtro texto (en nombre o proveedor)
+    if (txtN) {
+      const enNombre = norm(i.nombre).includes(txtN);
+      const enProveedor = norm(i.proveedor).includes(txtN);
+      if (!enNombre && !enProveedor) return false;
+    }
+    return true;
+  });
+}
+
+function renderInsumosLista() {
+  const cont = document.getElementById('insumosLista');
+  const countEl = document.getElementById('insumosCount');
+  const filtrados = insumosFiltrados();
+
+  countEl.textContent = filtrados.length === INSUMOS_DB.length
+    ? `${INSUMOS_DB.length} insumos`
+    : `${filtrados.length} de ${INSUMOS_DB.length} insumos`;
+
+  if (filtrados.length === 0) {
+    cont.innerHTML = `
+      <div class="bib-empty">
+        <i class="ti ti-package-off"></i>
+        <div class="bib-empty-title">No hay insumos para mostrar</div>
+        <div class="bib-empty-desc">Ajustá los filtros o agregá un insumo nuevo.</div>
+      </div>`;
+    document.getElementById('insumosPager').innerHTML = '';
+    return;
+  }
+
+  // Paginar localmente
+  const totalPages = Math.ceil(filtrados.length / INSUMOS_PAGE_SIZE);
+  if (INSUMOS_PAGE >= totalPages) INSUMOS_PAGE = 0;
+  const desde = INSUMOS_PAGE * INSUMOS_PAGE_SIZE;
+  const hasta = desde + INSUMOS_PAGE_SIZE;
+  const pageItems = filtrados.slice(desde, hasta);
+
+  let html = '';
+  pageItems.forEach(i => {
+    const cls = 'insumo-card ' + (i.validado ? 'validado' : 'pendiente');
+    const badgeCls = i.validado ? 'validado' : 'pendiente';
+    const badgeTxt = i.validado ? '✓ Validado' : '⏳ Pendiente';
+
+    const costoBase = costoUnitarioInsumo(i);
+    const costoEnvase = parseFloat(i.costo || 0);
+    const cantidad = parseFloat(i.cantidad_por_presentacion || 0);
+    const unidad = i.unidad || '';
+
+    html += `
+      <div class="${cls}">
+        <div class="insumo-icon"><i class="ti ti-package"></i></div>
+        <div class="insumo-info">
+          <div class="insumo-top">
+            <div class="insumo-nombre">${esc(i.nombre)}</div>
+            <span class="insumo-badge ${badgeCls}">${badgeTxt}</span>
+          </div>
+          <div class="insumo-meta">
+            ${i.formato ? `<strong>${esc(i.formato)}</strong>` : '<em style="color:#888780">(sin formato)</em>'}
+            ${i.proveedor ? ` · ${esc(i.proveedor)}` : ''}
+          </div>
+          <div class="insumo-precio">
+            ${costoEnvase > 0 ? `<span>Envase: <span class="insumo-precio-monto">$${formatNumber(costoEnvase)}</span></span>` : ''}
+            ${cantidad > 0 ? `<span>${formatNumber(cantidad)} ${esc(unidad)}</span>` : ''}
+            ${costoBase > 0 ? `<span>· <span class="insumo-precio-monto">$${formatNumber(costoBase)}/${esc(unidad)}</span></span>` : ''}
+          </div>
+          ${i.subfamilia ? `<div class="insumo-meta" style="margin-top:6px"><i class="ti ti-tag" style="font-size:11px;vertical-align:-1px"></i> ${esc(i.subfamilia)}</div>` : ''}
+        </div>
+        <div class="insumo-actions">
+          <button class="bib-btn-edit" onclick="openModalInsumo(${i.id})" title="Editar">
+            <i class="ti ti-edit"></i>
+          </button>
+          <button class="bib-btn-delete" onclick="borrarInsumo(${i.id})" title="Borrar">
+            <i class="ti ti-trash"></i>
+          </button>
+        </div>
+      </div>`;
+  });
+  cont.innerHTML = html;
+
+  renderPagerInsumos(filtrados.length, totalPages);
+}
+
+function renderPagerInsumos(total, totalPages) {
+  const pag = document.getElementById('insumosPager');
+  if (totalPages <= 1) { pag.innerHTML = ''; return; }
+
+  let html = '';
+  // Botón anterior
+  html += `<button class="pager-btn" onclick="irPaginaInsumo(${INSUMOS_PAGE - 1})" ${INSUMOS_PAGE === 0 ? 'disabled' : ''}><i class="ti ti-chevron-left"></i></button>`;
+
+  // Info "Página X de Y"
+  html += `<span class="pager-info">Página ${INSUMOS_PAGE + 1} de ${totalPages}</span>`;
+
+  // Botón siguiente
+  html += `<button class="pager-btn" onclick="irPaginaInsumo(${INSUMOS_PAGE + 1})" ${INSUMOS_PAGE === totalPages - 1 ? 'disabled' : ''}><i class="ti ti-chevron-right"></i></button>`;
+
+  pag.innerHTML = html;
+}
+
+function irPaginaInsumo(p) {
+  INSUMOS_PAGE = p;
+  renderInsumosLista();
+  // Scroll al top
+  document.getElementById('vAdminInsumos').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Calcula costo por unidad base
+function costoUnitarioInsumo(ins) {
+  const costo = parseFloat(ins.costo || 0);
+  const cant = parseFloat(ins.cantidad_por_presentacion || 0);
+  if (!costo || !cant) return 0;
+  return costo / cant;
+}
+
+// Buscador con debounce
+function onBuscarInsumo() {
+  if (INSUMOS_BUSCAR_TIMEOUT) clearTimeout(INSUMOS_BUSCAR_TIMEOUT);
+  INSUMOS_BUSCAR_TIMEOUT = setTimeout(() => {
+    INSUMOS_FILTRO_TEXTO = document.getElementById('insumoBuscar').value;
+    INSUMOS_PAGE = 0;
+    renderInsumosLista();
+  }, 250);
+}
+
+function onFiltroInsumo() {
+  INSUMOS_FILTRO_SUBFAMILIA = document.getElementById('insumoSubfamilia').value;
+  INSUMOS_FILTRO_ESTADO = document.getElementById('insumoEstado').value;
+  INSUMOS_PAGE = 0;
+  renderInsumosLista();
+}
+
+// ============================================
+// MODAL: CREAR / EDITAR INSUMO
+// ============================================
+function openModalInsumo(id) {
+  INSUMO_EDITANDO = id;
+  const ins = id ? INSUMOS_DB.find(x => x.id === id) : null;
+
+  document.getElementById('modalInsumoTitle').textContent = ins ? 'Editar insumo' : 'Nuevo insumo';
+
+  document.getElementById('insNombre').value = ins ? (ins.nombre || '') : '';
+  document.getElementById('insFormato').value = ins ? (ins.formato || '') : '';
+  document.getElementById('insUnidad').value = ins ? (ins.unidad || 'kg') : 'kg';
+  document.getElementById('insCantidad').value = ins ? (ins.cantidad_por_presentacion || '') : '1';
+  document.getElementById('insCosto').value = ins ? (ins.costo || '') : '';
+  document.getElementById('insProveedor').value = ins ? (ins.proveedor || '') : '';
+  document.getElementById('insCodigo').value = ins ? (ins.codigo_hiopos || '') : '';
+
+  // Subfamilias en el select
+  const selSub = document.getElementById('insSubfamilia');
+  selSub.innerHTML = '<option value="">— Sin subfamilia —</option>' +
+    INSUMOS_SUBFAMILIAS_CACHE.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  if (ins && ins.subfamilia) selSub.value = ins.subfamilia;
+
+  // Calcular costo unidad inicial
+  actualizarCostoUnidad();
+
+  // Si está validado, el botón "Validar" muestra "Re-validar"
+  const btnVal = document.getElementById('btnInsumoValidar');
+  if (ins && ins.validado) {
+    btnVal.innerHTML = '✓ Guardar como validado';
+  } else {
+    btnVal.innerHTML = '✓ Validar';
+  }
+
+  // Listeners para recalcular costo en vivo
+  document.getElementById('insCosto').oninput = actualizarCostoUnidad;
+  document.getElementById('insCantidad').oninput = actualizarCostoUnidad;
+
+  document.getElementById('modalInsumo').style.display = 'flex';
+}
+
+function closeModalInsumo() {
+  document.getElementById('modalInsumo').style.display = 'none';
+  INSUMO_EDITANDO = null;
+}
+
+function actualizarCostoUnidad() {
+  const costo = parseFloat(document.getElementById('insCosto').value) || 0;
+  const cant = parseFloat(document.getElementById('insCantidad').value) || 0;
+  const unidad = document.getElementById('insUnidad').value || '';
+  const box = document.getElementById('insCostoUnidad');
+  if (costo > 0 && cant > 0) {
+    box.value = `$${formatNumber(costo / cant)} / ${unidad}`;
+  } else {
+    box.value = '';
+  }
+}
+
+async function guardarInsumo(validar) {
+  const nombre = document.getElementById('insNombre').value.trim();
+  const formato = document.getElementById('insFormato').value.trim();
+  const unidad = document.getElementById('insUnidad').value;
+  const cantidad = parseFloat(document.getElementById('insCantidad').value);
+  const costo = parseFloat(document.getElementById('insCosto').value);
+  const proveedor = document.getElementById('insProveedor').value.trim();
+  const codigo = document.getElementById('insCodigo').value.trim();
+  const subfamilia = document.getElementById('insSubfamilia').value;
+
+  if (!nombre) { toast('Falta el nombre', 'error'); return; }
+  if (!unidad) { toast('Falta la unidad base', 'error'); return; }
+  if (isNaN(cantidad) || cantidad <= 0) { toast('Cantidad por envase inválida', 'error'); return; }
+  if (isNaN(costo) || costo < 0) { toast('Costo inválido', 'error'); return; }
+
+  const btnVal = document.getElementById('btnInsumoValidar');
+  const btnSin = document.getElementById('btnInsumoSinValidar');
+  btnVal.disabled = true;
+  btnSin.disabled = true;
+
+  const body = {
+    nombre,
+    formato: formato || null,
+    unidad,
+    cantidad_por_presentacion: cantidad,
+    costo,
+    proveedor: proveedor || null,
+    codigo_hiopos: codigo || null,
+    subfamilia: subfamilia || null,
+    familia: 'INSUMOS',
+    activo: true,
+    validado: validar,
+    actualizado_en: new Date().toISOString()
+  };
+  if (validar) {
+    body.validado_por = currentUser.id;
+    body.validado_en = new Date().toISOString();
+  }
+
+  try {
+    if (INSUMO_EDITANDO) {
+      await api(`ingredientes?id=eq.${INSUMO_EDITANDO}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body)
+      });
+      toast(validar ? '✓ Validado — disponible para cocina' : 'Guardado sin validar');
+    } else {
+      // Insumo nuevo
+      await api('ingredientes', {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
+      toast(validar ? '✓ Insumo creado y validado' : 'Insumo creado sin validar');
+    }
+    closeModalInsumo();
+    // Recargar lista
+    await cargarInsumos();
+    await cargarSubfamiliasUnicas();
+    renderInsumosLista();
+  } catch (e) {
+    toast('Error al guardar', 'error');
+    console.error(e);
+  } finally {
+    btnVal.disabled = false;
+    btnSin.disabled = false;
+  }
+}
+
+async function borrarInsumo(id) {
+  const ins = INSUMOS_DB.find(x => x.id === id);
+  if (!ins) return;
+
+  // Antes de borrar, chequear si está siendo usado en alguna receta
+  try {
+    const usos = await api(`receta_componentes?ingrediente_id=eq.${id}&select=receta_id&limit=1`);
+    if (usos && usos.length > 0) {
+      await showAlert({
+        title: 'No se puede borrar',
+        msg: `El insumo "${ins.nombre}" está siendo usado en al menos una receta. Primero quitalo de las recetas que lo usan.`,
+        type: 'warning',
+        okLabel: 'Entendido'
+      });
+      return;
+    }
+  } catch (e) {
+    console.warn('No se pudo verificar uso del insumo:', e);
+  }
+
+  const ok = await showConfirm({
+    title: '¿Borrar insumo?',
+    msg: `Vas a eliminar "${ins.nombre}".\n\nNo se puede deshacer.`,
+    type: 'danger',
+    danger: true,
+    okLabel: 'Borrar',
+    cancelLabel: 'Cancelar'
+  });
+  if (!ok) return;
+
+  try {
+    // Soft delete
+    await api(`ingredientes?id=eq.${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ activo: false, actualizado_en: new Date().toISOString() })
+    });
+    toast('Insumo borrado');
+    await cargarInsumos();
+    renderInsumosLista();
+  } catch (e) {
+    toast('Error al borrar', 'error');
+  }
+}
+
+// Exponer al window
+window.openAdminInsumos = openAdminInsumos;
+window.openModalInsumo = openModalInsumo;
+window.closeModalInsumo = closeModalInsumo;
+window.guardarInsumo = guardarInsumo;
+window.borrarInsumo = borrarInsumo;
+window.onBuscarInsumo = onBuscarInsumo;
+window.onFiltroInsumo = onFiltroInsumo;
+window.irPaginaInsumo = irPaginaInsumo;
 
 init();
 
