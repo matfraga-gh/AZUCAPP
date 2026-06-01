@@ -524,9 +524,14 @@
     <div class="insumos-filters">
       <input type="text" id="insumoBuscar" class="form-input" placeholder="Buscar por nombre o proveedor..." oninput="onBuscarInsumo()">
       <div class="ins-filter-row">
-        <select id="insumoSubfamilia" class="form-input" onchange="onFiltroInsumo()">
-          <option value="">Todas las subfamilias</option>
-        </select>
+        <div style="display:flex; gap:6px; align-items:stretch;">
+          <select id="insumoSubfamilia" class="form-input" onchange="onFiltroInsumo()" style="flex:1;">
+            <option value="">Todas las subfamilias</option>
+          </select>
+          <button class="btn-gestionar-subfam" onclick="openGestionSubfamilias()" title="Gestionar subfamilias">
+            <i class="ti ti-settings"></i>
+          </button>
+        </div>
         <select id="insumoEstado" class="form-input" onchange="onFiltroInsumo()">
           <option value="">Todos los estados</option>
           <option value="validado">✓ Validados</option>
@@ -608,7 +613,9 @@
       <div class="form-row-2">
         <div class="form-group">
           <label class="form-label">Subfamilia</label>
-          <select id="insSubfamilia" class="form-input"></select>
+          <input type="text" id="insSubfamilia" class="form-input" list="insSubfamiliaList" placeholder="Ej: ACEITES, VINAGRES Y SALSAS" autocomplete="off">
+          <datalist id="insSubfamiliaList"></datalist>
+          <div class="form-hint">Escribí para crear una nueva o elegí una existente</div>
         </div>
         <div class="form-group">
           <label class="form-label">Código HiOPOS (opcional)</label>
@@ -1017,6 +1024,68 @@
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeConfigPropinas()">Cancelar</button>
       <button class="btn-primary" id="btnGuardarConfig" onclick="guardarConfigPropinas()">Guardar configuración</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: GESTIÓN DE SUBFAMILIAS
+============================================ -->
+<div id="modalSubfamilias" class="modal-overlay" style="display:none">
+  <div class="modal-card modal-bib">
+    <div class="modal-header">
+      <div class="modal-title">Gestionar subfamilias</div>
+      <button class="modal-close" onclick="closeGestionSubfamilias()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <p style="color:var(--c-muted); font-size:12px; margin:0 0 12px;">
+        Renombrá o fusioná subfamilias. Los cambios se aplican a todos los insumos asociados.
+      </p>
+
+      <div id="subfamiliasLista">
+        <div class="loading">Cargando...</div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeGestionSubfamilias()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: RENOMBRAR / FUSIONAR SUBFAMILIA
+============================================ -->
+<div id="modalRenombrarSubfam" class="modal-overlay" style="display:none">
+  <div class="modal-card modal-bib-cat">
+    <div class="modal-header">
+      <div class="modal-title" id="renombrarSubfamTitle">Renombrar subfamilia</div>
+      <button class="modal-close" onclick="closeRenombrarSubfam()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Subfamilia original</label>
+        <input type="text" id="subfamOriginal" class="form-input" disabled style="opacity:0.7">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Nuevo nombre</label>
+        <input type="text" id="subfamNuevo" class="form-input" placeholder="Escribí el nombre nuevo" maxlength="80">
+        <div class="form-hint" id="subfamHint">Si el nuevo nombre ya existe, las subfamilias se fusionan.</div>
+      </div>
+
+      <div id="subfamCount" style="color:var(--c-muted); font-size:12px; margin-top:8px;"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeRenombrarSubfam()">Cancelar</button>
+      <button class="btn-primary" id="btnRenombrarSubfam" onclick="guardarRenombrarSubfam()">Aplicar</button>
     </div>
   </div>
 </div>
