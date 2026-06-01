@@ -2956,3 +2956,125 @@ button {
   gap: 4px;
   flex-shrink: 0;
 }
+
+
+/* ============================================
+   MÓDULO PERSONAL
+============================================ */
+.personal-filtros {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.mini-select {
+  flex: 1;
+  min-width: 120px;
+  background: var(--c-cream-soft);
+  border: 0.5px solid var(--c-cream-border);
+  border-radius: var(--r-md);
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--c-cream);
+  font-family: inherit;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.mini-select:focus { border-color: var(--c-rust); }
+
+.personal-exportbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+}
+.personal-exportbar .btn-ghost { font-size: 12px; }
+
+.personal-card {
+  background: var(--c-cream-soft);
+  border: 0.5px solid var(--c-cream-border);
+  border-radius: var(--r-md);
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.personal-card.inactive { opacity: 0.6; }
+
+.pc-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pc-id { flex: 1; min-width: 0; }
+.pc-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--c-cream);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pc-sub {
+  font-size: 12px;
+  color: var(--c-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-avatar.p-sinacceso { background: #5A5852; }
+.perfil-badge.sinacceso { background: rgba(180,178,169,0.12); color: var(--c-muted); }
+
+.pc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.pc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(245,240,232,0.06);
+  border: 0.5px solid var(--c-cream-border);
+  color: var(--c-sand);
+  border-radius: 12px;
+  padding: 3px 9px;
+  font-size: 11px;
+}
+.pc-chip i { font-size: 12px; }
+.pc-chip-off { color: #E29B4A; }
+
+.pc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.pc-btn {
+  padding: 7px 11px !important;
+  font-size: 11px !important;
+  margin-top: 0 !important;
+}
+.pc-btn i { margin-right: 3px; }
+
+.ficha-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 0.5px solid var(--c-cream-border);
+}
+.ficha-row:last-child { border-bottom: none; }
+.ficha-k {
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--c-sand);
+  flex-shrink: 0;
+}
+.ficha-v {
+  font-size: 14px;
+  color: var(--c-cream);
+  text-align: right;
+}

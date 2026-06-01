@@ -1636,13 +1636,13 @@ window.guardarConfigPropinas = guardarConfigPropinas;
 // ============================================
 const ADMIN_SECTIONS = [
   {
-    id: 'usuarios',
+    id: 'personal',
     icon: 'ti-users',
     color: '#7F77DD',
-    title: 'Usuarios',
-    desc: 'Crear, editar, resetear contraseñas',
+    title: 'Personal',
+    desc: 'Fichas, perfiles, contraseñas, exportar',
     activa: true,
-    action: () => openAdminUsuarios()
+    action: () => openPersonal()
   },
   {
     id: 'editores',
@@ -1735,128 +1735,364 @@ let ADMIN_FILTRO_ACTUAL = 'todos';
 let EDITANDO_USER_ID = null;
 let RESET_USER_ID = null;
 
-async function openAdminUsuarios() {
-  showView('vAdminUsuarios');
-  document.getElementById('userSearch').value = '';
-  ADMIN_FILTRO_ACTUAL = 'todos';
-  // Reset pills visualmente
-  document.querySelectorAll('.filter-pills .pill').forEach(p => {
-    p.classList.toggle('active', p.dataset.filter === 'todos');
-  });
+// ============================================
+// MÓDULO PERSONAL  (reemplaza al viejo "Usuarios")
+// Lista unificada: empleados activos + usuarios sin ficha (ej: matfraga)
+// ============================================
+const AZUCA26_HASH = 'c6a7c00511ff7ca91719d38debce681a27ee1798f905a96801a44c3e75003cbe';
+const PERFIL_LABELS = { master: 'Master', admin: 'Admin', editor: 'Editor', usuario: 'Usuario' };
 
-  await cargarUsuarios();
-  await cargarEmpleados();
+let PERSONAS_CACHE = [];
+let PERFIL_EDIT_USERID = null;
+
+// Quita tildes y pasa a minúsculas para buscar con tolerancia
+function normalizar(s) {
+  return (s || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
 
-async function cargarUsuarios() {
-  const lista = document.getElementById('usuariosLista');
-  lista.innerHTML = '<div class="loading">Cargando usuarios...</div>';
+function formatearFecha(iso) {
+  if (!iso) return '';
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? (m[3] + '/' + m[2] + '/' + m[1]) : iso;
+}
 
+function openPersonal() {
+  showView('vPersonal');
+  const s = document.getElementById('personalSearch');
+  if (s) s.value = '';
+  ['personalFiltroLocal', 'personalFiltroSector', 'personalFiltroPerfil'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  cargarUsuarios();
+}
+window.openPersonal = openPersonal;
+
+// Mantengo el nombre cargarUsuarios porque guardarUsuario/reset/toggle lo llaman
+async function cargarUsuarios() {
+  const lista = document.getElementById('personalLista');
+  if (lista) lista.innerHTML = '<div class="loading">Cargando personal...</div>';
   try {
+    await cargarEmpleados();
     ADMIN_USUARIOS_CACHE = await api('roster_usuarios?select=*&order=nombre.asc') || [];
-    renderUsuarios();
+    construirPersonas();
+    poblarFiltrosPersonal();
+    renderPersonal();
   } catch (e) {
-    lista.innerHTML = '<div class="empty-list" style="color:var(--c-error)">Error al cargar usuarios</div>';
+    if (lista) lista.innerHTML = '<div class="empty-list" style="color:var(--c-error)">Error al cargar el personal</div>';
   }
 }
 
 async function cargarEmpleados() {
   try {
-    ADMIN_EMPLEADOS_CACHE = await api('empleados?activo=eq.true&select=id,nombre,apellido,local,sector&order=nombre.asc') || [];
+    ADMIN_EMPLEADOS_CACHE = await api('empleados?activo=eq.true&select=id,nombre,apellido,nombre_p,sector,categoria,local,telefono,fecha_nac,es_multilocal,activo&order=apellido.asc') || [];
   } catch (e) {
     console.warn('Error al cargar empleados:', e);
     ADMIN_EMPLEADOS_CACHE = [];
   }
 }
 
-function renderUsuarios() {
-  const lista = document.getElementById('usuariosLista');
-  const search = (document.getElementById('userSearch').value || '').toLowerCase().trim();
+function armarPersona(e, u) {
+  const apellido = e ? (e.apellido || '') : '';
+  const pila = e ? (e.nombre_p || e.nombre || '') : (u ? (u.nombre || '') : '');
+  let nombreCompleto;
+  if (apellido && pila) nombreCompleto = apellido + ', ' + pila;
+  else nombreCompleto = (apellido || pila || (u ? u.nombre : '') || 'Sin nombre');
+  const perfil = u ? (u.perfil || 'usuario') : null;
+  return {
+    key: e ? ('emp-' + e.id) : ('usr-' + u.id),
+    empleado: e, user: u,
+    apellido: apellido, pila: pila, nombreCompleto: nombreCompleto,
+    iniciales: obtenerIniciales(((pila + ' ' + apellido).trim()) || (u ? u.nombre : '') || '?'),
+    usuario: u ? (u.usuario || '') : '',
+    perfil: perfil,
+    perfilLabel: perfil ? (PERFIL_LABELS[perfil] || 'Usuario') : 'Sin acceso',
+    local: e ? (e.local || '') : '',
+    sector: e ? (e.sector || '') : '',
+    categoria: e ? (e.categoria || '') : '',
+    telefono: e ? (e.telefono || '') : '',
+    fechaNac: e ? (e.fecha_nac || '') : '',
+    esMultilocal: e ? !!e.es_multilocal : false,
+    tieneAcceso: !!u,
+    accesoActivo: u ? !!u.activo : false,
+    orden: (apellido || pila || (u ? u.nombre : '') || '').toLowerCase()
+  };
+}
 
-  let users = ADMIN_USUARIOS_CACHE.slice();
+function construirPersonas() {
+  const usersByEmp = {};
+  const consumidos = {};
+  (ADMIN_USUARIOS_CACHE || []).forEach(u => {
+    if (u.empleado_id != null) usersByEmp[u.empleado_id] = u;
+  });
 
-  // Filtro por pill
-  if (ADMIN_FILTRO_ACTUAL === 'inactivos') {
-    users = users.filter(u => !u.activo);
-  } else if (ADMIN_FILTRO_ACTUAL !== 'todos') {
-    users = users.filter(u => u.activo && u.perfil === ADMIN_FILTRO_ACTUAL);
-  } else {
-    users = users.filter(u => u.activo);
+  const personas = [];
+  (ADMIN_EMPLEADOS_CACHE || []).forEach(e => {
+    const u = usersByEmp[e.id] || null;
+    if (u) consumidos[u.id] = true;
+    personas.push(armarPersona(e, u));
+  });
+  // Usuarios que pueden entrar pero no quedaron vinculados a un empleado activo
+  // (ej: matfraga, o usuarios de empleados dados de baja) -> que no se pierdan
+  (ADMIN_USUARIOS_CACHE || []).forEach(u => {
+    if (consumidos[u.id]) return;
+    personas.push(armarPersona(null, u));
+  });
+
+  personas.sort((a, b) => a.orden.localeCompare(b.orden, 'es'));
+  PERSONAS_CACHE = personas;
+}
+
+function poblarFiltrosPersonal() {
+  const locales = Array.from(new Set(PERSONAS_CACHE.map(p => p.local).filter(Boolean))).sort();
+  const sectores = Array.from(new Set(PERSONAS_CACHE.map(p => p.sector).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es'));
+  const selLocal = document.getElementById('personalFiltroLocal');
+  const selSector = document.getElementById('personalFiltroSector');
+  if (selLocal) {
+    const prev = selLocal.value;
+    selLocal.innerHTML = '<option value="">Todos los locales</option>' +
+      locales.map(l => '<option value="' + esc(l) + '">' + esc(LOCAL_LABELS[l] || l) + '</option>').join('');
+    selLocal.value = prev;
   }
-
-  // Filtro por búsqueda
-  if (search) {
-    users = users.filter(u => {
-      const n = (u.nombre || '').toLowerCase();
-      const us = (u.usuario || '').toLowerCase();
-      return n.includes(search) || us.includes(search);
-    });
+  if (selSector) {
+    const prev = selSector.value;
+    selSector.innerHTML = '<option value="">Todos los sectores</option>' +
+      sectores.map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>').join('');
+    selSector.value = prev;
   }
+}
 
-  // Header con conteo
-  document.getElementById('usuariosCount').textContent =
-    users.length + (users.length === 1 ? ' usuario' : ' usuarios');
+function personasFiltradas() {
+  const q = normalizar((document.getElementById('personalSearch') || {}).value);
+  const fLocal = (document.getElementById('personalFiltroLocal') || {}).value || '';
+  const fSector = (document.getElementById('personalFiltroSector') || {}).value || '';
+  const fPerfil = (document.getElementById('personalFiltroPerfil') || {}).value || '';
+  return PERSONAS_CACHE.filter(p => {
+    if (fLocal && p.local !== fLocal) return false;
+    if (fSector && p.sector !== fSector) return false;
+    if (fPerfil) {
+      if (fPerfil === 'sinacceso') { if (p.tieneAcceso) return false; }
+      else if (p.perfil !== fPerfil) return false;
+    }
+    if (q) {
+      const hay = normalizar(p.apellido) + ' ' + normalizar(p.pila) + ' ' +
+                  normalizar(p.usuario) + ' ' + normalizar(p.nombreCompleto);
+      if (hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  });
+}
 
-  if (!users.length) {
-    lista.innerHTML = `<div class="empty-list">No se encontraron usuarios${search ? ' con ese criterio' : ''}</div>`;
+function renderPersonal() {
+  const lista = document.getElementById('personalLista');
+  if (!lista) return;
+  const items = personasFiltradas();
+  const cnt = document.getElementById('personalCount');
+  if (cnt) cnt.textContent = items.length + (items.length === 1 ? ' persona' : ' personas');
+  if (!items.length) {
+    lista.innerHTML = '<div class="empty-list">No se encontró personal con ese criterio</div>';
     return;
   }
+  const gestiona = isMaster() || isAdmin();
 
-  const perfilLabels = {
-    master: 'Master',
-    admin: 'Admin',
-    editor: 'Editor',
-    usuario: 'Usuario'
-  };
+  lista.innerHTML = items.map(p => {
+    const avCls = p.perfil ? ('p-' + p.perfil) : 'p-sinacceso';
+    const badgeCls = p.perfil ? p.perfil : 'sinacceso';
 
-  lista.innerHTML = users.map(u => {
-    const inicial = (u.nombre || u.usuario || '?').trim().charAt(0).toUpperCase();
-    const inactiveCls = u.activo ? '' : ' inactive';
-    const perfilCls = 'p-' + (u.perfil || 'usuario');
-    const labelPerfil = perfilLabels[u.perfil] || 'Usuario';
-    const inactiveTag = u.activo ? '' : ' · INACTIVO';
-    const empleadoTag = u.empleado_id ? ' · vinculado' : '';
+    const subParts = [];
+    if (p.usuario) subParts.push('@' + esc(p.usuario));
+    if (p.sector) subParts.push(esc(p.sector));
+    if (p.categoria) subParts.push(esc(p.categoria));
+    const sub = subParts.join(' · ');
 
-    // Botón activar/desactivar
-    const toggleBtn = u.id === currentUser.id
-      ? '' // no podés desactivarte a vos mismo
-      : `<button class="btn-row-action" onclick="event.stopPropagation();toggleActivoUser(${u.id})"
-            title="${u.activo ? 'Desactivar' : 'Activar'}">
-          <i class="ti ti-${u.activo ? 'user-off' : 'user-check'}"></i>
-        </button>`;
+    const chips = [];
+    if (p.local) chips.push('<span class="pc-chip"><i class="ti ti-map-pin"></i>' + esc(LOCAL_LABELS[p.local] || p.local) + '</span>');
+    if (p.esMultilocal) chips.push('<span class="pc-chip"><i class="ti ti-arrows-shuffle"></i>Multilocal</span>');
+    if (p.tieneAcceso && !p.accesoActivo) chips.push('<span class="pc-chip pc-chip-off"><i class="ti ti-user-off"></i>Acceso inactivo</span>');
 
-    return `
-      <div class="user-row${inactiveCls}" data-id="${u.id}">
-        <div class="user-avatar ${perfilCls}">${esc(inicial)}</div>
-        <div class="user-info">
-          <div class="user-name">${esc(u.nombre || u.usuario)}</div>
-          <div class="user-meta">@${esc(u.usuario)} · ${labelPerfil}${empleadoTag}${inactiveTag}</div>
-        </div>
-        <div class="user-actions">
-          <button class="btn-row-action" onclick="event.stopPropagation();abrirEditarUsuario(${u.id})" title="Editar">
-            <i class="ti ti-edit"></i>
-          </button>
-          <button class="btn-row-action" onclick="event.stopPropagation();abrirResetPass(${u.id})" title="Resetear contraseña">
-            <i class="ti ti-key"></i>
-          </button>
-          ${toggleBtn}
-        </div>
-      </div>`;
+    let acciones = '<button class="btn-ghost pc-btn" onclick="abrirFicha(\'' + p.key + '\')"><i class="ti ti-id"></i>Ver ficha</button>';
+    if (gestiona) {
+      if (p.tieneAcceso) {
+        acciones += '<button class="btn-ghost pc-btn" onclick="abrirCambiarPerfil(' + p.user.id + ')"><i class="ti ti-user-cog"></i>Perfil</button>';
+        acciones += '<button class="btn-ghost pc-btn" onclick="resetearAzuca26(' + p.user.id + ')"><i class="ti ti-key"></i>Reset</button>';
+        if (!currentUser || p.user.id !== currentUser.id) {
+          acciones += '<button class="btn-ghost pc-btn" onclick="toggleActivoUser(' + p.user.id + ')"><i class="ti ti-' + (p.accesoActivo ? 'user-off' : 'user-check') + '"></i>' + (p.accesoActivo ? 'Desactivar' : 'Activar') + '</button>';
+        }
+      } else if (p.empleado) {
+        acciones += '<button class="btn-ghost pc-btn" onclick="crearAccesoEmpleado(' + p.empleado.id + ')"><i class="ti ti-user-plus"></i>Crear acceso</button>';
+      }
+    }
+
+    return '' +
+      '<div class="personal-card' + (p.tieneAcceso && !p.accesoActivo ? ' inactive' : '') + '">' +
+        '<div class="pc-top">' +
+          '<div class="user-avatar ' + avCls + '">' + esc(p.iniciales) + '</div>' +
+          '<div class="pc-id">' +
+            '<div class="pc-name">' + esc(p.nombreCompleto) + '</div>' +
+            (sub ? '<div class="pc-sub">' + sub + '</div>' : '') +
+          '</div>' +
+          '<span class="perfil-badge ' + badgeCls + '">' + esc(p.perfilLabel) + '</span>' +
+        '</div>' +
+        (chips.length ? '<div class="pc-meta">' + chips.join('') + '</div>' : '') +
+        '<div class="pc-actions">' + acciones + '</div>' +
+      '</div>';
   }).join('');
 }
 
-// Search en tiempo real
-document.getElementById('userSearch').addEventListener('input', () => renderUsuarios());
+// ---- Ficha (solo lectura) ----
+window.abrirFicha = function(key) {
+  const p = PERSONAS_CACHE.find(x => x.key === key);
+  if (!p) return;
+  const fila = (lbl, val) => '<div class="ficha-row"><span class="ficha-k">' + lbl + '</span><span class="ficha-v">' + (val ? esc(val) : '—') + '</span></div>';
+  const estado = p.tieneAcceso ? (p.accesoActivo ? 'Activo' : 'Inactivo') : 'Sin acceso a la app';
+  document.getElementById('fichaTitulo').textContent = p.nombreCompleto;
+  document.getElementById('fichaBody').innerHTML =
+    fila('Apellido', p.apellido) +
+    fila('Nombre', p.pila) +
+    fila('Usuario', p.usuario ? '@' + p.usuario : '') +
+    fila('Perfil', p.perfilLabel) +
+    fila('Local', p.local ? (LOCAL_LABELS[p.local] || p.local) : '') +
+    fila('Sector', p.sector) +
+    fila('Categoría', p.categoria) +
+    fila('Teléfono', p.telefono) +
+    fila('Fecha de nacimiento', formatearFecha(p.fechaNac)) +
+    fila('Multilocal', p.esMultilocal ? 'Sí' : 'No') +
+    fila('Estado de acceso', estado);
+  document.getElementById('modalFicha').classList.add('show');
+};
+window.closeFichaModal = function() {
+  document.getElementById('modalFicha').classList.remove('show');
+};
 
-// Filtros con pills
-document.querySelectorAll('.filter-pills .pill').forEach(p => {
-  p.addEventListener('click', () => {
-    document.querySelectorAll('.filter-pills .pill').forEach(x => x.classList.remove('active'));
-    p.classList.add('active');
-    ADMIN_FILTRO_ACTUAL = p.dataset.filter;
-    renderUsuarios();
+// ---- Cambiar perfil (Master + Admin) ----
+window.abrirCambiarPerfil = function(userId) {
+  if (!isMaster() && !isAdmin()) return;
+  const u = ADMIN_USUARIOS_CACHE.find(x => x.id === userId);
+  if (!u) return;
+  PERFIL_EDIT_USERID = userId;
+  document.getElementById('cambiarPerfilNombre').textContent = (u.nombre || ('@' + u.usuario));
+  document.getElementById('cambiarPerfilSelect').value = u.perfil || 'usuario';
+  const optM = document.getElementById('cpOptMaster');
+  optM.disabled = !isMaster();
+  optM.textContent = isMaster() ? 'Master (máximo nivel)' : 'Master (solo un Master puede asignar)';
+  document.getElementById('cambiarPerfilError').textContent = '';
+  document.getElementById('modalCambiarPerfil').classList.add('show');
+};
+window.closeCambiarPerfilModal = function() {
+  document.getElementById('modalCambiarPerfil').classList.remove('show');
+};
+window.guardarCambioPerfil = async function() {
+  const err = document.getElementById('cambiarPerfilError');
+  err.textContent = '';
+  const nuevo = document.getElementById('cambiarPerfilSelect').value;
+  if (nuevo === 'master' && !isMaster()) {
+    err.textContent = 'Solo un Master puede asignar el perfil Master';
+    return;
+  }
+  const btn = document.getElementById('btnGuardarPerfil');
+  try {
+    btn.disabled = true; btn.textContent = 'Guardando...';
+    await api('roster_usuarios?id=eq.' + PERFIL_EDIT_USERID, {
+      method: 'PATCH',
+      body: JSON.stringify({ perfil: nuevo })
+    });
+    closeCambiarPerfilModal();
+    toast('✓ Perfil actualizado', 'success');
+    await cargarUsuarios();
+  } catch (e) {
+    err.textContent = 'Error al actualizar el perfil';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Guardar';
+  }
+};
+
+// ---- Reset de contraseña a azuca26 (un toque, Master + Admin) ----
+window.resetearAzuca26 = async function(userId) {
+  if (!isMaster() && !isAdmin()) return;
+  const u = ADMIN_USUARIOS_CACHE.find(x => x.id === userId);
+  if (!u) return;
+  const ok = await showConfirm({
+    title: 'Resetear contraseña',
+    msg: 'La contraseña de ' + (u.nombre || ('@' + u.usuario)) + ' va a quedar en "azuca26".\n\nLa próxima vez que entre, el sistema le va a pedir que elija una nueva.\n\n¿Confirmás?',
+    type: 'warning',
+    okLabel: 'Sí, resetear',
+    cancelLabel: 'Cancelar'
   });
-});
+  if (!ok) return;
+  try {
+    await api('roster_usuarios?id=eq.' + userId, {
+      method: 'PATCH',
+      body: JSON.stringify({ password_hash: AZUCA26_HASH, debe_cambiar_password: true })
+    });
+    toast('✓ Contraseña reseteada a azuca26', 'success');
+  } catch (e) {
+    toast('Error al resetear la contraseña', 'error');
+  }
+};
+
+// ---- Crear acceso para un empleado sin usuario (reusa el modal de Crear) ----
+window.crearAccesoEmpleado = function(empId) {
+  abrirCrearUsuario();
+  const e = ADMIN_EMPLEADOS_CACHE.find(x => x.id === empId);
+  if (e) {
+    const nom = ((e.nombre_p || e.nombre || '') + ' ' + (e.apellido || '')).trim();
+    const elNom = document.getElementById('userNombre');
+    const elEmp = document.getElementById('userEmpleado');
+    if (elNom) elNom.value = nom;
+    if (elEmp) elEmp.value = String(empId);
+  }
+};
+
+// ============================================
+// EXPORTAR A EXCEL  (helper genérico reutilizable)
+// hojas = [{ nombre: 'Personal', filas: [{Col:val,...}, ...] }, ...]
+// ============================================
+function exportarAExcel(nombreArchivo, hojas) {
+  if (typeof XLSX === 'undefined') {
+    toast('No se pudo cargar el exportador de Excel', 'error');
+    return;
+  }
+  const wb = XLSX.utils.book_new();
+  (hojas || []).forEach(h => {
+    const ws = XLSX.utils.json_to_sheet(h.filas || []);
+    XLSX.utils.book_append_sheet(wb, ws, (h.nombre || 'Hoja').substring(0, 31));
+  });
+  XLSX.writeFile(wb, nombreArchivo);
+}
+window.exportarAExcel = exportarAExcel;
+
+window.exportarPersonalExcel = function() {
+  const items = personasFiltradas();
+  if (!items.length) {
+    toast('No hay personal para exportar con esos filtros', 'error');
+    return;
+  }
+  const filas = items.map(p => ({
+    'Apellido': p.apellido,
+    'Nombre': p.pila,
+    'Usuario': p.usuario,
+    'Perfil': p.perfilLabel,
+    'Local': p.local ? (LOCAL_LABELS[p.local] || p.local) : '',
+    'Sector': p.sector,
+    'Categoría': p.categoria,
+    'Teléfono': p.telefono,
+    'Fecha nacimiento': p.fechaNac || '',
+    'Multilocal': p.esMultilocal ? 'Sí' : 'No',
+    'Acceso': p.tieneAcceso ? (p.accesoActivo ? 'Activo' : 'Inactivo') : 'Sin acceso'
+  }));
+  exportarAExcel('Personal_AZUCA_' + hoyStr() + '.xlsx', [{ nombre: 'Personal', filas: filas }]);
+  toast('✓ Excel generado', 'success');
+};
+
+// Listeners de filtros del módulo Personal
+(function initPersonalFiltros() {
+  const s = document.getElementById('personalSearch');
+  if (s) s.addEventListener('input', renderPersonal);
+  ['personalFiltroLocal', 'personalFiltroSector', 'personalFiltroPerfil'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', renderPersonal);
+  });
+})();
 
 // ============================================
 // MODAL CREAR / EDITAR USUARIO

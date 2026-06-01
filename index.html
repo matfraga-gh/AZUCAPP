@@ -356,7 +356,7 @@
 <!-- ============================================
      VISTA: ADMINISTRACIÓN - Usuarios
 ============================================ -->
-<div id="vAdminUsuarios" class="view">
+<div id="vPersonal" class="view">
   <div class="module-wrap">
 
     <div class="module-header">
@@ -364,29 +364,37 @@
         <i class="ti ti-arrow-left"></i>
       </button>
       <div class="module-title-block">
-        <div class="module-title">Usuarios</div>
-        <div class="module-subtitle" id="usuariosCount">Cargando...</div>
+        <div class="module-title">Personal</div>
+        <div class="module-subtitle" id="personalCount">Cargando...</div>
       </div>
     </div>
 
     <div class="admin-toolbar">
-      <input type="search" id="userSearch" placeholder="Buscar por nombre o usuario..." class="search-input">
-      <button class="btn-primary btn-icon-only" onclick="abrirCrearUsuario()" title="Crear usuario">
+      <input type="search" id="personalSearch" placeholder="Buscar por nombre, apellido o usuario..." class="search-input">
+      <button class="btn-primary btn-icon-only" onclick="abrirCrearUsuario()" title="Crear acceso">
         <i class="ti ti-plus"></i>
       </button>
     </div>
 
-    <div class="filter-pills">
-      <button class="pill active" data-filter="todos">Todos</button>
-      <button class="pill" data-filter="master">Master</button>
-      <button class="pill" data-filter="admin">Admin</button>
-      <button class="pill" data-filter="editor">Editor</button>
-      <button class="pill" data-filter="usuario">Usuario</button>
-      <button class="pill" data-filter="inactivos">Inactivos</button>
+    <div class="personal-filtros">
+      <select id="personalFiltroLocal" class="mini-select"><option value="">Todos los locales</option></select>
+      <select id="personalFiltroSector" class="mini-select"><option value="">Todos los sectores</option></select>
+      <select id="personalFiltroPerfil" class="mini-select">
+        <option value="">Todos los perfiles</option>
+        <option value="master">Master</option>
+        <option value="admin">Admin</option>
+        <option value="editor">Editor</option>
+        <option value="usuario">Usuario</option>
+        <option value="sinacceso">Sin acceso</option>
+      </select>
     </div>
 
-    <div id="usuariosLista">
-      <div class="loading">Cargando usuarios...</div>
+    <div class="personal-exportbar">
+      <button class="btn-ghost" onclick="exportarPersonalExcel()"><i class="ti ti-file-spreadsheet"></i>Exportar Excel</button>
+    </div>
+
+    <div id="personalLista">
+      <div class="loading">Cargando personal...</div>
     </div>
 
   </div>
@@ -1210,6 +1218,57 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- ============================================
+     MODAL: FICHA DE PERSONAL (solo lectura)
+============================================ -->
+<div class="modal-overlay" id="modalFicha">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title" id="fichaTitulo">Ficha</h2>
+      <button class="modal-close" onclick="closeFichaModal()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+    <div class="modal-body" id="fichaBody"></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeFichaModal()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: CAMBIAR PERFIL
+============================================ -->
+<div class="modal-overlay" id="modalCambiarPerfil">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Cambiar perfil</h2>
+      <button class="modal-close" onclick="closeCambiarPerfilModal()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p id="cambiarPerfilNombre" style="color:var(--c-cream);margin-bottom:10px;font-weight:500;"></p>
+      <label class="field">
+        <span class="field-label">Perfil</span>
+        <select id="cambiarPerfilSelect">
+          <option value="usuario">Usuario (colaborador común)</option>
+          <option value="editor">Editor</option>
+          <option value="admin">Admin (gestión completa)</option>
+          <option value="master" id="cpOptMaster">Master (máximo nivel)</option>
+        </select>
+      </label>
+      <div class="login-error" id="cambiarPerfilError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeCambiarPerfilModal()">Cancelar</button>
+      <button class="btn-primary" id="btnGuardarPerfil" onclick="guardarCambioPerfil()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Librería para exportar a Excel (SheetJS) -->
+<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
