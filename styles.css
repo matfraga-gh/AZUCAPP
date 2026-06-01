@@ -2983,6 +2983,15 @@ button {
 }
 .mini-select:focus { border-color: var(--c-rust); }
 
+/* Opciones desplegadas: fondo oscuro sólido + texto crema, legibles y on-theme.
+   Se aplica a TODOS los select de la app (filtros y modales). */
+.mini-select option,
+.field select option,
+select option {
+  background-color: #2C2A26;
+  color: #F5F0E8;
+}
+
 .personal-exportbar {
   display: flex;
   justify-content: flex-end;
