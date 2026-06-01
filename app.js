@@ -3108,11 +3108,13 @@ window.guardarLocal = guardarLocal;
 let INSUMOS_DB = [];          // cache completo de insumos cargados
 let INSUMOS_FILTRO_TEXTO = '';
 let INSUMOS_FILTRO_SUBFAMILIA = '';
+let INSUMOS_FILTRO_PROVEEDOR = '';
 let INSUMOS_FILTRO_ESTADO = '';
 let INSUMOS_PAGE = 0;
 const INSUMOS_PAGE_SIZE = 30;
 let INSUMO_EDITANDO = null;   // null = nuevo, o id del insumo
 let INSUMOS_SUBFAMILIAS_CACHE = []; // subfamilias únicas del catálogo
+let INSUMOS_PROVEEDORES_CACHE = []; // proveedores únicos del catálogo
 let INSUMOS_BUSCAR_TIMEOUT = null;
 
 // ¿Quién puede gestionar insumos?
@@ -3156,15 +3158,31 @@ async function cargarInsumos() {
   }
 }
 
-async function cargarSubfamiliasUnicas() {
-  // Calcular subfamilias únicas a partir del cache
-  const unicas = [...new Set(INSUMOS_DB.map(i => i.subfamilia).filter(Boolean))].sort();
-  INSUMOS_SUBFAMILIAS_CACHE = unicas;
+async function cargarOpcionesUnicas() {
+  // Subfamilias únicas
+  const subsUnicas = [...new Set(INSUMOS_DB.map(i => i.subfamilia).filter(Boolean))].sort();
+  INSUMOS_SUBFAMILIAS_CACHE = subsUnicas;
 
-  const select = document.getElementById('insumoSubfamilia');
-  select.innerHTML = '<option value="">Todas las subfamilias</option>' +
-    unicas.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
-  if (INSUMOS_FILTRO_SUBFAMILIA) select.value = INSUMOS_FILTRO_SUBFAMILIA;
+  // Proveedores únicos
+  const provsUnicos = [...new Set(INSUMOS_DB.map(i => i.proveedor).filter(Boolean))].sort();
+  INSUMOS_PROVEEDORES_CACHE = provsUnicos;
+
+  // Llenar datalist del filtro de subfamilia
+  const dataListFiltro = document.getElementById('insumoSubfamiliaList');
+  if (dataListFiltro) {
+    dataListFiltro.innerHTML = subsUnicas.map(s => `<option value="${esc(s)}">`).join('');
+  }
+
+  // Llenar datalist del filtro de proveedor
+  const dataListProvFiltro = document.getElementById('insumoProveedorList');
+  if (dataListProvFiltro) {
+    dataListProvFiltro.innerHTML = provsUnicos.map(p => `<option value="${esc(p)}">`).join('');
+  }
+}
+
+// Mantener nombre viejo por compatibilidad
+async function cargarSubfamiliasUnicas() {
+  return cargarOpcionesUnicas();
 }
 
 function insumosFiltrados() {
@@ -3178,8 +3196,18 @@ function insumosFiltrados() {
     // Filtro estado
     if (INSUMOS_FILTRO_ESTADO === 'validado' && !i.validado) return false;
     if (INSUMOS_FILTRO_ESTADO === 'pendiente' && i.validado) return false;
-    // Filtro subfamilia
-    if (INSUMOS_FILTRO_SUBFAMILIA && i.subfamilia !== INSUMOS_FILTRO_SUBFAMILIA) return false;
+    // Filtro subfamilia (búsqueda parcial, tolerante a tildes)
+    if (INSUMOS_FILTRO_SUBFAMILIA) {
+      const filtroN = norm(INSUMOS_FILTRO_SUBFAMILIA);
+      const subN = norm(i.subfamilia);
+      if (!subN.includes(filtroN)) return false;
+    }
+    // Filtro proveedor (búsqueda parcial, tolerante a tildes)
+    if (INSUMOS_FILTRO_PROVEEDOR) {
+      const filtroN = norm(INSUMOS_FILTRO_PROVEEDOR);
+      const provN = norm(i.proveedor);
+      if (!provN.includes(filtroN)) return false;
+    }
     // Filtro texto (en nombre o proveedor)
     if (txtN) {
       const enNombre = norm(i.nombre).includes(txtN);
@@ -3305,10 +3333,14 @@ function onBuscarInsumo() {
 }
 
 function onFiltroInsumo() {
-  INSUMOS_FILTRO_SUBFAMILIA = document.getElementById('insumoSubfamilia').value;
-  INSUMOS_FILTRO_ESTADO = document.getElementById('insumoEstado').value;
-  INSUMOS_PAGE = 0;
-  renderInsumosLista();
+  if (INSUMOS_BUSCAR_TIMEOUT) clearTimeout(INSUMOS_BUSCAR_TIMEOUT);
+  INSUMOS_BUSCAR_TIMEOUT = setTimeout(() => {
+    INSUMOS_FILTRO_SUBFAMILIA = document.getElementById('insumoSubfamilia').value;
+    INSUMOS_FILTRO_PROVEEDOR  = document.getElementById('insumoProveedor').value;
+    INSUMOS_FILTRO_ESTADO     = document.getElementById('insumoEstado').value;
+    INSUMOS_PAGE = 0;
+    renderInsumosLista();
+  }, 200);
 }
 
 // ============================================
@@ -3328,11 +3360,20 @@ function openModalInsumo(id) {
   document.getElementById('insProveedor').value = ins ? (ins.proveedor || '') : '';
   document.getElementById('insCodigo').value = ins ? (ins.codigo_hiopos || '') : '';
 
-  // Subfamilias en el select
-  const selSub = document.getElementById('insSubfamilia');
-  selSub.innerHTML = '<option value="">— Sin subfamilia —</option>' +
-    INSUMOS_SUBFAMILIAS_CACHE.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
-  if (ins && ins.subfamilia) selSub.value = ins.subfamilia;
+  // Subfamilias en el datalist
+  const dataList = document.getElementById('insSubfamiliaList');
+  dataList.innerHTML = INSUMOS_SUBFAMILIAS_CACHE
+    .map(s => `<option value="${esc(s)}">`)
+    .join('');
+  document.getElementById('insSubfamilia').value = ins && ins.subfamilia ? ins.subfamilia : '';
+
+  // Proveedores en el datalist
+  const dataListProv = document.getElementById('insProveedorList');
+  if (dataListProv) {
+    dataListProv.innerHTML = INSUMOS_PROVEEDORES_CACHE
+      .map(p => `<option value="${esc(p)}">`)
+      .join('');
+  }
 
   // Calcular costo unidad inicial
   actualizarCostoUnidad();
@@ -3481,6 +3522,382 @@ async function borrarInsumo(id) {
   }
 }
 
+// ============================================
+// GESTIÓN DE SUBFAMILIAS
+// ============================================
+
+let SUBFAM_RENOMBRANDO = null; // subfamilia original que se está renombrando
+
+function openGestionSubfamilias() {
+  if (!puedeGestionarInsumos()) return;
+  renderSubfamilias();
+  document.getElementById('modalSubfamilias').style.display = 'flex';
+}
+
+function closeGestionSubfamilias() {
+  document.getElementById('modalSubfamilias').style.display = 'none';
+}
+
+function renderSubfamilias() {
+  const cont = document.getElementById('subfamiliasLista');
+
+  // Calcular cantidad de insumos por subfamilia
+  const counts = {};
+  INSUMOS_DB.forEach(i => {
+    const s = i.subfamilia || '(sin subfamilia)';
+    counts[s] = (counts[s] || 0) + 1;
+  });
+  const subs = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+
+  if (subs.length === 0) {
+    cont.innerHTML = '<div class="bib-empty"><i class="ti ti-tags-off"></i><div class="bib-empty-title">No hay subfamilias</div></div>';
+    return;
+  }
+
+  let html = '';
+  subs.forEach(s => {
+    const esSinSubfam = (s === '(sin subfamilia)');
+    const safeName = esc(s).replace(/'/g, "\\'");
+    const accionRenombrar = esSinSubfam ? '' : `
+      <button class="bib-btn-edit" onclick="openRenombrarSubfam('${safeName}')" title="Renombrar o fusionar">
+        <i class="ti ti-edit"></i>
+      </button>`;
+    const accionBorrar = esSinSubfam ? '' : `
+      <button class="bib-btn-delete" onclick="borrarSubfamilia('${safeName}')" title="Borrar (insumos quedan sin subfamilia)">
+        <i class="ti ti-trash"></i>
+      </button>`;
+
+    html += `
+      <div class="subfam-row">
+        <div class="subfam-icon-box"><i class="ti ti-tag"></i></div>
+        <div class="subfam-info">
+          <div class="subfam-nombre">${esc(s)}</div>
+          <div class="subfam-count">${counts[s]} insumo${counts[s] !== 1 ? 's' : ''}</div>
+        </div>
+        <div class="subfam-actions">
+          ${accionRenombrar}
+          ${accionBorrar}
+        </div>
+      </div>`;
+  });
+  cont.innerHTML = html;
+}
+
+function openRenombrarSubfam(nombreOriginal) {
+  SUBFAM_RENOMBRANDO = nombreOriginal;
+
+  const count = INSUMOS_DB.filter(i => i.subfamilia === nombreOriginal).length;
+
+  document.getElementById('subfamOriginal').value = nombreOriginal;
+  document.getElementById('subfamNuevo').value = nombreOriginal;
+  document.getElementById('subfamCount').textContent =
+    `Se actualizarán ${count} insumo${count !== 1 ? 's' : ''}.`;
+
+  // Listener para detectar si se va a fusionar
+  const hint = document.getElementById('subfamHint');
+  const updateHint = () => {
+    const nuevo = document.getElementById('subfamNuevo').value.trim();
+    if (!nuevo || nuevo === nombreOriginal) {
+      hint.textContent = 'Si el nuevo nombre ya existe, las subfamilias se fusionan.';
+      hint.style.color = '';
+    } else if (INSUMOS_SUBFAMILIAS_CACHE.includes(nuevo)) {
+      hint.textContent = `⚠ "${nuevo}" ya existe. Se fusionarán las dos.`;
+      hint.style.color = '#EF9F27';
+    } else {
+      hint.textContent = `Se renombra "${nombreOriginal}" → "${nuevo}".`;
+      hint.style.color = '#5DCAA5';
+    }
+  };
+  document.getElementById('subfamNuevo').oninput = updateHint;
+  updateHint();
+
+  document.getElementById('modalRenombrarSubfam').style.display = 'flex';
+}
+
+function closeRenombrarSubfam() {
+  document.getElementById('modalRenombrarSubfam').style.display = 'none';
+  SUBFAM_RENOMBRANDO = null;
+}
+
+async function guardarRenombrarSubfam() {
+  if (!SUBFAM_RENOMBRANDO) return;
+  const nuevo = document.getElementById('subfamNuevo').value.trim();
+
+  if (!nuevo) { toast('Falta el nombre nuevo', 'error'); return; }
+  if (nuevo === SUBFAM_RENOMBRANDO) { toast('El nombre no cambió', 'warning'); return; }
+
+  const yaExiste = INSUMOS_SUBFAMILIAS_CACHE.includes(nuevo);
+  const accion = yaExiste ? 'fusionar' : 'renombrar';
+  const count = INSUMOS_DB.filter(i => i.subfamilia === SUBFAM_RENOMBRANDO).length;
+
+  const ok = await showConfirm({
+    title: yaExiste ? `¿Fusionar subfamilias?` : `¿Renombrar subfamilia?`,
+    msg: yaExiste
+      ? `Vas a fusionar "${SUBFAM_RENOMBRANDO}" con "${nuevo}".\n\n${count} insumo(s) pasarán a "${nuevo}".`
+      : `Vas a renombrar "${SUBFAM_RENOMBRANDO}" a "${nuevo}".\n\nAfecta a ${count} insumo(s).`,
+    type: yaExiste ? 'warning' : 'info',
+    okLabel: yaExiste ? 'Fusionar' : 'Renombrar',
+    cancelLabel: 'Cancelar'
+  });
+  if (!ok) return;
+
+  const btn = document.getElementById('btnRenombrarSubfam');
+  btn.disabled = true;
+  btn.textContent = 'Aplicando...';
+
+  try {
+    // UPDATE masivo en ingredientes
+    await api(`ingredientes?subfamilia=eq.${encodeURIComponent(SUBFAM_RENOMBRANDO)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        subfamilia: nuevo,
+        actualizado_en: new Date().toISOString()
+      })
+    });
+
+    toast(yaExiste ? `Subfamilias fusionadas (${count} insumos)` : `Renombrada (${count} insumos)`);
+    closeRenombrarSubfam();
+
+    // Recargar y refrescar UI
+    await cargarInsumos();
+    await cargarSubfamiliasUnicas();
+    renderInsumosLista();
+    renderSubfamilias();
+  } catch (e) {
+    toast('Error al actualizar', 'error');
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Aplicar';
+  }
+}
+
+async function borrarSubfamilia(nombre) {
+  const count = INSUMOS_DB.filter(i => i.subfamilia === nombre).length;
+
+  const ok = await showConfirm({
+    title: '¿Borrar subfamilia?',
+    msg: `Vas a borrar la subfamilia "${nombre}".\n\nLos ${count} insumo(s) asociados quedarán sin subfamilia (no se borran).`,
+    type: 'warning',
+    danger: true,
+    okLabel: 'Borrar',
+    cancelLabel: 'Cancelar'
+  });
+  if (!ok) return;
+
+  try {
+    await api(`ingredientes?subfamilia=eq.${encodeURIComponent(nombre)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        subfamilia: null,
+        actualizado_en: new Date().toISOString()
+      })
+    });
+
+    toast(`Subfamilia eliminada (${count} insumos sin subfamilia)`);
+
+    await cargarInsumos();
+    await cargarSubfamiliasUnicas();
+    renderInsumosLista();
+    renderSubfamilias();
+  } catch (e) {
+    toast('Error al borrar', 'error');
+  }
+}
+
+// ============================================
+// MENÚ DE GESTIÓN (subfamilias / proveedores)
+// ============================================
+
+function openMenuGestion() {
+  if (!puedeGestionarInsumos()) return;
+  document.getElementById('modalMenuGestion').style.display = 'flex';
+}
+
+function closeMenuGestion() {
+  document.getElementById('modalMenuGestion').style.display = 'none';
+}
+
+// ============================================
+// GESTIÓN DE PROVEEDORES
+// ============================================
+
+let PROV_RENOMBRANDO = null;
+
+function openGestionProveedores() {
+  if (!puedeGestionarInsumos()) return;
+  renderProveedores();
+  document.getElementById('modalProveedores').style.display = 'flex';
+}
+
+function closeGestionProveedores() {
+  document.getElementById('modalProveedores').style.display = 'none';
+}
+
+function renderProveedores() {
+  const cont = document.getElementById('proveedoresLista');
+
+  const counts = {};
+  INSUMOS_DB.forEach(i => {
+    const p = i.proveedor || '(sin proveedor)';
+    counts[p] = (counts[p] || 0) + 1;
+  });
+  const provs = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+
+  if (provs.length === 0) {
+    cont.innerHTML = '<div class="bib-empty"><i class="ti ti-truck-off"></i><div class="bib-empty-title">No hay proveedores</div></div>';
+    return;
+  }
+
+  let html = '';
+  provs.forEach(p => {
+    const esSinProv = (p === '(sin proveedor)');
+    const safeName = esc(p).replace(/'/g, "\\'");
+    const accionRenombrar = esSinProv ? '' : `
+      <button class="bib-btn-edit" onclick="openRenombrarProv('${safeName}')" title="Renombrar o fusionar">
+        <i class="ti ti-edit"></i>
+      </button>`;
+    const accionBorrar = esSinProv ? '' : `
+      <button class="bib-btn-delete" onclick="borrarProveedor('${safeName}')" title="Borrar (insumos quedan sin proveedor)">
+        <i class="ti ti-trash"></i>
+      </button>`;
+
+    html += `
+      <div class="subfam-row">
+        <div class="subfam-icon-box" style="background:rgba(239,159,39,0.15);color:#EF9F27;">
+          <i class="ti ti-truck"></i>
+        </div>
+        <div class="subfam-info">
+          <div class="subfam-nombre">${esc(p)}</div>
+          <div class="subfam-count">${counts[p]} insumo${counts[p] !== 1 ? 's' : ''}</div>
+        </div>
+        <div class="subfam-actions">
+          ${accionRenombrar}
+          ${accionBorrar}
+        </div>
+      </div>`;
+  });
+  cont.innerHTML = html;
+}
+
+function openRenombrarProv(nombreOriginal) {
+  PROV_RENOMBRANDO = nombreOriginal;
+
+  const count = INSUMOS_DB.filter(i => i.proveedor === nombreOriginal).length;
+
+  document.getElementById('provOriginal').value = nombreOriginal;
+  document.getElementById('provNuevo').value = nombreOriginal;
+  document.getElementById('provCount').textContent =
+    `Se actualizarán ${count} insumo${count !== 1 ? 's' : ''}.`;
+
+  const hint = document.getElementById('provHint');
+  const updateHint = () => {
+    const nuevo = document.getElementById('provNuevo').value.trim();
+    if (!nuevo || nuevo === nombreOriginal) {
+      hint.textContent = 'Si el nuevo nombre ya existe, los proveedores se fusionan.';
+      hint.style.color = '';
+    } else if (INSUMOS_PROVEEDORES_CACHE.includes(nuevo)) {
+      hint.textContent = `⚠ "${nuevo}" ya existe. Se fusionarán los dos.`;
+      hint.style.color = '#EF9F27';
+    } else {
+      hint.textContent = `Se renombra "${nombreOriginal}" → "${nuevo}".`;
+      hint.style.color = '#5DCAA5';
+    }
+  };
+  document.getElementById('provNuevo').oninput = updateHint;
+  updateHint();
+
+  document.getElementById('modalRenombrarProv').style.display = 'flex';
+}
+
+function closeRenombrarProv() {
+  document.getElementById('modalRenombrarProv').style.display = 'none';
+  PROV_RENOMBRANDO = null;
+}
+
+async function guardarRenombrarProv() {
+  if (!PROV_RENOMBRANDO) return;
+  const nuevo = document.getElementById('provNuevo').value.trim();
+
+  if (!nuevo) { toast('Falta el nombre nuevo', 'error'); return; }
+  if (nuevo === PROV_RENOMBRANDO) { toast('El nombre no cambió', 'warning'); return; }
+
+  const yaExiste = INSUMOS_PROVEEDORES_CACHE.includes(nuevo);
+  const count = INSUMOS_DB.filter(i => i.proveedor === PROV_RENOMBRANDO).length;
+
+  const ok = await showConfirm({
+    title: yaExiste ? `¿Fusionar proveedores?` : `¿Renombrar proveedor?`,
+    msg: yaExiste
+      ? `Vas a fusionar "${PROV_RENOMBRANDO}" con "${nuevo}".\n\n${count} insumo(s) pasarán a "${nuevo}".`
+      : `Vas a renombrar "${PROV_RENOMBRANDO}" a "${nuevo}".\n\nAfecta a ${count} insumo(s).`,
+    type: yaExiste ? 'warning' : 'info',
+    okLabel: yaExiste ? 'Fusionar' : 'Renombrar',
+    cancelLabel: 'Cancelar'
+  });
+  if (!ok) return;
+
+  const btn = document.getElementById('btnRenombrarProv');
+  btn.disabled = true;
+  btn.textContent = 'Aplicando...';
+
+  try {
+    await api(`ingredientes?proveedor=eq.${encodeURIComponent(PROV_RENOMBRANDO)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        proveedor: nuevo,
+        actualizado_en: new Date().toISOString()
+      })
+    });
+
+    toast(yaExiste ? `Proveedores fusionados (${count} insumos)` : `Renombrado (${count} insumos)`);
+    closeRenombrarProv();
+
+    await cargarInsumos();
+    await cargarOpcionesUnicas();
+    renderInsumosLista();
+    renderProveedores();
+  } catch (e) {
+    toast('Error al actualizar', 'error');
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Aplicar';
+  }
+}
+
+async function borrarProveedor(nombre) {
+  const count = INSUMOS_DB.filter(i => i.proveedor === nombre).length;
+
+  const ok = await showConfirm({
+    title: '¿Borrar proveedor?',
+    msg: `Vas a borrar el proveedor "${nombre}".\n\nLos ${count} insumo(s) asociados quedarán sin proveedor (no se borran).`,
+    type: 'warning',
+    danger: true,
+    okLabel: 'Borrar',
+    cancelLabel: 'Cancelar'
+  });
+  if (!ok) return;
+
+  try {
+    await api(`ingredientes?proveedor=eq.${encodeURIComponent(nombre)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        proveedor: null,
+        actualizado_en: new Date().toISOString()
+      })
+    });
+
+    toast(`Proveedor eliminado (${count} insumos sin proveedor)`);
+
+    await cargarInsumos();
+    await cargarOpcionesUnicas();
+    renderInsumosLista();
+    renderProveedores();
+  } catch (e) {
+    toast('Error al borrar', 'error');
+  }
+}
+
 // Exponer al window
 window.openAdminInsumos = openAdminInsumos;
 window.openModalInsumo = openModalInsumo;
@@ -3490,6 +3907,20 @@ window.borrarInsumo = borrarInsumo;
 window.onBuscarInsumo = onBuscarInsumo;
 window.onFiltroInsumo = onFiltroInsumo;
 window.irPaginaInsumo = irPaginaInsumo;
+window.openGestionSubfamilias = openGestionSubfamilias;
+window.closeGestionSubfamilias = closeGestionSubfamilias;
+window.openRenombrarSubfam = openRenombrarSubfam;
+window.closeRenombrarSubfam = closeRenombrarSubfam;
+window.guardarRenombrarSubfam = guardarRenombrarSubfam;
+window.borrarSubfamilia = borrarSubfamilia;
+window.openMenuGestion = openMenuGestion;
+window.closeMenuGestion = closeMenuGestion;
+window.openGestionProveedores = openGestionProveedores;
+window.closeGestionProveedores = closeGestionProveedores;
+window.openRenombrarProv = openRenombrarProv;
+window.closeRenombrarProv = closeRenombrarProv;
+window.guardarRenombrarProv = guardarRenombrarProv;
+window.borrarProveedor = borrarProveedor;
 
 init();
 

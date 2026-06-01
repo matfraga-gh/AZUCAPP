@@ -2746,10 +2746,10 @@ button {
 }
 .ins-filter-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
 }
-@media (max-width: 480px) {
+@media (max-width: 600px) {
   .ins-filter-row { grid-template-columns: 1fr; }
 }
 
@@ -2894,4 +2894,65 @@ button {
   color: var(--c-muted);
   font-size: 12px;
   margin: 0 8px;
+}
+
+/* Botón ⚙️ junto a filtro de subfamilia */
+.btn-gestionar-subfam {
+  background: rgba(127, 119, 221, 0.15);
+  color: #7F77DD;
+  border: 1px solid rgba(127, 119, 221, 0.3);
+  width: 42px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.btn-gestionar-subfam:hover {
+  background: rgba(127, 119, 221, 0.25);
+}
+.btn-gestionar-subfam i { font-size: 16px; }
+
+/* Lista de subfamilias en el modal de gestión */
+.subfam-row {
+  background: #2A2724;
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.subfam-icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: rgba(127, 119, 221, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7F77DD;
+  flex-shrink: 0;
+}
+.subfam-icon-box i { font-size: 16px; }
+.subfam-info {
+  flex: 1;
+  min-width: 0;
+}
+.subfam-nombre {
+  color: var(--c-cream);
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+.subfam-count {
+  color: var(--c-muted);
+  font-size: 11px;
+}
+.subfam-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
 }
