@@ -2572,7 +2572,7 @@ button {
   background: rgba(0,0,0,0.25);
   padding: 10px 14px;
   display: grid;
-  grid-template-columns: 70px 90px 90px 100px 60px 90px;
+  grid-template-columns: 46px 58px 70px 72px 44px 96px;
   gap: 8px;
   font-size: 10px;
   text-transform: uppercase;
@@ -2583,7 +2583,7 @@ button {
 .prop-tabla-row {
   padding: 12px 14px;
   display: grid;
-  grid-template-columns: 70px 90px 90px 100px 60px 90px;
+  grid-template-columns: 46px 58px 70px 72px 44px 96px;
   gap: 8px;
   align-items: center;
   font-size: 13px;
@@ -2601,7 +2601,8 @@ button {
 /* Badge de estado */
 .prop-estado {
   display: inline-block;
-  padding: 4px 10px;
+  white-space: nowrap;
+  padding: 4px 7px;
   border-radius: 12px;
   font-size: 10px;
   font-weight: 600;

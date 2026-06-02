@@ -1328,6 +1328,7 @@ async function abrirGestionPropinas() {
   renderPropGestLocales();
   renderPropGestKpis();
   renderPropGestTabla();
+  actualizarBtnNuevoCierre();
 }
 
 function renderPropGestHeader() {
@@ -1381,11 +1382,26 @@ function selectPropLocal(slug) {
   renderPropGestLocales();
   renderPropGestKpis();
   renderPropGestTabla();
+  actualizarBtnNuevoCierre();
 }
 
 function cierresLocalActual() {
   if (!PROP_LOCAL_SEL) return [];
+  const slugTodos = getSlugTransversal();
+  if (slugTodos && PROP_LOCAL_SEL === slugTodos) {
+    // "Todos los locales": agrego los cierres de todos los locales reales que el usuario puede ver
+    const visibles = localesPropinasUsuario();
+    return PROP_CIERRES.filter(c => c.local !== slugTodos && visibles.includes(c.local));
+  }
   return PROP_CIERRES.filter(c => c.local === PROP_LOCAL_SEL);
+}
+
+// El botón "Nuevo cierre" no aplica en modo "Todos"
+function actualizarBtnNuevoCierre() {
+  const btn = document.getElementById('propGestNuevoBtn');
+  if (!btn) return;
+  const slugTodos = getSlugTransversal();
+  btn.style.display = (slugTodos && PROP_LOCAL_SEL === slugTodos) ? 'none' : '';
 }
 
 function renderPropGestKpis() {
@@ -1460,14 +1476,18 @@ function renderPropGestTabla() {
     const estadoCls = c.pagado ? 'pagado' : 'cerrado';
     const estadoTxt = c.pagado ? '✓ Pagado' : 'Cerrado';
 
-    // Solo Admin/Master puede togglear pagado
-    const estadoClickable = puedeAdminPropinas() ? `onclick="togglePagado(${c.id})"` : '';
+    // Solo Admin/Master puede togglear pagado (no propaga al click de la fila)
+    const estadoClickable = puedeAdminPropinas() ? `onclick="event.stopPropagation(); togglePagado(${c.id})"` : '';
     const estadoTitle = puedeAdminPropinas()
       ? (c.pagado ? 'title="Click para volver a Cerrado"' : 'title="Click para marcar como Pagado"')
       : '';
 
+    // Master/Admin pueden editar un cierre mientras no esté pagado
+    const editable = puedeAdminPropinas() && !c.pagado;
+    const rowAttrs = editable ? `onclick="abrirEditarCierre(${c.id})" style="cursor:pointer" title="Tocá la fila para editar este cierre"` : '';
+
     html += `
-      <div class="prop-tabla-row">
+      <div class="prop-tabla-row" ${rowAttrs}>
         <span class="prop-fecha">${fecha}</span>
         <span class="prop-turno">${turnoLabel}</span>
         <span class="prop-monto">$${formatNumber(c.total_bruto || 0)}</span>
@@ -1546,6 +1566,9 @@ async function togglePagado(cierreId) {
 // ============================================
 const BILLETES_DENOM = [100, 200, 500, 1000, 2000, 10000, 20000];
 let CIERRE_COLABS = [];
+let CIERRE_EDITANDO = null;       // id del cierre en edición (null = nuevo)
+let CIERRE_EDIT_PUNTOS = {};      // empleado_id -> puntos (pre-carga al editar)
+let CIERRE_LOCAL_ACTUAL = null;   // local del cierre que se está cargando/editando
 
 function billeteVal(d) {
   const el = document.getElementById('bil_' + d);
@@ -1558,7 +1581,11 @@ function valNumCierre(id) {
 
 function abrirNuevoCierre() {
   if (!puedeGestionarPropinas()) { toast('No tenés permiso para cargar cierres', 'error'); return; }
-  if (!PROP_LOCAL_SEL) { toast('Elegí un local primero', 'error'); return; }
+  if (!PROP_LOCAL_SEL || PROP_LOCAL_SEL === getSlugTransversal()) { toast('Elegí un local para cargar el cierre', 'error'); return; }
+  CIERRE_EDITANDO = null;
+  CIERRE_EDIT_PUNTOS = {};
+  CIERRE_LOCAL_ACTUAL = PROP_LOCAL_SEL;
+  const tit = document.getElementById('cierreModalTitulo'); if (tit) tit.textContent = 'Nuevo cierre';
 
   document.getElementById('cierreLocal').value = localLabel(PROP_LOCAL_SEL);
   document.getElementById('cierreFecha').value = hoyStr();
@@ -1586,18 +1613,72 @@ function abrirNuevoCierre() {
 }
 window.abrirNuevoCierre = abrirNuevoCierre;
 
-async function cargarColabsCierre() {
+// "Transversal (todos)" no es un local real: es el botón de "ver todos juntos"
+function getSlugTransversal() {
+  const l = LOCALES_DB.find(x => /transversal/i.test(x.nombre || '') || /transversal/i.test(x.slug || ''));
+  return l ? l.slug : null;
+}
+
+async function abrirEditarCierre(cierreId) {
+  if (!puedeAdminPropinas()) { toast('Solo Master/Admin puede editar cierres', 'error'); return; }
+  const c = (PROP_CIERRES || []).find(x => x.id === cierreId);
+  if (!c) { toast('No se encontró el cierre', 'error'); return; }
+  if (c.pagado) { toast('No se puede editar un cierre ya pagado', 'error'); return; }
+
+  CIERRE_EDITANDO = cierreId;
+  CIERRE_EDIT_PUNTOS = {};
+  CIERRE_LOCAL_ACTUAL = c.local;
+  const tit = document.getElementById('cierreModalTitulo'); if (tit) tit.textContent = 'Editar cierre';
+
+  document.getElementById('cierreLocal').value = localLabel(c.local);
+  document.getElementById('cierreFecha').value = c.fecha || hoyStr();
+  document.getElementById('cierreTurno').value = c.turno || 'noche';
+  document.getElementById('cierreUsd').value = c.monto_usd || '';
+  document.getElementById('cierreEur').value = c.monto_eur || '';
+  document.getElementById('cierreBrl').value = c.monto_brl || '';
+  document.getElementById('cierreTarjeta').value = c.monto_tarjeta || '';
+  document.getElementById('cierreTransf').value = c.monto_transferencia || '';
+  document.getElementById('cierreComentario').value = c.comentario || '';
+  document.getElementById('cierreError').textContent = '';
+
+  const tc = PROP_CONFIG || {};
+  document.getElementById('cierreTcHint').textContent =
+    'Cotización actual: USD $' + formatNumber(tc.tc_usd || 0) +
+    ' · EUR $' + formatNumber(tc.tc_eur || 0) +
+    ' · BRL $' + formatNumber(tc.tc_brl || 0);
+
+  document.getElementById('cierreBilletes').innerHTML = BILLETES_DENOM.map(d =>
+    '<label class="billete-row"><span>$' + formatNumber(d) + '</span>' +
+    '<input type="number" min="0" step="1" id="bil_' + d + '" value="' + (c['bil_' + d] || 0) + '" placeholder="0" oninput="recalcCierre()"></label>'
+  ).join('');
+
+  document.getElementById('cierreColabs').innerHTML = '<div class="loading">Cargando colaboradores...</div>';
+  document.getElementById('modalNuevoCierre').classList.add('show');
+
+  try {
+    const asigs = await api('propinas_asignaciones?cierre_id=eq.' + cierreId + '&select=empleado_id,puntos') || [];
+    asigs.forEach(a => { CIERRE_EDIT_PUNTOS[a.empleado_id] = parseFloat(a.puntos) || 0; });
+  } catch (e) { /* si falla, arrancan en 0 */ }
+
+  await cargarColabsCierre(c.local);
+  recalcCierre();
+}
+window.abrirEditarCierre = abrirEditarCierre;
+
+async function cargarColabsCierre(localSlug) {
+  const loc = localSlug || PROP_LOCAL_SEL;
   const cont = document.getElementById('cierreColabs');
   try {
     const filtro = 'empleados?activo=eq.true' +
-      '&or=(local.eq.' + encodeURIComponent(PROP_LOCAL_SEL) + ',es_multilocal.eq.true)' +
+      '&or=(local.eq.' + encodeURIComponent(loc) + ',es_multilocal.eq.true)' +
       '&select=id,nombre,apellido,nombre_p,local,es_multilocal&order=apellido.asc';
     const emps = await api(filtro) || [];
     CIERRE_COLABS = emps.map(e => {
       const ap = e.apellido || '';
       const pila = e.nombre_p || e.nombre || '';
       const nombre = (ap && pila) ? (ap + ', ' + pila) : (ap || pila || ('Empleado #' + e.id));
-      return { id: e.id, nombre: nombre, multi: !!e.es_multilocal && e.local !== PROP_LOCAL_SEL, puntos: 1 };
+      const pts = CIERRE_EDITANDO ? (CIERRE_EDIT_PUNTOS[e.id] != null ? CIERRE_EDIT_PUNTOS[e.id] : 0) : 1;
+      return { id: e.id, nombre: nombre, multi: !!e.es_multilocal && e.local !== loc, puntos: pts };
     });
     renderColabsCierre();
     recalcCierre();
@@ -1680,7 +1761,7 @@ async function guardarCierre() {
   const ahora = new Date().toISOString();
 
   const cierre = Object.assign({
-    local: PROP_LOCAL_SEL,
+    local: CIERRE_LOCAL_ACTUAL,
     fecha: document.getElementById('cierreFecha').value || hoyStr(),
     turno: document.getElementById('cierreTurno').value,
     monto_usd: usd, monto_eur: eur, monto_brl: brl,
@@ -1688,15 +1769,27 @@ async function guardarCierre() {
     monto_tarjeta: tarjeta, monto_transferencia: transf,
     porcentaje_admin: pct,
     total_bruto: Math.round(bruto), total_neto: Math.round(neto), total_puntos: puntos,
-    pagado: false,
     comentario: (document.getElementById('cierreComentario').value || '').trim() || null,
-    creado_por: currentUser.id, creado_en: ahora, actualizado_en: ahora
+    actualizado_en: ahora
   }, billetes);
+  if (!CIERRE_EDITANDO) {
+    cierre.pagado = false;
+    cierre.creado_por = currentUser.id;
+    cierre.creado_en = ahora;
+  }
 
   try {
-    const res = await api('propinas_cierres', { method: 'POST', body: JSON.stringify(cierre) });
-    const nuevo = Array.isArray(res) ? res[0] : res;
-    const cierreId = nuevo.id;
+    let cierreId;
+    if (CIERRE_EDITANDO) {
+      await api('propinas_cierres?id=eq.' + CIERRE_EDITANDO, { method: 'PATCH', body: JSON.stringify(cierre) });
+      cierreId = CIERRE_EDITANDO;
+      // Reemplazo las asignaciones: borro las viejas y cargo las nuevas
+      await api('propinas_asignaciones?cierre_id=eq.' + cierreId, { method: 'DELETE' });
+    } else {
+      const res = await api('propinas_cierres', { method: 'POST', body: JSON.stringify(cierre) });
+      const nuevo = Array.isArray(res) ? res[0] : res;
+      cierreId = nuevo.id;
+    }
 
     const asigs = colabs.map(c => ({
       cierre_id: cierreId,
@@ -1709,7 +1802,7 @@ async function guardarCierre() {
     }
 
     closeNuevoCierre();
-    toast('✓ Cierre guardado y repartido entre ' + colabs.length + ' colaboradores', 'success');
+    toast(CIERRE_EDITANDO ? '✓ Cierre actualizado' : ('✓ Cierre guardado y repartido entre ' + colabs.length + ' colaboradores'), 'success');
     PROP_CIERRES = await api('propinas_cierres?order=fecha.desc,id.desc') || [];
     renderPropGestKpis();
     renderPropGestTabla();
@@ -1818,61 +1911,33 @@ window.generarLiquidacion = async function() {
       x.Fecha.localeCompare(y.Fecha)
     );
 
-    // ---- RESUMEN agrupado por (empleado, local) + total acumulado por empleado ----
+    // ---- RESUMEN: una fila por empleado con su total (el desglose por local/cierre está en la otra hoja) ----
     const grupos = {};
     asigs.forEach(a => {
       const c = cierreMap[a.cierre_id] || {};
-      const key = a.empleado_id + '|' + (c.local || '');
-      if (!grupos[key]) grupos[key] = { empId: a.empleado_id, local: c.local || '', cierres: 0, puntos: 0, pendiente: 0, pagado: 0 };
-      const g = grupos[key];
+      const id = a.empleado_id;
+      if (!grupos[id]) grupos[id] = { empId: id, cierres: 0, puntos: 0, pendiente: 0, pagado: 0, locales: {} };
+      const g = grupos[id];
       g.cierres += 1;
       g.puntos += parseFloat(a.puntos) || 0;
       const m = parseFloat(a.monto) || 0;
       if (c.pagado) g.pagado += m; else g.pendiente += m;
+      const locLbl = localLabel(c.local) || c.local || '';
+      if (locLbl) g.locales[locLbl] = true;
     });
 
-    const arr = Object.keys(grupos).map(k => {
-      const g = grupos[k];
-      g.nombre = nombreEmp(g.empId);
-      return g;
-    }).sort((x, y) =>
-      x.nombre.localeCompare(y.nombre, 'es') ||
-      (localLabel(x.local) || '').localeCompare(localLabel(y.local) || '', 'es')
-    );
-
-    const resumen = [];
-    let i = 0;
-    while (i < arr.length) {
-      const empId = arr[i].empId;
-      const grupoEmp = [];
-      while (i < arr.length && arr[i].empId === empId) { grupoEmp.push(arr[i]); i++; }
-
-      grupoEmp.forEach(g => {
-        resumen.push({
-          'Empleado': g.nombre,
-          'Local': localLabel(g.local) || g.local || '',
-          'Cierres': g.cierres,
-          'Puntos': g.puntos,
-          'Pendiente': Math.round(g.pendiente),
-          'Pagado': Math.round(g.pagado),
-          'Total': Math.round(g.pendiente + g.pagado)
-        });
-      });
-
-      // Línea de total acumulado solo si trabajó en más de un local
-      if (grupoEmp.length > 1) {
-        const sum = (f) => grupoEmp.reduce((s, g) => s + g[f], 0);
-        resumen.push({
-          'Empleado': 'TOTAL ' + grupoEmp[0].nombre,
-          'Local': '',
-          'Cierres': sum('cierres'),
-          'Puntos': sum('puntos'),
-          'Pendiente': Math.round(sum('pendiente')),
-          'Pagado': Math.round(sum('pagado')),
-          'Total': Math.round(sum('pendiente') + sum('pagado'))
-        });
-      }
-    }
+    const resumen = Object.keys(grupos).map(id => {
+      const g = grupos[id];
+      return {
+        'Empleado': nombreEmp(g.empId),
+        'Locales': Object.keys(g.locales).sort((a, b) => a.localeCompare(b, 'es')).join(', '),
+        'Cierres': g.cierres,
+        'Puntos': g.puntos,
+        'Pendiente': Math.round(g.pendiente),
+        'Pagado': Math.round(g.pagado),
+        'Total': Math.round(g.pendiente + g.pagado)
+      };
+    }).sort((x, y) => x.Empleado.localeCompare(y.Empleado, 'es'));
 
     exportarAExcel('Liquidacion_propinas_AZUCA_' + desde + '_a_' + hasta + '.xlsx', [
       { nombre: 'Resumen por empleado', filas: resumen },
