@@ -1412,9 +1412,9 @@ function renderPropGestKpis() {
   const pendientes = cierres.filter(c => !c.pagado).length;
   const pagados = total - pendientes;
 
-  const bruto = cierres.reduce((s, c) => s + parseFloat(c.total_bruto || 0), 0);
-  const netoPendiente = cierres.filter(c => !c.pagado).reduce((s, c) => s + parseFloat(c.total_neto || 0), 0);
-  const netoPagado = cierres.filter(c => c.pagado).reduce((s, c) => s + parseFloat(c.total_neto || 0), 0);
+  const totalAcum = cierres.reduce((s, c) => s + parseFloat(c.total_neto || 0), 0);
+  const aLiquidar = cierres.filter(c => !c.pagado).reduce((s, c) => s + parseFloat(c.total_neto || 0), 0);
+  const yaPagado = cierres.filter(c => c.pagado).reduce((s, c) => s + parseFloat(c.total_neto || 0), 0);
 
   cont.innerHTML = `
     <div class="kpi-card">
@@ -1423,13 +1423,13 @@ function renderPropGestKpis() {
       <div class="kpi-sub">${pendientes} pendiente${pendientes !== 1 ? 's' : ''} · ${pagados} pagado${pagados !== 1 ? 's' : ''}</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Total bruto acumulado</div>
-      <div class="kpi-value">$${formatNumber(bruto)}</div>
+      <div class="kpi-label">Total acumulado</div>
+      <div class="kpi-value">$${formatNumber(totalAcum)}</div>
     </div>
     <div class="kpi-card highlight">
-      <div class="kpi-label">Neto a liquidar</div>
-      <div class="kpi-value">$${formatNumber(netoPendiente)}</div>
-      <div class="kpi-sub">+$${formatNumber(netoPagado)} ya pagados</div>
+      <div class="kpi-label">A liquidar</div>
+      <div class="kpi-value">$${formatNumber(aLiquidar)}</div>
+      <div class="kpi-sub">+$${formatNumber(yaPagado)} ya pagados</div>
     </div>
   `;
 }
@@ -1463,8 +1463,8 @@ function renderPropGestTabla() {
       <div class="prop-tabla-header">
         <span>Fecha</span>
         <span>Turno</span>
-        <span>Bruto</span>
-        <span>Neto</span>
+        <span>Local</span>
+        <span>Monto</span>
         <span>Puntos</span>
         <span>Estado</span>
       </div>`;
@@ -1490,7 +1490,7 @@ function renderPropGestTabla() {
       <div class="prop-tabla-row" ${rowAttrs}>
         <span class="prop-fecha">${fecha}</span>
         <span class="prop-turno">${turnoLabel}</span>
-        <span class="prop-monto">$${formatNumber(c.total_bruto || 0)}</span>
+        <span class="prop-local">${esc(localLabel(c.local))}</span>
         <span class="prop-monto">$${formatNumber(c.total_neto || 0)}</span>
         <span>${c.total_puntos || 0}</span>
         <span class="prop-estado ${estadoCls}" ${estadoClickable} ${estadoTitle}>${estadoTxt}</span>
@@ -1677,7 +1677,7 @@ async function cargarColabsCierre(localSlug) {
       const ap = e.apellido || '';
       const pila = e.nombre_p || e.nombre || '';
       const nombre = (ap && pila) ? (ap + ', ' + pila) : (ap || pila || ('Empleado #' + e.id));
-      const pts = CIERRE_EDITANDO ? (CIERRE_EDIT_PUNTOS[e.id] != null ? CIERRE_EDIT_PUNTOS[e.id] : 0) : 1;
+      const pts = CIERRE_EDITANDO ? (CIERRE_EDIT_PUNTOS[e.id] != null ? CIERRE_EDIT_PUNTOS[e.id] : 0) : 0;
       return { id: e.id, nombre: nombre, multi: !!e.es_multilocal && e.local !== loc, puntos: pts };
     });
     renderColabsCierre();
@@ -1724,15 +1724,11 @@ function recalcCierre() {
                      valNumCierre('cierreEur') * (parseFloat(tc.tc_eur) || 0) +
                      valNumCierre('cierreBrl') * (parseFloat(tc.tc_brl) || 0);
   const electronico = valNumCierre('cierreTarjeta') + valNumCierre('cierreTransf');
-  const bruto = cash + extranjera + electronico;
-  const pct = parseFloat(tc.porcentaje_admin) || 0;
-  const neto = bruto * (1 - pct / 100);
+  const total = cash + extranjera + electronico;
   const puntos = CIERRE_COLABS.reduce((s, c) => s + (parseFloat(c.puntos) || 0), 0);
 
   document.getElementById('cierreResumen').innerHTML =
-    resumenRow('Total bruto', '$' + formatNumber(Math.round(bruto))) +
-    resumenRow('Descuento admin (' + pct + '%)', '-$' + formatNumber(Math.round(bruto - neto))) +
-    resumenRow('Total neto a repartir', '$' + formatNumber(Math.round(neto)), true) +
+    resumenRow('Total a repartir', '$' + formatNumber(Math.round(total)), true) +
     resumenRow('Puntos totales', puntos + (puntos > 0 ? '' : '  ⚠️ falta asignar'));
 }
 window.recalcCierre = recalcCierre;
@@ -1748,8 +1744,8 @@ async function guardarCierre() {
   const tarjeta = valNumCierre('cierreTarjeta'), transf = valNumCierre('cierreTransf');
   const extranjera = usd * (parseFloat(tc.tc_usd) || 0) + eur * (parseFloat(tc.tc_eur) || 0) + brl * (parseFloat(tc.tc_brl) || 0);
   const bruto = cash + extranjera + tarjeta + transf;
-  const pct = parseFloat(tc.porcentaje_admin) || 0;
-  const neto = bruto * (1 - pct / 100);
+  const pct = 0;            // propinas: no hay descuento administrativo
+  const neto = bruto;       // todo lo recaudado se reparte
   const colabs = CIERRE_COLABS.filter(c => (parseFloat(c.puntos) || 0) > 0);
   const puntos = colabs.reduce((s, c) => s + parseFloat(c.puntos), 0);
 
