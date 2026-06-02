@@ -3470,6 +3470,55 @@ function insumosFiltrados() {
   });
 }
 
+// Exportar Insumos a Excel (3 hojas, respeta los filtros activos)
+window.exportarInsumosExcel = function() {
+  const items = insumosFiltrados();
+  if (!items.length) {
+    toast('No hay insumos para exportar con esos filtros', 'error');
+    return;
+  }
+
+  // Hoja 1: Insumos
+  const filasInsumos = items.map(i => ({
+    'Nombre': i.nombre || '',
+    'Formato': i.formato || '',
+    'Unidad': i.unidad || '',
+    'Cantidad por envase': parseFloat(i.cantidad_por_presentacion || 0),
+    'Costo envase': parseFloat(i.costo || 0),
+    'Costo por unidad': Math.round(costoUnitarioInsumo(i) * 100) / 100,
+    'Proveedor': i.proveedor || '',
+    'Subfamilia': i.subfamilia || '',
+    'Código HiOPOS': i.codigo_hiopos || '',
+    'Estado': i.validado ? 'Validado' : 'Pendiente',
+    'Actualizado': i.actualizado_en ? String(i.actualizado_en).substring(0, 10) : ''
+  }));
+
+  // Hoja 2: Subfamilias (conteo dentro de lo filtrado)
+  const subMap = {};
+  items.forEach(i => {
+    const s = i.subfamilia || '(sin subfamilia)';
+    subMap[s] = (subMap[s] || 0) + 1;
+  });
+  const filasSub = Object.keys(subMap).sort((a, b) => a.localeCompare(b, 'es'))
+    .map(s => ({ 'Subfamilia': s, 'Cantidad de insumos': subMap[s] }));
+
+  // Hoja 3: Proveedores (conteo dentro de lo filtrado)
+  const provMap = {};
+  items.forEach(i => {
+    const p = i.proveedor || '(sin proveedor)';
+    provMap[p] = (provMap[p] || 0) + 1;
+  });
+  const filasProv = Object.keys(provMap).sort((a, b) => a.localeCompare(b, 'es'))
+    .map(p => ({ 'Proveedor': p, 'Cantidad de insumos': provMap[p] }));
+
+  exportarAExcel('Insumos_AZUCA_' + hoyStr() + '.xlsx', [
+    { nombre: 'Insumos', filas: filasInsumos },
+    { nombre: 'Subfamilias', filas: filasSub },
+    { nombre: 'Proveedores', filas: filasProv }
+  ]);
+  toast('\u2713 Excel generado (' + items.length + ' insumos)', 'success');
+};
+
 function renderInsumosLista() {
   const cont = document.getElementById('insumosLista');
   const countEl = document.getElementById('insumosCount');
