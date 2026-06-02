@@ -3087,3 +3087,69 @@ select option {
   color: var(--c-cream);
   text-align: right;
 }
+
+
+/* ============================================
+   NUEVO CIERRE DE PROPINAS (Fase 2)
+============================================ */
+.cierre-card { max-width: 460px; }
+.cierre-body { max-height: 72vh; overflow-y: auto; }
+.cierre-section { margin-bottom: 16px; }
+.cierre-section-title {
+  font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--c-sand); margin-bottom: 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.cierre-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cierre-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.cierre-hint { font-size: 11px; color: var(--c-muted); margin-top: 6px; }
+.billete-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.billete-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--c-cream-soft); border: 0.5px solid var(--c-cream-border);
+  border-radius: var(--r-md); padding: 6px 10px;
+}
+.billete-row span { font-size: 13px; color: var(--c-cream); }
+.billete-row input {
+  width: 64px; background: transparent; border: none;
+  border-bottom: 1px solid var(--c-cream-border); color: var(--c-cream);
+  text-align: right; font-size: 14px; padding: 2px 4px; outline: none;
+}
+.cierre-resumen {
+  background: var(--c-rust-soft); border: 0.5px solid var(--c-cream-border);
+  border-radius: var(--r-md); padding: 12px; margin-bottom: 16px;
+}
+.cierre-res-row {
+  display: flex; justify-content: space-between; font-size: 13px;
+  color: var(--c-sand); padding: 3px 0;
+}
+.cierre-res-row.hi {
+  color: var(--c-cream); font-size: 15px; padding-top: 6px; margin-top: 4px;
+  border-top: 0.5px solid var(--c-cream-border);
+}
+.colab-list { display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
+.colab-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 6px 2px; border-bottom: 0.5px solid var(--c-cream-border);
+}
+.colab-nombre { font-size: 13px; color: var(--c-cream); flex: 1; min-width: 0; }
+.colab-multi {
+  font-size: 9px; background: rgba(245,240,232,0.1); color: var(--c-muted);
+  padding: 1px 5px; border-radius: 8px; letter-spacing: 0.5px;
+}
+.puntos-seg {
+  display: inline-flex; border: 0.5px solid var(--c-cream-border);
+  border-radius: 8px; overflow: hidden; flex-shrink: 0;
+}
+.puntos-btn {
+  background: transparent; border: none; color: var(--c-muted);
+  padding: 5px 12px; font-size: 13px; cursor: pointer;
+  border-right: 0.5px solid var(--c-cream-border);
+}
+.puntos-btn:last-child { border-right: none; }
+.puntos-btn.active { background: var(--c-rust); color: #fff; }
+.cierre-body textarea {
+  width: 100%; background: var(--c-cream-soft); border: 0.5px solid var(--c-cream-border);
+  border-radius: var(--r-md); color: var(--c-cream); padding: 8px 10px;
+  font-family: inherit; font-size: 13px; outline: none; resize: vertical;
+}

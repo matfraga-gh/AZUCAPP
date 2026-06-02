@@ -1541,6 +1541,189 @@ async function togglePagado(cierreId) {
 }
 
 // Placeholder para nuevo cierre (Fase 2)
+// ============================================
+// FASE 2 — NUEVO CIERRE DE PROPINAS
+// ============================================
+const BILLETES_DENOM = [100, 200, 500, 1000, 2000, 10000, 20000];
+let CIERRE_COLABS = [];
+
+function billeteVal(d) {
+  const el = document.getElementById('bil_' + d);
+  return el ? (parseInt(el.value, 10) || 0) : 0;
+}
+function valNumCierre(id) {
+  const el = document.getElementById(id);
+  return el ? (parseFloat(el.value) || 0) : 0;
+}
+
+function abrirNuevoCierre() {
+  if (!puedeGestionarPropinas()) { toast('No tenés permiso para cargar cierres', 'error'); return; }
+  if (!PROP_LOCAL_SEL) { toast('Elegí un local primero', 'error'); return; }
+
+  document.getElementById('cierreLocal').value = localLabel(PROP_LOCAL_SEL);
+  document.getElementById('cierreFecha').value = hoyStr();
+  document.getElementById('cierreTurno').value = 'noche';
+  ['cierreUsd','cierreEur','cierreBrl','cierreTarjeta','cierreTransf','cierreComentario'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('cierreError').textContent = '';
+
+  const tc = PROP_CONFIG || {};
+  document.getElementById('cierreTcHint').textContent =
+    'Cotización actual: USD $' + formatNumber(tc.tc_usd || 0) +
+    ' · EUR $' + formatNumber(tc.tc_eur || 0) +
+    ' · BRL $' + formatNumber(tc.tc_brl || 0);
+
+  document.getElementById('cierreBilletes').innerHTML = BILLETES_DENOM.map(d =>
+    '<label class="billete-row"><span>$' + formatNumber(d) + '</span>' +
+    '<input type="number" min="0" step="1" id="bil_' + d + '" placeholder="0" oninput="recalcCierre()"></label>'
+  ).join('');
+
+  document.getElementById('cierreColabs').innerHTML = '<div class="loading">Cargando colaboradores...</div>';
+  document.getElementById('modalNuevoCierre').classList.add('show');
+  cargarColabsCierre();
+  recalcCierre();
+}
+window.abrirNuevoCierre = abrirNuevoCierre;
+
+async function cargarColabsCierre() {
+  const cont = document.getElementById('cierreColabs');
+  try {
+    const filtro = 'empleados?activo=eq.true' +
+      '&or=(local.eq.' + encodeURIComponent(PROP_LOCAL_SEL) + ',es_multilocal.eq.true)' +
+      '&select=id,nombre,apellido,nombre_p,local,es_multilocal&order=apellido.asc';
+    const emps = await api(filtro) || [];
+    CIERRE_COLABS = emps.map(e => {
+      const ap = e.apellido || '';
+      const pila = e.nombre_p || e.nombre || '';
+      const nombre = (ap && pila) ? (ap + ', ' + pila) : (ap || pila || ('Empleado #' + e.id));
+      return { id: e.id, nombre: nombre, multi: !!e.es_multilocal && e.local !== PROP_LOCAL_SEL, puntos: 1 };
+    });
+    renderColabsCierre();
+    recalcCierre();
+  } catch (e) {
+    cont.innerHTML = '<div class="loading" style="color:var(--c-error)">Error al cargar colaboradores</div>';
+  }
+}
+
+function renderColabsCierre() {
+  const cont = document.getElementById('cierreColabs');
+  if (!CIERRE_COLABS.length) {
+    cont.innerHTML = '<div class="cierre-hint">No hay colaboradores activos en este local.</div>';
+    return;
+  }
+  cont.innerHTML = CIERRE_COLABS.map((c, idx) => {
+    const opts = [['0','0'], ['0.5','½'], ['1','1']];
+    const seg = opts.map(o =>
+      '<button type="button" class="puntos-btn' + (String(c.puntos) === o[0] ? ' active' : '') +
+      '" onclick="setPuntoColab(' + idx + ',' + o[0] + ')">' + o[1] + '</button>'
+    ).join('');
+    return '<div class="colab-row">' +
+      '<span class="colab-nombre">' + esc(c.nombre) + (c.multi ? ' <span class="colab-multi">multi</span>' : '') + '</span>' +
+      '<div class="puntos-seg">' + seg + '</div>' +
+      '</div>';
+  }).join('');
+}
+
+window.setPuntoColab = function(idx, val) {
+  if (CIERRE_COLABS[idx]) CIERRE_COLABS[idx].puntos = val;
+  renderColabsCierre();
+  recalcCierre();
+};
+
+function resumenRow(k, v, hi) {
+  return '<div class="cierre-res-row' + (hi ? ' hi' : '') + '"><span>' + k + '</span><strong>' + v + '</strong></div>';
+}
+
+function recalcCierre() {
+  const tc = PROP_CONFIG || {};
+  let cash = 0;
+  BILLETES_DENOM.forEach(d => { cash += d * billeteVal(d); });
+  const extranjera = valNumCierre('cierreUsd') * (parseFloat(tc.tc_usd) || 0) +
+                     valNumCierre('cierreEur') * (parseFloat(tc.tc_eur) || 0) +
+                     valNumCierre('cierreBrl') * (parseFloat(tc.tc_brl) || 0);
+  const electronico = valNumCierre('cierreTarjeta') + valNumCierre('cierreTransf');
+  const bruto = cash + extranjera + electronico;
+  const pct = parseFloat(tc.porcentaje_admin) || 0;
+  const neto = bruto * (1 - pct / 100);
+  const puntos = CIERRE_COLABS.reduce((s, c) => s + (parseFloat(c.puntos) || 0), 0);
+
+  document.getElementById('cierreResumen').innerHTML =
+    resumenRow('Total bruto', '$' + formatNumber(Math.round(bruto))) +
+    resumenRow('Descuento admin (' + pct + '%)', '-$' + formatNumber(Math.round(bruto - neto))) +
+    resumenRow('Total neto a repartir', '$' + formatNumber(Math.round(neto)), true) +
+    resumenRow('Puntos totales', puntos + (puntos > 0 ? '' : '  ⚠️ falta asignar'));
+}
+window.recalcCierre = recalcCierre;
+
+async function guardarCierre() {
+  const err = document.getElementById('cierreError'); err.textContent = '';
+  const tc = PROP_CONFIG || {};
+
+  const billetes = {};
+  let cash = 0;
+  BILLETES_DENOM.forEach(d => { const n = billeteVal(d); billetes['bil_' + d] = n; cash += d * n; });
+  const usd = valNumCierre('cierreUsd'), eur = valNumCierre('cierreEur'), brl = valNumCierre('cierreBrl');
+  const tarjeta = valNumCierre('cierreTarjeta'), transf = valNumCierre('cierreTransf');
+  const extranjera = usd * (parseFloat(tc.tc_usd) || 0) + eur * (parseFloat(tc.tc_eur) || 0) + brl * (parseFloat(tc.tc_brl) || 0);
+  const bruto = cash + extranjera + tarjeta + transf;
+  const pct = parseFloat(tc.porcentaje_admin) || 0;
+  const neto = bruto * (1 - pct / 100);
+  const colabs = CIERRE_COLABS.filter(c => (parseFloat(c.puntos) || 0) > 0);
+  const puntos = colabs.reduce((s, c) => s + parseFloat(c.puntos), 0);
+
+  if (bruto <= 0) { err.textContent = 'Cargá al menos un monto (efectivo, moneda extranjera o electrónico).'; return; }
+  if (puntos <= 0) { err.textContent = 'Asigná puntos a al menos un colaborador.'; return; }
+
+  const btn = document.getElementById('btnGuardarCierre');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  const ahora = new Date().toISOString();
+
+  const cierre = Object.assign({
+    local: PROP_LOCAL_SEL,
+    fecha: document.getElementById('cierreFecha').value || hoyStr(),
+    turno: document.getElementById('cierreTurno').value,
+    monto_usd: usd, monto_eur: eur, monto_brl: brl,
+    tc_usd: parseFloat(tc.tc_usd) || 0, tc_eur: parseFloat(tc.tc_eur) || 0, tc_brl: parseFloat(tc.tc_brl) || 0,
+    monto_tarjeta: tarjeta, monto_transferencia: transf,
+    porcentaje_admin: pct,
+    total_bruto: Math.round(bruto), total_neto: Math.round(neto), total_puntos: puntos,
+    pagado: false,
+    comentario: (document.getElementById('cierreComentario').value || '').trim() || null,
+    creado_por: currentUser.id, creado_en: ahora, actualizado_en: ahora
+  }, billetes);
+
+  try {
+    const res = await api('propinas_cierres', { method: 'POST', body: JSON.stringify(cierre) });
+    const nuevo = Array.isArray(res) ? res[0] : res;
+    const cierreId = nuevo.id;
+
+    const asigs = colabs.map(c => ({
+      cierre_id: cierreId,
+      empleado_id: c.id,
+      puntos: c.puntos,
+      monto: Math.round(neto * c.puntos / puntos)
+    }));
+    if (asigs.length) {
+      await api('propinas_asignaciones', { method: 'POST', body: JSON.stringify(asigs) });
+    }
+
+    closeNuevoCierre();
+    toast('✓ Cierre guardado y repartido entre ' + colabs.length + ' colaboradores', 'success');
+    PROP_CIERRES = await api('propinas_cierres?order=fecha.desc,id.desc') || [];
+    renderPropGestKpis();
+    renderPropGestTabla();
+  } catch (e) {
+    err.textContent = 'Error al guardar el cierre. Revisá la conexión y reintentá.';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Guardar cierre';
+  }
+}
+window.guardarCierre = guardarCierre;
+window.closeNuevoCierre = function() {
+  document.getElementById('modalNuevoCierre').classList.remove('show');
+};
+
 function nuevoCierrePlaceholder() {
   toast('Carga de cierres - próximamente (Fase 2)', 'warning');
 }

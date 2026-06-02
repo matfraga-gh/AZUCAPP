@@ -142,7 +142,7 @@
     </div>
 
     <!-- Botón de nuevo cierre (placeholder hasta Fase 2) -->
-    <button class="btn-primary-full" id="propGestNuevoBtn" onclick="nuevoCierrePlaceholder()" style="margin-top:14px;">
+    <button class="btn-primary-full" id="propGestNuevoBtn" onclick="abrirNuevoCierre()" style="margin-top:14px;">
       <i class="ti ti-plus"></i> Nuevo cierre
     </button>
 
@@ -1268,6 +1268,76 @@
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeCambiarPerfilModal()">Cancelar</button>
       <button class="btn-primary" id="btnGuardarPerfil" onclick="guardarCambioPerfil()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: NUEVO CIERRE DE PROPINAS (Fase 2)
+============================================ -->
+<div class="modal-overlay" id="modalNuevoCierre">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Nuevo cierre</h2>
+      <button class="modal-close" onclick="closeNuevoCierre()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+
+      <div class="cierre-section">
+        <div class="cierre-row2">
+          <label class="field"><span class="field-label">Local</span>
+            <input type="text" id="cierreLocal" readonly></label>
+          <label class="field"><span class="field-label">Fecha</span>
+            <input type="date" id="cierreFecha"></label>
+        </div>
+        <label class="field"><span class="field-label">Turno</span>
+          <select id="cierreTurno">
+            <option value="mediodia">🍲 Mediodía</option>
+            <option value="noche">🌙 Noche</option>
+            <option value="evento">🎉 Evento</option>
+            <option value="especial">⭐ Especial</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="cierre-section">
+        <div class="cierre-section-title"><i class="ti ti-cash"></i> Efectivo (cantidad de billetes)</div>
+        <div class="billete-grid" id="cierreBilletes"></div>
+      </div>
+
+      <div class="cierre-section">
+        <div class="cierre-section-title"><i class="ti ti-currency-dollar"></i> Moneda extranjera</div>
+        <div class="cierre-row3">
+          <label class="field"><span class="field-label">USD</span><input type="number" min="0" step="any" id="cierreUsd" placeholder="0" oninput="recalcCierre()"></label>
+          <label class="field"><span class="field-label">EUR</span><input type="number" min="0" step="any" id="cierreEur" placeholder="0" oninput="recalcCierre()"></label>
+          <label class="field"><span class="field-label">BRL</span><input type="number" min="0" step="any" id="cierreBrl" placeholder="0" oninput="recalcCierre()"></label>
+        </div>
+        <div class="cierre-hint" id="cierreTcHint"></div>
+      </div>
+
+      <div class="cierre-section">
+        <div class="cierre-section-title"><i class="ti ti-credit-card"></i> Electrónicos</div>
+        <div class="cierre-row2">
+          <label class="field"><span class="field-label">Tarjeta</span><input type="number" min="0" step="any" id="cierreTarjeta" placeholder="0" oninput="recalcCierre()"></label>
+          <label class="field"><span class="field-label">Transferencia</span><input type="number" min="0" step="any" id="cierreTransf" placeholder="0" oninput="recalcCierre()"></label>
+        </div>
+      </div>
+
+      <div class="cierre-resumen" id="cierreResumen"></div>
+
+      <div class="cierre-section">
+        <div class="cierre-section-title"><i class="ti ti-users"></i> Colaboradores · puntos</div>
+        <div class="colab-list" id="cierreColabs"><div class="loading">Cargando...</div></div>
+      </div>
+
+      <label class="field"><span class="field-label">Comentario (opcional)</span>
+        <textarea id="cierreComentario" rows="2"></textarea></label>
+
+      <div class="login-error" id="cierreError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeNuevoCierre()">Cancelar</button>
+      <button class="btn-primary" id="btnGuardarCierre" onclick="guardarCierre()">Guardar cierre</button>
     </div>
   </div>
 </div>
