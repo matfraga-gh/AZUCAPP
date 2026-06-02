@@ -3093,15 +3093,17 @@ select option {
    NUEVO CIERRE DE PROPINAS (Fase 2)
 ============================================ */
 .cierre-card { max-width: 460px; }
-.cierre-body { max-height: 72vh; overflow-y: auto; }
+.cierre-body { max-height: 72vh; overflow-y: auto; overflow-x: hidden; }
 .cierre-section { margin-bottom: 16px; }
 .cierre-section-title {
   font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
   color: var(--c-sand); margin-bottom: 8px;
   display: flex; align-items: center; gap: 6px;
 }
-.cierre-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.cierre-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.cierre-row2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cierre-row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cierre-row2 .field, .cierre-row3 .field { min-width: 0; }
+.cierre-row2 .field input, .cierre-row3 .field input { min-width: 0; width: 100%; box-sizing: border-box; }
 .cierre-hint { font-size: 11px; color: var(--c-muted); margin-top: 6px; }
 .billete-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .billete-row {
