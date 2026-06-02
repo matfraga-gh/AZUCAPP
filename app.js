@@ -450,6 +450,15 @@ const MODULES = [
     action: () => toast('Módulo "Mis pedidos" - próximamente', 'warning')
   },
   {
+    id: 'insumos',
+    icon: 'ti-package',
+    color: '#EF9F27',
+    title: 'Insumos',
+    desc: 'Catálogo, validación y subfamilias',
+    visible: () => !!(currentUser && currentUser.editor_insumos) && !isMaster() && !isAdmin(),
+    action: () => openAdminInsumos()
+  },
+  {
     id: 'admin',
     icon: 'ti-settings',
     color: '#B4B2A9',
@@ -2351,7 +2360,8 @@ const PERMISOS_DEF = [
   { key: 'editor_propinas',   label: 'Propinas',      icon: 'ti-cash',           tipo: 'editor' },
   { key: 'editor_biblioteca', label: 'Biblioteca',    icon: 'ti-books',          tipo: 'editor' },
   { key: 'editor_recetas',    label: 'Recetas',       icon: 'ti-chef-hat',       tipo: 'editor' },
-  { key: 'editor_pedidos',    label: 'Pedidos',       icon: 'ti-shopping-cart',  tipo: 'editor' }
+  { key: 'editor_pedidos',    label: 'Pedidos',       icon: 'ti-shopping-cart',  tipo: 'editor' },
+  { key: 'editor_insumos',    label: 'Insumos / Compras', icon: 'ti-package',    tipo: 'editor' }
 ];
 
 async function openAdminEditores() {
@@ -3355,8 +3365,14 @@ let INSUMOS_BUSCAR_TIMEOUT = null;
 
 // ¿Quién puede gestionar insumos?
 function puedeGestionarInsumos() {
-  return isMaster() || isAdmin();
+  return isMaster() || isAdmin() || (currentUser && currentUser.editor_insumos === true);
 }
+
+// Volver desde Insumos: Admin/Master -> panel Administración; editor de Compras -> inicio
+window.volverDeInsumos = function() {
+  if (isMaster() || isAdmin()) openAdministracion();
+  else showDashboard();
+};
 
 async function openAdminInsumos() {
   if (!puedeGestionarInsumos()) {
@@ -3647,6 +3663,7 @@ function actualizarCostoUnidad() {
 }
 
 async function guardarInsumo(validar) {
+  if (!puedeGestionarInsumos()) { toast('No tenés permiso para esta acción', 'error'); return; }
   const nombre = document.getElementById('insNombre').value.trim();
   const formato = document.getElementById('insFormato').value.trim();
   const unidad = document.getElementById('insUnidad').value;
@@ -3715,6 +3732,7 @@ async function guardarInsumo(validar) {
 }
 
 async function borrarInsumo(id) {
+  if (!puedeGestionarInsumos()) { toast('No tenés permiso para esta acción', 'error'); return; }
   const ins = INSUMOS_DB.find(x => x.id === id);
   if (!ins) return;
 
