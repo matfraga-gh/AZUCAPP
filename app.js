@@ -1724,6 +1724,169 @@ window.closeNuevoCierre = function() {
   document.getElementById('modalNuevoCierre').classList.remove('show');
 };
 
+// ============================================
+// EXPORTAR LIQUIDACIÓN DE PROPINAS (Excel)
+// ============================================
+const TURNOS_LIQ = { mediodia: 'Mediodía', 'mediodía': 'Mediodía', noche: 'Noche', evento: 'Evento', especial: 'Especial' };
+
+function fmtFechaDDMM(iso) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? (m[3] + '/' + m[2] + '/' + m[1]) : (iso || '');
+}
+
+window.abrirLiquidacion = function() {
+  if (!puedeGestionarPropinas()) { toast('No tenés permiso', 'error'); return; }
+  const localesUser = localesPropinasUsuario();
+  // Pre-cargar el período para que cubra los cierres pendientes de liquidar
+  const pendientes = (PROP_CIERRES || []).filter(c => !c.pagado && c.fecha && localesUser.includes(c.local));
+  let desde, hasta;
+  if (pendientes.length) {
+    const fechas = pendientes.map(c => c.fecha).sort();
+    desde = fechas[0];
+    hasta = fechas[fechas.length - 1];
+  } else {
+    const hoy = new Date();
+    const primero = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    desde = primero.toISOString().slice(0, 10);
+    hasta = hoyStr();
+  }
+  document.getElementById('liqDesde').value = desde;
+  document.getElementById('liqHasta').value = hasta;
+  document.getElementById('liqError').textContent = '';
+  document.getElementById('modalLiquidacion').classList.add('show');
+};
+window.closeLiquidacion = function() {
+  document.getElementById('modalLiquidacion').classList.remove('show');
+};
+
+window.generarLiquidacion = async function() {
+  const err = document.getElementById('liqError'); err.textContent = '';
+  const desde = document.getElementById('liqDesde').value;
+  const hasta = document.getElementById('liqHasta').value;
+  if (!desde || !hasta) { err.textContent = 'Elegí el período (desde y hasta).'; return; }
+  if (desde > hasta) { err.textContent = 'La fecha "desde" no puede ser posterior a "hasta".'; return; }
+
+  const btn = document.getElementById('btnGenerarLiq');
+  btn.disabled = true; btn.textContent = 'Generando...';
+
+  try {
+    const localesUser = localesPropinasUsuario();
+    let cierres = await api('propinas_cierres?fecha=gte.' + desde + '&fecha=lte.' + hasta + '&order=fecha.asc') || [];
+    cierres = cierres.filter(c => localesUser.includes(c.local));
+    if (!cierres.length) {
+      err.textContent = 'No hay cierres en ese período.';
+      btn.disabled = false; btn.textContent = 'Generar Excel';
+      return;
+    }
+
+    const cierreMap = {};
+    cierres.forEach(c => { cierreMap[c.id] = c; });
+    const ids = cierres.map(c => c.id);
+
+    const asigs = await api('propinas_asignaciones?cierre_id=in.(' + ids.join(',') + ')&select=*') || [];
+    if (!asigs.length) {
+      err.textContent = 'Los cierres del período no tienen colaboradores cargados.';
+      btn.disabled = false; btn.textContent = 'Generar Excel';
+      return;
+    }
+
+    const empIds = Array.from(new Set(asigs.map(a => a.empleado_id)));
+    const emps = await api('empleados?id=in.(' + empIds.join(',') + ')&select=id,nombre,apellido,nombre_p') || [];
+    const empMap = {};
+    emps.forEach(e => {
+      const ap = e.apellido || '';
+      const pila = e.nombre_p || e.nombre || '';
+      empMap[e.id] = (ap && pila) ? (ap + ', ' + pila) : (ap || pila || ('Empleado #' + e.id));
+    });
+    const nombreEmp = id => empMap[id] || ('Empleado #' + id);
+
+    // ---- DETALLE por cierre (una fila por colaborador en cada cierre) ----
+    const detalle = asigs.map(a => {
+      const c = cierreMap[a.cierre_id] || {};
+      return {
+        'Empleado': nombreEmp(a.empleado_id),
+        'Local': localLabel(c.local) || c.local || '',
+        'Fecha': fmtFechaDDMM(c.fecha),
+        'Turno': TURNOS_LIQ[(c.turno || '').toLowerCase()] || c.turno || '',
+        'Estado': c.pagado ? 'Pagado' : 'Pendiente',
+        'Puntos': parseFloat(a.puntos) || 0,
+        'Monto': parseFloat(a.monto) || 0
+      };
+    }).sort((x, y) =>
+      x.Empleado.localeCompare(y.Empleado, 'es') ||
+      x.Local.localeCompare(y.Local, 'es') ||
+      x.Fecha.localeCompare(y.Fecha)
+    );
+
+    // ---- RESUMEN agrupado por (empleado, local) + total acumulado por empleado ----
+    const grupos = {};
+    asigs.forEach(a => {
+      const c = cierreMap[a.cierre_id] || {};
+      const key = a.empleado_id + '|' + (c.local || '');
+      if (!grupos[key]) grupos[key] = { empId: a.empleado_id, local: c.local || '', cierres: 0, puntos: 0, pendiente: 0, pagado: 0 };
+      const g = grupos[key];
+      g.cierres += 1;
+      g.puntos += parseFloat(a.puntos) || 0;
+      const m = parseFloat(a.monto) || 0;
+      if (c.pagado) g.pagado += m; else g.pendiente += m;
+    });
+
+    const arr = Object.keys(grupos).map(k => {
+      const g = grupos[k];
+      g.nombre = nombreEmp(g.empId);
+      return g;
+    }).sort((x, y) =>
+      x.nombre.localeCompare(y.nombre, 'es') ||
+      (localLabel(x.local) || '').localeCompare(localLabel(y.local) || '', 'es')
+    );
+
+    const resumen = [];
+    let i = 0;
+    while (i < arr.length) {
+      const empId = arr[i].empId;
+      const grupoEmp = [];
+      while (i < arr.length && arr[i].empId === empId) { grupoEmp.push(arr[i]); i++; }
+
+      grupoEmp.forEach(g => {
+        resumen.push({
+          'Empleado': g.nombre,
+          'Local': localLabel(g.local) || g.local || '',
+          'Cierres': g.cierres,
+          'Puntos': g.puntos,
+          'Pendiente': Math.round(g.pendiente),
+          'Pagado': Math.round(g.pagado),
+          'Total': Math.round(g.pendiente + g.pagado)
+        });
+      });
+
+      // Línea de total acumulado solo si trabajó en más de un local
+      if (grupoEmp.length > 1) {
+        const sum = (f) => grupoEmp.reduce((s, g) => s + g[f], 0);
+        resumen.push({
+          'Empleado': 'TOTAL ' + grupoEmp[0].nombre,
+          'Local': '',
+          'Cierres': sum('cierres'),
+          'Puntos': sum('puntos'),
+          'Pendiente': Math.round(sum('pendiente')),
+          'Pagado': Math.round(sum('pagado')),
+          'Total': Math.round(sum('pendiente') + sum('pagado'))
+        });
+      }
+    }
+
+    exportarAExcel('Liquidacion_propinas_AZUCA_' + desde + '_a_' + hasta + '.xlsx', [
+      { nombre: 'Resumen por empleado', filas: resumen },
+      { nombre: 'Detalle por cierre', filas: detalle }
+    ]);
+    closeLiquidacion();
+    toast('✓ Liquidación generada (' + cierres.length + ' cierres)', 'success');
+  } catch (e) {
+    err.textContent = 'Error al generar la liquidación. Reintentá.';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Generar Excel';
+  }
+};
+
 function nuevoCierrePlaceholder() {
   toast('Carga de cierres - próximamente (Fase 2)', 'warning');
 }

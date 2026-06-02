@@ -136,6 +136,11 @@
     <!-- KPIs -->
     <div class="kpi-grid" id="propGestKpis"></div>
 
+    <!-- Exportar liquidación -->
+    <div style="display:flex; justify-content:flex-end; margin-bottom:14px;">
+      <button class="btn-ghost" onclick="abrirLiquidacion()"><i class="ti ti-file-spreadsheet"></i> Exportar liquidación</button>
+    </div>
+
     <!-- Tabla de cierres -->
     <div id="propGestTabla">
       <div class="loading">Cargando cierres...</div>
@@ -1338,6 +1343,30 @@
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeNuevoCierre()">Cancelar</button>
       <button class="btn-primary" id="btnGuardarCierre" onclick="guardarCierre()">Guardar cierre</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: EXPORTAR LIQUIDACIÓN DE PROPINAS
+============================================ -->
+<div class="modal-overlay" id="modalLiquidacion">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Exportar liquidación</h2>
+      <button class="modal-close" onclick="closeLiquidacion()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--c-muted); font-size:13px; margin-bottom:12px;">Elegí el período. El Excel trae todos los locales que podés ver, con el detalle por cierre y el total por empleado.</p>
+      <div class="cierre-row2">
+        <label class="field"><span class="field-label">Desde</span><input type="date" id="liqDesde"></label>
+        <label class="field"><span class="field-label">Hasta</span><input type="date" id="liqHasta"></label>
+      </div>
+      <div class="login-error" id="liqError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeLiquidacion()">Cancelar</button>
+      <button class="btn-primary" id="btnGenerarLiq" onclick="generarLiquidacion()">Generar Excel</button>
     </div>
   </div>
 </div>
