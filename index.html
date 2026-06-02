@@ -552,9 +552,13 @@
       </div>
     </div>
 
-    <!-- Exportar -->
-    <div style="display:flex; justify-content:flex-end; margin-bottom:14px;">
-      <button class="btn-ghost" onclick="exportarInsumosExcel()"><i class="ti ti-file-spreadsheet"></i> Exportar Excel</button>
+    <!-- Contador + acciones -->
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
+      <span id="insumosCountInline" style="font-size:13px; color:var(--c-sand); font-weight:600;">—</span>
+      <div style="display:flex; gap:8px;">
+        <button class="btn-ghost" onclick="limpiarFiltrosInsumos()"><i class="ti ti-filter-off"></i> Limpiar</button>
+        <button class="btn-ghost" onclick="exportarInsumosExcel()"><i class="ti ti-file-spreadsheet"></i> Exportar Excel</button>
+      </div>
     </div>
 
     <!-- Lista -->

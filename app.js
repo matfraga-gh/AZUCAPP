@@ -3931,9 +3931,12 @@ function renderInsumosLista() {
   const countEl = document.getElementById('insumosCount');
   const filtrados = insumosFiltrados();
 
-  countEl.textContent = filtrados.length === INSUMOS_DB.length
+  const textoCount = filtrados.length === INSUMOS_DB.length
     ? `${INSUMOS_DB.length} insumos`
     : `${filtrados.length} de ${INSUMOS_DB.length} insumos`;
+  countEl.textContent = textoCount;
+  const inlineEl = document.getElementById('insumosCountInline');
+  if (inlineEl) inlineEl.textContent = textoCount;
 
   if (filtrados.length === 0) {
     cont.innerHTML = `
@@ -4050,6 +4053,20 @@ function onFiltroInsumo() {
     renderInsumosLista();
   }, 200);
 }
+
+// Limpiar todos los filtros y volver a ver todos los insumos
+window.limpiarFiltrosInsumos = function() {
+  INSUMOS_FILTRO_TEXTO = '';
+  INSUMOS_FILTRO_SUBFAMILIA = '';
+  INSUMOS_FILTRO_PROVEEDOR = '';
+  INSUMOS_FILTRO_ESTADO = '';
+  ['insumoBuscar', 'insumoSubfamilia', 'insumoProveedor', 'insumoEstado'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  INSUMOS_PAGE = 0;
+  renderInsumosLista();
+};
 
 // ============================================
 // MODAL: CREAR / EDITAR INSUMO
