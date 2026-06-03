@@ -1963,6 +1963,11 @@ function puedeGestionarRecetas() {
   return isMaster() || isAdmin() || (currentUser && currentUser.editor_recetas === true);
 }
 
+// Cantidad con decimales (no redondea como formatNumber, que es para pesos)
+function fmtCant(n) {
+  return (parseFloat(n) || 0).toLocaleString('es-AR', { maximumFractionDigits: 3 });
+}
+
 function openMisRecetas() {
   showView('vMisRecetas');
   RECETA_FILTRO_LOCAL = '';
@@ -2040,7 +2045,7 @@ function renderRecetas() {
           '<span class="rc-localbadge' + (transversal ? ' transv' : '') + '">' + esc(localLabel(r.local)) + '</span>' +
         '</div>' +
         '<div class="rc-meta">' +
-          '<span><i class="ti ti-scale"></i> rinde ' + formatNumber(rend) + ' ' + esc(unidad) + '</span>' +
+          '<span><i class="ti ti-scale"></i> rinde ' + fmtCant(rend) + ' ' + esc(unidad) + '</span>' +
           '<span><i class="ti ti-coin"></i> $' + formatNumber(Math.round(costo)) + (rend > 0 ? (' · $' + formatNumber(Math.round(costoUnit)) + '/' + esc(unidad)) : '') + '</span>' +
         '</div>' +
       '</div>';
@@ -2166,7 +2171,7 @@ function renderComponentesEdit() {
     '<div class="comp-row">' +
       '<div class="comp-info">' +
         '<span class="comp-nombre">' + esc(c.nombre) + (c.tipo === 'receta' ? ' <span class="comp-tag">sub-elab</span>' : '') + '</span>' +
-        '<span class="comp-cant">' + formatNumber(c.cantidad) + ' ' + esc(c.unidad) + '</span>' +
+        '<span class="comp-cant">' + fmtCant(c.cantidad) + ' ' + esc(c.unidad) + '</span>' +
       '</div>' +
       '<button type="button" class="comp-del" onclick="quitarComponente(' + idx + ')" aria-label="Quitar"><i class="ti ti-trash"></i></button>' +
     '</div>'
