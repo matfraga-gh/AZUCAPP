@@ -1375,6 +1375,95 @@
   </div>
 </div>
 
+<!-- ============================================
+     VISTA: MIS RECETAS - Sub-elaboraciones
+============================================ -->
+<div id="vMisRecetas" class="view">
+  <div class="module-wrap">
+
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Mis recetas</div>
+        <div class="module-subtitle" id="recetasCount">Cargando...</div>
+      </div>
+    </div>
+
+    <div class="receta-subnav">
+      <button class="receta-tab active">Sub-elaboraciones</button>
+      <button class="receta-tab" onclick="toast('Platos - próximamente', 'warning')">Platos</button>
+      <button class="receta-tab" onclick="toast('Menús - próximamente', 'warning')">Menús</button>
+    </div>
+
+    <div class="admin-toolbar">
+      <input type="search" id="recetaSearch" placeholder="Buscar sub-elaboración..." class="search-input">
+      <button class="btn-primary btn-icon-only" id="recetaNuevoBtn" onclick="abrirNuevaSubelab()" title="Nueva sub-elaboración"><i class="ti ti-plus"></i></button>
+    </div>
+
+    <div class="personal-filtros">
+      <select id="recetaFiltroLocal" class="mini-select"><option value="">Todos los locales</option></select>
+    </div>
+
+    <div id="recetasLista"><div class="loading">Cargando sub-elaboraciones...</div></div>
+
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: NUEVA / EDITAR SUB-ELABORACIÓN
+============================================ -->
+<div class="modal-overlay" id="modalSubelab">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title" id="subelabTitulo">Nueva sub-elaboración</h2>
+      <button class="modal-close" onclick="closeSubelab()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+
+      <label class="field"><span class="field-label">Nombre</span>
+        <input type="text" id="subelabNombre" placeholder="Ej: Aceite de achiote"></label>
+
+      <div class="cierre-row2">
+        <label class="field"><span class="field-label">Local</span>
+          <select id="subelabLocal"></select></label>
+        <label class="field"><span class="field-label">Rendimiento</span>
+          <input type="number" min="0" step="any" id="subelabRendimiento" placeholder="0"></label>
+      </div>
+      <label class="field"><span class="field-label">Unidad de rendimiento</span>
+        <select id="subelabUnidad"></select></label>
+
+      <div class="cierre-section" style="margin-top:6px;">
+        <div class="cierre-section-title"><i class="ti ti-list-details"></i> Componentes</div>
+        <div class="comp-add">
+          <select id="compTipo" class="mini-select" onchange="poblarItemsComponente()">
+            <option value="ingrediente">Insumo</option>
+            <option value="receta">Sub-elaboración</option>
+          </select>
+          <select id="compItem" class="mini-select"></select>
+          <div class="comp-add-row2">
+            <input type="number" min="0" step="any" id="compCantidad" class="mini-select" placeholder="Cantidad">
+            <select id="compUnidad" class="mini-select">
+              <option>kg</option><option>g</option><option>l</option><option>ml</option><option>unidad</option><option>porción</option>
+            </select>
+            <button type="button" class="btn-primary comp-add-btn" onclick="agregarComponente()"><i class="ti ti-plus"></i></button>
+          </div>
+        </div>
+        <div id="componentesLista" style="margin-top:10px;"></div>
+        <div class="cierre-hint" style="margin-top:8px;">El costo se calcula solo al guardar, a partir de los componentes.</div>
+      </div>
+
+      <label class="field"><span class="field-label">Procedimiento (opcional)</span>
+        <textarea id="subelabProcedimiento" rows="2"></textarea></label>
+
+      <div class="login-error" id="subelabError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeSubelab()">Cancelar</button>
+      <button class="btn-primary" id="btnGuardarSubelab" onclick="guardarSubelab()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="app.js"></script>
