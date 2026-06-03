@@ -2298,6 +2298,12 @@ function renderComponentesEdit() {
 
 window.guardarSubelab = async function() {
   const err = document.getElementById('subelabError'); err.textContent = '';
+  // Si quedó un componente cargado en el selector pero sin tocar "+", lo agregamos solo
+  const pendItem = document.getElementById('compItem');
+  const pendCant = parseFloat((document.getElementById('compCantidad') || {}).value) || 0;
+  if (pendItem && pendItem.value && pendCant > 0) {
+    window.agregarComponente();
+  }
   const nombre = document.getElementById('subelabNombre').value.trim();
   const local = document.getElementById('subelabLocal').value;
   const rendimiento = parseFloat(document.getElementById('subelabRendimiento').value) || 0;
