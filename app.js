@@ -1962,6 +1962,7 @@ let RECETA_TIPO = 'elaboracion';     // sección activa: 'elaboracion' | 'plato'
 let RECETAS_VIEW = {};               // receta_id -> fila de v_costeo_recetas
 let RECETAS_ELAB_PICKER = [];        // sub-elaboraciones disponibles como componente
 const FOOD_COST_SALUDABLE = 35;      // % de food cost saludable (badge verde)
+let RECETA_COMP_VIEJOS = [];         // ids de componentes existentes (para borrar al editar)
 
 function puedeGestionarRecetas() {
   return isMaster() || isAdmin() || (currentUser && currentUser.editor_recetas === true);
@@ -2116,6 +2117,7 @@ window.abrirNuevaSubelab = function() {
   const esPlato = RECETA_TIPO === 'plato';
   RECETA_EDITANDO = null;
   RECETA_COMP_EDIT = [];
+  RECETA_COMP_VIEJOS = [];
   document.getElementById('subelabTitulo').textContent = esPlato ? 'Nuevo plato' : 'Nueva sub-elaboración';
   document.getElementById('subelabNombre').value = '';
   document.getElementById('subelabLocal').innerHTML = opcionesLocalReceta('');
@@ -2149,23 +2151,30 @@ window.abrirEditarSubelab = async function(id) {
   document.getElementById('platoPrecio').value = r.precio_venta || '';
   document.getElementById('subelabError').textContent = '';
   prepararPickerComponente();
-  document.getElementById('componentesLista').innerHTML = '<div class="loading">Cargando componentes...</div>';
   document.getElementById('modalSubelab').classList.add('show');
+  cargarComponentesEnEditor(id);
+};
+
+// Carga (o recarga) los componentes de una receta dentro del editor abierto
+async function cargarComponentesEnEditor(id) {
+  const cont = document.getElementById('componentesLista');
+  if (cont) cont.innerHTML = '<div class="loading">Cargando componentes...</div>';
   try {
     const comps = await api('receta_componentes?receta_id=eq.' + id + '&select=*') || [];
+    RECETA_COMP_VIEJOS = comps.map(c => c.id);
     RECETA_COMP_EDIT = comps.map(c => {
       if (c.tipo_componente === 'ingrediente') {
         const ins = RECETAS_INSUMOS_VAL.find(x => x.id === c.ingrediente_id);
         return { tipo: 'ingrediente', refId: c.ingrediente_id, nombre: ins ? ins.nombre : ('Insumo #' + c.ingrediente_id), cantidad: parseFloat(c.cantidad) || 0, unidad: c.unidad || '' };
       }
-      const sub = RECETAS_DB.find(x => x.id === c.sub_receta_id);
+      const sub = RECETAS_ELAB_PICKER.find(x => x.id === c.sub_receta_id);
       return { tipo: 'receta', refId: c.sub_receta_id, nombre: sub ? sub.nombre : ('Sub-elab #' + c.sub_receta_id), cantidad: parseFloat(c.cantidad) || 0, unidad: c.unidad || '' };
     });
     renderComponentesEdit();
   } catch (e) {
-    document.getElementById('componentesLista').innerHTML = '<div class="cierre-hint" style="color:var(--c-error)">Error al cargar componentes</div>';
+    if (cont) cont.innerHTML = '<div class="cierre-hint" style="color:var(--c-error)">Error al cargar componentes</div>';
   }
-};
+}
 
 window.closeSubelab = function() {
   document.getElementById('modalSubelab').classList.remove('show');
@@ -2316,15 +2325,16 @@ window.guardarSubelab = async function() {
   if (!RECETA_EDITANDO) { receta.creado_por = currentUser.id; receta.creado_en = ahora; }
 
   try {
+    const esEdicion = !!RECETA_EDITANDO;
     let recetaId;
-    if (RECETA_EDITANDO) {
+    if (esEdicion) {
       await api('recetas?id=eq.' + RECETA_EDITANDO, { method: 'PATCH', body: JSON.stringify(receta) });
       recetaId = RECETA_EDITANDO;
-      await api('receta_componentes?receta_id=eq.' + recetaId, { method: 'DELETE' });
     } else {
       const res = await api('recetas', { method: 'POST', body: JSON.stringify(receta) });
       recetaId = (Array.isArray(res) ? res[0] : res).id;
     }
+    // 1) Insertar los componentes nuevos PRIMERO (si falla, no perdemos los viejos)
     const comps = RECETA_COMP_EDIT.map(c => ({
       receta_id: recetaId,
       tipo_componente: c.tipo,
@@ -2334,14 +2344,22 @@ window.guardarSubelab = async function() {
       unidad: c.unidad
     }));
     await api('receta_componentes', { method: 'POST', body: JSON.stringify(comps) });
-    closeSubelab();
+    // 2) Recién ahora borrar los componentes viejos (solo si era edición)
+    if (esEdicion && RECETA_COMP_VIEJOS.length) {
+      await api('receta_componentes?id=in.(' + RECETA_COMP_VIEJOS.join(',') + ')', { method: 'DELETE' });
+    }
+    // Quedarse en el editor mostrando lo guardado (se recarga desde la base)
+    RECETA_EDITANDO = recetaId;
+    document.getElementById('subelabTitulo').textContent = RECETA_TIPO === 'plato' ? 'Editar plato' : 'Editar sub-elaboración';
     const okMsg = RECETA_TIPO === 'plato'
-      ? (RECETA_EDITANDO ? '✓ Plato actualizado' : '✓ Plato creado')
-      : (RECETA_EDITANDO ? '✓ Sub-elaboración actualizada' : '✓ Sub-elaboración creada');
+      ? (esEdicion ? '✓ Plato actualizado' : '✓ Plato creado')
+      : (esEdicion ? '✓ Sub-elaboración actualizada' : '✓ Sub-elaboración creada');
     toast(okMsg, 'success');
+    await cargarComponentesEnEditor(recetaId);
     cargarRecetas();
   } catch (e) {
-    err.textContent = 'Error al guardar. Reintentá.';
+    console.error('guardarSubelab error:', e);
+    err.textContent = 'Error al guardar: ' + (e && e.message ? e.message.slice(0, 180) : e);
   } finally {
     btn.disabled = false; btn.textContent = 'Guardar';
   }
