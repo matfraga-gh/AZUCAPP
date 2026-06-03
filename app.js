@@ -1963,6 +1963,10 @@ let RECETAS_VIEW = {};               // receta_id -> fila de v_costeo_recetas
 let RECETAS_ELAB_PICKER = [];        // sub-elaboraciones disponibles como componente
 const FOOD_COST_SALUDABLE = 35;      // % de food cost saludable (badge verde)
 let RECETA_COMP_VIEJOS = [];         // ids de componentes existentes (para borrar al editar)
+let COSTEO_INSUMOS = {};             // id -> {costo, cant_pres, unidad}
+let COSTEO_RECETAS = {};             // id -> {rendimiento, unidad_rendimiento, tipo, precio_venta}
+let COSTEO_COMPS = {};               // receta_id -> [componentes]
+let RECETAS_COSTO_CALC = {};         // id -> costo total calculado correctamente
 
 function puedeGestionarRecetas() {
   return isMaster() || isAdmin() || (currentUser && currentUser.editor_recetas === true);
@@ -2001,15 +2005,65 @@ window.cambiarSeccionReceta = function(tipo) {
   cargarRecetas();
 };
 
+function unitCostInsumoCosteo(ins) {
+  return (parseFloat(ins.costo) || 0) / (parseFloat(ins.cant_pres) || 1);
+}
+
+// Costo total de una receta, recorriendo insumos y sub-elaboraciones (recursivo, con memo y guarda de ciclos)
+function computeCostoReceta(id, cache, stack) {
+  if (cache[id] != null) return cache[id];
+  if (stack[id]) return 0;               // evita bucles infinitos
+  stack[id] = true;
+  let total = 0;
+  const comps = COSTEO_COMPS[id] || [];
+  for (let k = 0; k < comps.length; k++) {
+    const c = comps[k];
+    const cant = parseFloat(c.cantidad) || 0;
+    if (c.tipo_componente === 'ingrediente') {
+      const ins = COSTEO_INSUMOS[c.ingrediente_id];
+      if (!ins) continue;
+      const conv = convertirCantidad(cant, c.unidad, ins.unidad);
+      if (conv != null) total += conv * unitCostInsumoCosteo(ins);
+    } else {
+      const sub = COSTEO_RECETAS[c.sub_receta_id];
+      if (!sub) continue;
+      const subTotal = computeCostoReceta(c.sub_receta_id, cache, stack);
+      const rend = parseFloat(sub.rendimiento) || 0;
+      const ucSub = rend > 0 ? subTotal / rend : 0;
+      const conv = convertirCantidad(cant, c.unidad, sub.unidad_rendimiento);
+      if (conv != null) total += conv * ucSub;
+    }
+  }
+  delete stack[id];
+  cache[id] = total;
+  return total;
+}
+
+// Carga todo el árbol de recetas/insumos y precalcula el costo de cada receta
+async function cargarDatosCosteo() {
+  const recs = await api('recetas?select=id,tipo,rendimiento,unidad_rendimiento,precio_venta') || [];
+  const comps = await api('receta_componentes?select=receta_id,tipo_componente,ingrediente_id,sub_receta_id,cantidad,unidad') || [];
+  const inss = await api('ingredientes?activo=eq.true&select=id,costo,cantidad_por_presentacion,unidad') || [];
+  COSTEO_RECETAS = {};
+  recs.forEach(r => { COSTEO_RECETAS[r.id] = r; });
+  COSTEO_COMPS = {};
+  comps.forEach(c => { (COSTEO_COMPS[c.receta_id] = COSTEO_COMPS[c.receta_id] || []).push(c); });
+  COSTEO_INSUMOS = {};
+  inss.forEach(i => { COSTEO_INSUMOS[i.id] = { costo: i.costo, cant_pres: i.cantidad_por_presentacion, unidad: i.unidad }; });
+  RECETAS_COSTO_CALC = {};
+  const cache = {};
+  Object.keys(COSTEO_RECETAS).forEach(id => {
+    RECETAS_COSTO_CALC[id] = computeCostoReceta(parseInt(id, 10), cache, {});
+  });
+}
+
 async function cargarRecetas() {
   const lista = document.getElementById('recetasLista');
   const etiqueta = RECETA_TIPO === 'plato' ? 'platos' : 'sub-elaboraciones';
   if (lista) lista.innerHTML = '<div class="loading">Cargando ' + etiqueta + '...</div>';
   try {
     RECETAS_DB = await api('recetas?tipo=eq.' + RECETA_TIPO + '&activo=eq.true&select=*&order=nombre.asc') || [];
-    const costeo = await api('v_costeo_recetas?select=id,costo_mp,food_cost_pct,margen_bruto,precio_venta') || [];
-    RECETAS_COSTO = {}; RECETAS_VIEW = {};
-    costeo.forEach(c => { RECETAS_COSTO[c.id] = parseFloat(c.costo_mp) || 0; RECETAS_VIEW[c.id] = c; });
+    await cargarDatosCosteo();
     if (!RECETAS_INSUMOS_VAL.length) {
       RECETAS_INSUMOS_VAL = await api('ingredientes?validado=eq.true&activo=eq.true&select=id,nombre,unidad,costo,cantidad_por_presentacion&order=nombre.asc') || [];
     }
@@ -2065,8 +2119,7 @@ function renderRecetas() {
   const gestiona = puedeGestionarRecetas();
   lista.innerHTML = items.map(r => {
     const transversal = /transversal/i.test(r.local || '');
-    const v = RECETAS_VIEW[r.id] || {};
-    const costo = parseFloat(v.costo_mp) || 0;
+    const costo = RECETAS_COSTO_CALC[r.id] || 0;
     const head =
       '<div class="rc-top">' +
         '<div class="rc-name">' + esc(r.nombre) + '</div>' +
@@ -2075,9 +2128,9 @@ function renderRecetas() {
 
     let meta;
     if (esPlato) {
-      const precio = parseFloat(r.precio_venta) || parseFloat(v.precio_venta) || 0;
-      const fc = parseFloat(v.food_cost_pct) || 0;
-      const margen = parseFloat(v.margen_bruto) || 0;
+      const precio = parseFloat(r.precio_venta) || 0;
+      const fc = precio > 0 ? (costo / precio * 100) : 0;
+      const margen = precio - costo;
       const cat = r.categoria ? ('<span class="rc-cat">' + esc(r.categoria) + '</span>') : '';
       let l2;
       if (precio > 0) {
@@ -2249,11 +2302,10 @@ function costoComponente(c) {
     unidadBase = ins.unidad || '';
   } else {
     const sub = RECETAS_ELAB_PICKER.find(x => x.id === c.refId);
-    const v = RECETAS_VIEW[c.refId];
-    if (!sub || !v) return null;
+    if (!sub) return null;
     const rend = parseFloat(sub.rendimiento) || 0;
     if (rend <= 0) return null;
-    unitCost = (parseFloat(v.costo_mp) || 0) / rend;
+    unitCost = (RECETAS_COSTO_CALC[c.refId] || 0) / rend;
     unidadBase = sub.unidad_rendimiento || '';
   }
   const conv = convertirCantidad(parseFloat(c.cantidad) || 0, c.unidad, unidadBase);
@@ -2292,7 +2344,7 @@ function renderComponentesEdit() {
   }).join('');
   const totalLinea = '<div class="comp-total">Costo estimado: <strong>$' + formatNumber(Math.round(total)) + '</strong>' +
     (hayDuda ? ' <span class="comp-duda">(faltan unidades por convertir)</span>' : '') +
-    '<div class="comp-total-hint">El costo definitivo lo calcula la base al guardar.</div></div>';
+    '<div class="comp-total-hint">Se calcula a partir de los componentes, convirtiendo unidades automáticamente.</div></div>';
   cont.innerHTML = filas + totalLinea;
 }
 
