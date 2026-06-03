@@ -3226,3 +3226,10 @@ select option {
 .comp-total { margin-top: 10px; font-size: 13px; color: var(--c-cream); }
 .comp-total strong { color: var(--c-rust); }
 .comp-total-hint { font-size: 11px; color: var(--c-muted); margin-top: 2px; }
+
+
+/* Editor de pasos de menú */
+.paso-controls { display: flex; gap: 10px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.paso-nombre { flex: 1; min-width: 110px; padding: 5px 8px; font-size: 12px;
+  background: var(--c-cream-soft); border: 0.5px solid var(--c-cream-border); border-radius: 8px; color: var(--c-cream); }
+.paso-opc { font-size: 11px; color: var(--c-muted); display: flex; align-items: center; gap: 4px; white-space: nowrap; }

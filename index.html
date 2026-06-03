@@ -1392,7 +1392,7 @@
     <div class="receta-subnav">
       <button class="receta-tab active" id="tabElaboracion" onclick="cambiarSeccionReceta('elaboracion')">Sub-elaboraciones</button>
       <button class="receta-tab" id="tabPlato" onclick="cambiarSeccionReceta('plato')">Platos</button>
-      <button class="receta-tab" onclick="toast('Menús - próximamente', 'warning')">Menús</button>
+      <button class="receta-tab" id="tabMenu" onclick="cambiarSeccionReceta('menu')">Menús</button>
     </div>
 
     <div class="admin-toolbar">
@@ -1423,32 +1423,36 @@
       <label class="field"><span class="field-label">Nombre</span>
         <input type="text" id="subelabNombre" placeholder="Ej: Aceite de achiote"></label>
 
-      <div class="cierre-row2">
-        <label class="field"><span class="field-label">Local</span>
-          <select id="subelabLocal"></select></label>
-        <label class="field"><span class="field-label">Rendimiento</span>
-          <input type="number" min="0" step="any" id="subelabRendimiento" placeholder="0"></label>
-      </div>
-      <label class="field"><span class="field-label">Unidad de rendimiento</span>
-        <select id="subelabUnidad"></select></label>
+      <label class="field"><span class="field-label">Local</span>
+        <select id="subelabLocal"></select></label>
 
-      <div id="platoCampos" style="display:none;">
+      <div id="rendimientoCampos">
         <div class="cierre-row2">
-          <label class="field"><span class="field-label">Categoría</span>
-            <select id="platoCategoria">
-              <option value="">(sin categoría)</option>
-              <option value="snack">Snack</option>
-              <option value="entrada">Entrada</option>
-              <option value="principal">Principal</option>
-              <option value="postre">Postre</option>
-              <option value="pan">Pan</option>
-            </select></label>
-          <label class="field"><span class="field-label">Precio de venta</span>
-            <input type="number" min="0" step="any" id="platoPrecio" placeholder="0"></label>
+          <label class="field"><span class="field-label">Rendimiento</span>
+            <input type="number" min="0" step="any" id="subelabRendimiento" placeholder="0"></label>
+          <label class="field"><span class="field-label">Unidad</span>
+            <select id="subelabUnidad"></select></label>
         </div>
       </div>
 
-      <div class="cierre-section" style="margin-top:6px;">
+      <div id="categoriaCampo" style="display:none;">
+        <label class="field"><span class="field-label">Categoría</span>
+          <select id="platoCategoria">
+            <option value="">(sin categoría)</option>
+            <option value="snack">Snack</option>
+            <option value="entrada">Entrada</option>
+            <option value="principal">Principal</option>
+            <option value="postre">Postre</option>
+            <option value="pan">Pan</option>
+          </select></label>
+      </div>
+
+      <div id="precioCampo" style="display:none;">
+        <label class="field"><span class="field-label">Precio de venta</span>
+          <input type="number" min="0" step="any" id="platoPrecio" placeholder="0"></label>
+      </div>
+
+      <div id="componentesSection" class="cierre-section" style="margin-top:6px;">
         <div class="cierre-section-title"><i class="ti ti-list-details"></i> Componentes</div>
         <div class="comp-add">
           <select id="compTipo" class="mini-select" onchange="poblarItemsComponente()">
@@ -1465,6 +1469,17 @@
           </div>
         </div>
         <div id="componentesLista" style="margin-top:10px;"></div>
+      </div>
+
+      <div id="menuPasosSection" class="cierre-section" style="margin-top:6px; display:none;">
+        <div class="cierre-section-title"><i class="ti ti-list-numbers"></i> Pasos del menú</div>
+        <div class="comp-add">
+          <div style="display:flex; gap:8px;">
+            <select id="pasoPlato" class="mini-select" style="flex:1; min-width:0;"></select>
+            <button type="button" class="btn-primary comp-add-btn" onclick="agregarPaso()"><i class="ti ti-plus"></i></button>
+          </div>
+        </div>
+        <div id="pasosLista" style="margin-top:10px;"></div>
       </div>
 
       <label class="field"><span class="field-label">Procedimiento (opcional)</span>
