@@ -1958,6 +1958,10 @@ let RECETA_FILTRO_LOCAL = '';
 let RECETA_EDITANDO = null;
 let RECETA_COMP_EDIT = [];      // componentes en edición
 const UNIDADES_RECETA = ['kg', 'g', 'l', 'ml', 'unidad', 'porción'];
+let RECETA_TIPO = 'elaboracion';     // sección activa: 'elaboracion' | 'plato'
+let RECETAS_VIEW = {};               // receta_id -> fila de v_costeo_recetas
+let RECETAS_ELAB_PICKER = [];        // sub-elaboraciones disponibles como componente
+const FOOD_COST_SALUDABLE = 35;      // % de food cost saludable (badge verde)
 
 function puedeGestionarRecetas() {
   return isMaster() || isAdmin() || (currentUser && currentUser.editor_recetas === true);
@@ -1970,6 +1974,8 @@ function fmtCant(n) {
 
 function openMisRecetas() {
   showView('vMisRecetas');
+  RECETA_TIPO = 'elaboracion';
+  actualizarTabsReceta();
   RECETA_FILTRO_LOCAL = '';
   const s = document.getElementById('recetaSearch'); if (s) s.value = '';
   const fl = document.getElementById('recetaFiltroLocal'); if (fl) fl.value = '';
@@ -1979,21 +1985,40 @@ function openMisRecetas() {
 }
 window.openMisRecetas = openMisRecetas;
 
+function actualizarTabsReceta() {
+  const te = document.getElementById('tabElaboracion');
+  const tp = document.getElementById('tabPlato');
+  if (te) te.classList.toggle('active', RECETA_TIPO === 'elaboracion');
+  if (tp) tp.classList.toggle('active', RECETA_TIPO === 'plato');
+}
+
+window.cambiarSeccionReceta = function(tipo) {
+  RECETA_TIPO = tipo;
+  actualizarTabsReceta();
+  const s = document.getElementById('recetaSearch'); if (s) s.value = '';
+  const fl = document.getElementById('recetaFiltroLocal'); if (fl) fl.value = '';
+  cargarRecetas();
+};
+
 async function cargarRecetas() {
   const lista = document.getElementById('recetasLista');
-  if (lista) lista.innerHTML = '<div class="loading">Cargando sub-elaboraciones...</div>';
+  const etiqueta = RECETA_TIPO === 'plato' ? 'platos' : 'sub-elaboraciones';
+  if (lista) lista.innerHTML = '<div class="loading">Cargando ' + etiqueta + '...</div>';
   try {
-    RECETAS_DB = await api('recetas?tipo=eq.elaboracion&activo=eq.true&select=*&order=nombre.asc') || [];
-    const costeo = await api('v_costeo_recetas?select=id,costo_mp') || [];
-    RECETAS_COSTO = {};
-    costeo.forEach(c => { RECETAS_COSTO[c.id] = parseFloat(c.costo_mp) || 0; });
+    RECETAS_DB = await api('recetas?tipo=eq.' + RECETA_TIPO + '&activo=eq.true&select=*&order=nombre.asc') || [];
+    const costeo = await api('v_costeo_recetas?select=id,costo_mp,food_cost_pct,margen_bruto,precio_venta') || [];
+    RECETAS_COSTO = {}; RECETAS_VIEW = {};
+    costeo.forEach(c => { RECETAS_COSTO[c.id] = parseFloat(c.costo_mp) || 0; RECETAS_VIEW[c.id] = c; });
     if (!RECETAS_INSUMOS_VAL.length) {
       RECETAS_INSUMOS_VAL = await api('ingredientes?validado=eq.true&activo=eq.true&select=id,nombre,unidad,costo,cantidad_por_presentacion&order=nombre.asc') || [];
+    }
+    if (!RECETAS_ELAB_PICKER.length) {
+      RECETAS_ELAB_PICKER = await api('recetas?tipo=eq.elaboracion&activo=eq.true&select=id,nombre,unidad_rendimiento,rendimiento&order=nombre.asc') || [];
     }
     poblarFiltroLocalReceta();
     renderRecetas();
   } catch (e) {
-    if (lista) lista.innerHTML = '<div class="empty-list" style="color:var(--c-error)">Error al cargar las sub-elaboraciones</div>';
+    if (lista) lista.innerHTML = '<div class="empty-list" style="color:var(--c-error)">Error al cargar</div>';
   }
 }
 
@@ -2025,30 +2050,55 @@ function renderRecetas() {
   const lista = document.getElementById('recetasLista');
   if (!lista) return;
   const items = recetasFiltradas();
+  const esPlato = RECETA_TIPO === 'plato';
   const cnt = document.getElementById('recetasCount');
-  if (cnt) cnt.textContent = items.length + (items.length === 1 ? ' sub-elaboración' : ' sub-elaboraciones');
+  if (cnt) {
+    const sing = esPlato ? 'plato' : 'sub-elaboración';
+    const plur = esPlato ? 'platos' : 'sub-elaboraciones';
+    cnt.textContent = items.length + ' ' + (items.length === 1 ? sing : plur);
+  }
   if (!items.length) {
-    lista.innerHTML = '<div class="empty-list">No hay sub-elaboraciones con ese criterio</div>';
+    lista.innerHTML = '<div class="empty-list">No hay resultados con ese criterio</div>';
     return;
   }
   const gestiona = puedeGestionarRecetas();
   lista.innerHTML = items.map(r => {
-    const rend = parseFloat(r.rendimiento) || 0;
-    const unidad = r.unidad_rendimiento || '';
-    const costo = RECETAS_COSTO[r.id] || 0;
-    const costoUnit = rend > 0 ? (costo / rend) : 0;
     const transversal = /transversal/i.test(r.local || '');
-    return '' +
-      '<div class="receta-card"' + (gestiona ? ' onclick="abrirEditarSubelab(' + r.id + ')" style="cursor:pointer"' : '') + '>' +
-        '<div class="rc-top">' +
-          '<div class="rc-name">' + esc(r.nombre) + '</div>' +
-          '<span class="rc-localbadge' + (transversal ? ' transv' : '') + '">' + esc(localLabel(r.local)) + '</span>' +
-        '</div>' +
-        '<div class="rc-meta">' +
-          '<span><i class="ti ti-scale"></i> rinde ' + fmtCant(rend) + ' ' + esc(unidad) + '</span>' +
-          '<span><i class="ti ti-coin"></i> $' + formatNumber(Math.round(costo)) + (rend > 0 ? (' · $' + formatNumber(Math.round(costoUnit)) + '/' + esc(unidad)) : '') + '</span>' +
-        '</div>' +
+    const v = RECETAS_VIEW[r.id] || {};
+    const costo = parseFloat(v.costo_mp) || 0;
+    const head =
+      '<div class="rc-top">' +
+        '<div class="rc-name">' + esc(r.nombre) + '</div>' +
+        '<span class="rc-localbadge' + (transversal ? ' transv' : '') + '">' + esc(localLabel(r.local)) + '</span>' +
       '</div>';
+
+    let meta;
+    if (esPlato) {
+      const precio = parseFloat(r.precio_venta) || parseFloat(v.precio_venta) || 0;
+      const fc = parseFloat(v.food_cost_pct) || 0;
+      const margen = parseFloat(v.margen_bruto) || 0;
+      const cat = r.categoria ? ('<span class="rc-cat">' + esc(r.categoria) + '</span>') : '';
+      let l2;
+      if (precio > 0) {
+        l2 = '<span><i class="ti ti-coin"></i> costo $' + formatNumber(Math.round(costo)) + '</span>' +
+             '<span><i class="ti ti-tag"></i> venta $' + formatNumber(Math.round(precio)) + '</span>' +
+             '<span class="rc-fc' + (fc <= FOOD_COST_SALUDABLE ? ' ok' : ' alto') + '">FC ' + fmtCant(fc) + '%</span>' +
+             '<span><i class="ti ti-trending-up"></i> margen $' + formatNumber(Math.round(margen)) + '</span>';
+      } else {
+        l2 = '<span><i class="ti ti-coin"></i> costo $' + formatNumber(Math.round(costo)) + '</span>' +
+             '<span class="rc-fc sinprecio">Sin precio</span>';
+      }
+      meta = '<div class="rc-meta">' + cat + l2 + '</div>';
+    } else {
+      const rend = parseFloat(r.rendimiento) || 0;
+      const unidad = r.unidad_rendimiento || '';
+      const costoUnit = rend > 0 ? (costo / rend) : 0;
+      meta = '<div class="rc-meta">' +
+        '<span><i class="ti ti-scale"></i> rinde ' + fmtCant(rend) + ' ' + esc(unidad) + '</span>' +
+        '<span><i class="ti ti-coin"></i> $' + formatNumber(Math.round(costo)) + (rend > 0 ? (' · $' + formatNumber(Math.round(costoUnit)) + '/' + esc(unidad)) : '') + '</span>' +
+      '</div>';
+    }
+    return '<div class="receta-card"' + (gestiona ? ' onclick="abrirEditarSubelab(' + r.id + ')" style="cursor:pointer"' : '') + '>' + head + meta + '</div>';
   }).join('');
 }
 
@@ -2063,14 +2113,18 @@ function opcionesUnidad(sel) {
 
 window.abrirNuevaSubelab = function() {
   if (!puedeGestionarRecetas()) { toast('No tenés permiso', 'error'); return; }
+  const esPlato = RECETA_TIPO === 'plato';
   RECETA_EDITANDO = null;
   RECETA_COMP_EDIT = [];
-  document.getElementById('subelabTitulo').textContent = 'Nueva sub-elaboración';
+  document.getElementById('subelabTitulo').textContent = esPlato ? 'Nuevo plato' : 'Nueva sub-elaboración';
   document.getElementById('subelabNombre').value = '';
   document.getElementById('subelabLocal').innerHTML = opcionesLocalReceta('');
-  document.getElementById('subelabRendimiento').value = '';
-  document.getElementById('subelabUnidad').innerHTML = opcionesUnidad('kg');
+  document.getElementById('subelabRendimiento').value = esPlato ? '1' : '';
+  document.getElementById('subelabUnidad').innerHTML = opcionesUnidad(esPlato ? 'porción' : 'kg');
   document.getElementById('subelabProcedimiento').value = '';
+  document.getElementById('platoCampos').style.display = esPlato ? '' : 'none';
+  document.getElementById('platoCategoria').value = '';
+  document.getElementById('platoPrecio').value = '';
   document.getElementById('subelabError').textContent = '';
   prepararPickerComponente();
   renderComponentesEdit();
@@ -2083,12 +2137,16 @@ window.abrirEditarSubelab = async function(id) {
   if (!r) return;
   RECETA_EDITANDO = id;
   RECETA_COMP_EDIT = [];
-  document.getElementById('subelabTitulo').textContent = 'Editar sub-elaboración';
+  const esPlato = RECETA_TIPO === 'plato';
+  document.getElementById('subelabTitulo').textContent = esPlato ? 'Editar plato' : 'Editar sub-elaboración';
   document.getElementById('subelabNombre').value = r.nombre || '';
   document.getElementById('subelabLocal').innerHTML = opcionesLocalReceta(r.local || '');
   document.getElementById('subelabRendimiento').value = r.rendimiento || '';
   document.getElementById('subelabUnidad').innerHTML = opcionesUnidad(r.unidad_rendimiento || 'kg');
   document.getElementById('subelabProcedimiento').value = r.procedimiento || '';
+  document.getElementById('platoCampos').style.display = esPlato ? '' : 'none';
+  document.getElementById('platoCategoria').value = r.categoria || '';
+  document.getElementById('platoPrecio').value = r.precio_venta || '';
   document.getElementById('subelabError').textContent = '';
   prepararPickerComponente();
   document.getElementById('componentesLista').innerHTML = '<div class="loading">Cargando componentes...</div>';
@@ -2128,7 +2186,7 @@ window.poblarItemsComponente = function() {
       RECETAS_INSUMOS_VAL.map(i => '<option value="' + i.id + '" data-unidad="' + esc(i.unidad || '') + '">' + esc(i.nombre) + '</option>').join('');
   } else {
     itemSel.innerHTML = '<option value="">Elegí una sub-elaboración...</option>' +
-      RECETAS_DB.filter(r => r.id !== RECETA_EDITANDO)
+      RECETAS_ELAB_PICKER.filter(r => r.id !== RECETA_EDITANDO)
         .map(r => '<option value="' + r.id + '" data-unidad="' + esc(r.unidad_rendimiento || '') + '">' + esc(r.nombre) + '</option>').join('');
   }
   // sincronizar unidad sugerida al cambiar el item
@@ -2160,6 +2218,39 @@ window.quitarComponente = function(idx) {
   renderComponentesEdit();
 };
 
+// Conversión de unidades para estimar costos (peso y volumen)
+function convertirCantidad(cant, fromU, toU) {
+  if (!fromU || !toU) return null;
+  const f = String(fromU).toLowerCase().trim(), t = String(toU).toLowerCase().trim();
+  if (f === t) return cant;
+  const peso = { kg: 1000, kilo: 1000, kilogramo: 1000, g: 1, gr: 1, gramo: 1, gramos: 1 };
+  const vol = { l: 1000, lt: 1000, litro: 1000, litros: 1000, ml: 1, cc: 1 };
+  if (peso[f] != null && peso[t] != null) return cant * peso[f] / peso[t];
+  if (vol[f] != null && vol[t] != null) return cant * vol[f] / vol[t];
+  return null; // unidades no convertibles entre sí
+}
+
+// Estima el costo de un componente: { unitCost, unidadBase, usado(null si no convertible) }
+function costoComponente(c) {
+  let unitCost = 0, unidadBase = '';
+  if (c.tipo === 'ingrediente') {
+    const ins = RECETAS_INSUMOS_VAL.find(x => x.id === c.refId);
+    if (!ins) return null;
+    unitCost = costoUnitarioInsumo(ins);
+    unidadBase = ins.unidad || '';
+  } else {
+    const sub = RECETAS_ELAB_PICKER.find(x => x.id === c.refId);
+    const v = RECETAS_VIEW[c.refId];
+    if (!sub || !v) return null;
+    const rend = parseFloat(sub.rendimiento) || 0;
+    if (rend <= 0) return null;
+    unitCost = (parseFloat(v.costo_mp) || 0) / rend;
+    unidadBase = sub.unidad_rendimiento || '';
+  }
+  const conv = convertirCantidad(parseFloat(c.cantidad) || 0, c.unidad, unidadBase);
+  return { unitCost: unitCost, unidadBase: unidadBase, usado: conv != null ? conv * unitCost : null };
+}
+
 function renderComponentesEdit() {
   const cont = document.getElementById('componentesLista');
   if (!cont) return;
@@ -2167,15 +2258,33 @@ function renderComponentesEdit() {
     cont.innerHTML = '<div class="cierre-hint">Todavía no agregaste componentes.</div>';
     return;
   }
-  cont.innerHTML = RECETA_COMP_EDIT.map((c, idx) =>
-    '<div class="comp-row">' +
+  let total = 0, hayDuda = false;
+  const filas = RECETA_COMP_EDIT.map((c, idx) => {
+    const cc = costoComponente(c);
+    let costoLinea = '';
+    if (cc) {
+      const unit = '$' + formatNumber(Math.round(cc.unitCost)) + '/' + esc(cc.unidadBase);
+      if (cc.usado != null) {
+        total += cc.usado;
+        costoLinea = '<span class="comp-costo">' + unit + ' · usa <strong>$' + formatNumber(Math.round(cc.usado)) + '</strong></span>';
+      } else {
+        hayDuda = true;
+        costoLinea = '<span class="comp-costo">' + unit + ' · <span class="comp-duda">revisar unidad</span></span>';
+      }
+    }
+    return '<div class="comp-row">' +
       '<div class="comp-info">' +
         '<span class="comp-nombre">' + esc(c.nombre) + (c.tipo === 'receta' ? ' <span class="comp-tag">sub-elab</span>' : '') + '</span>' +
         '<span class="comp-cant">' + fmtCant(c.cantidad) + ' ' + esc(c.unidad) + '</span>' +
+        costoLinea +
       '</div>' +
       '<button type="button" class="comp-del" onclick="quitarComponente(' + idx + ')" aria-label="Quitar"><i class="ti ti-trash"></i></button>' +
-    '</div>'
-  ).join('');
+    '</div>';
+  }).join('');
+  const totalLinea = '<div class="comp-total">Costo estimado: <strong>$' + formatNumber(Math.round(total)) + '</strong>' +
+    (hayDuda ? ' <span class="comp-duda">(faltan unidades por convertir)</span>' : '') +
+    '<div class="comp-total-hint">El costo definitivo lo calcula la base al guardar.</div></div>';
+  cont.innerHTML = filas + totalLinea;
 }
 
 window.guardarSubelab = async function() {
@@ -2195,11 +2304,15 @@ window.guardarSubelab = async function() {
   btn.disabled = true; btn.textContent = 'Guardando...';
   const ahora = new Date().toISOString();
   const receta = {
-    nombre: nombre, tipo: 'elaboracion', local: local,
+    nombre: nombre, tipo: RECETA_TIPO, local: local,
     rendimiento: rendimiento, unidad_rendimiento: unidad,
     procedimiento: procedimiento, activo: true,
     actualizado_en: ahora, actualizado_por: currentUser.id
   };
+  if (RECETA_TIPO === 'plato') {
+    receta.categoria = document.getElementById('platoCategoria').value || null;
+    receta.precio_venta = parseFloat(document.getElementById('platoPrecio').value) || 0;
+  }
   if (!RECETA_EDITANDO) { receta.creado_por = currentUser.id; receta.creado_en = ahora; }
 
   try {
@@ -2222,7 +2335,10 @@ window.guardarSubelab = async function() {
     }));
     await api('receta_componentes', { method: 'POST', body: JSON.stringify(comps) });
     closeSubelab();
-    toast(RECETA_EDITANDO ? '✓ Sub-elaboración actualizada' : '✓ Sub-elaboración creada', 'success');
+    const okMsg = RECETA_TIPO === 'plato'
+      ? (RECETA_EDITANDO ? '✓ Plato actualizado' : '✓ Plato creado')
+      : (RECETA_EDITANDO ? '✓ Sub-elaboración actualizada' : '✓ Sub-elaboración creada');
+    toast(okMsg, 'success');
     cargarRecetas();
   } catch (e) {
     err.textContent = 'Error al guardar. Reintentá.';

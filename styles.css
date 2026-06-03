@@ -3205,3 +3205,24 @@ select option {
 .comp-cant { font-size: 11px; color: var(--c-muted); margin-top: 2px; }
 .comp-del { background: transparent; border: none; color: var(--c-muted); cursor: pointer; padding: 4px; }
 .comp-del:hover { color: var(--c-error); }
+
+
+/* Platos: categoría y food cost */
+.rc-cat {
+  font-size: 10px; text-transform: capitalize;
+  background: rgba(245,240,232,0.08); color: var(--c-sand);
+  border: 0.5px solid var(--c-cream-border); padding: 2px 8px; border-radius: 10px;
+}
+.rc-fc { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+.rc-fc.ok { background: rgba(29,158,117,0.15); color: var(--c-success); }
+.rc-fc.alto { background: rgba(226,75,74,0.15); color: var(--c-error); }
+.rc-fc.sinprecio { background: rgba(180,178,169,0.12); color: var(--c-muted); }
+
+
+/* Costo estimado por componente */
+.comp-costo { font-size: 11px; color: var(--c-sand); margin-top: 3px; }
+.comp-costo strong { color: var(--c-cream); }
+.comp-duda { color: #d8a23a; }
+.comp-total { margin-top: 10px; font-size: 13px; color: var(--c-cream); }
+.comp-total strong { color: var(--c-rust); }
+.comp-total-hint { font-size: 11px; color: var(--c-muted); margin-top: 2px; }

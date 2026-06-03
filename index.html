@@ -1390,8 +1390,8 @@
     </div>
 
     <div class="receta-subnav">
-      <button class="receta-tab active">Sub-elaboraciones</button>
-      <button class="receta-tab" onclick="toast('Platos - próximamente', 'warning')">Platos</button>
+      <button class="receta-tab active" id="tabElaboracion" onclick="cambiarSeccionReceta('elaboracion')">Sub-elaboraciones</button>
+      <button class="receta-tab" id="tabPlato" onclick="cambiarSeccionReceta('plato')">Platos</button>
       <button class="receta-tab" onclick="toast('Menús - próximamente', 'warning')">Menús</button>
     </div>
 
@@ -1432,6 +1432,22 @@
       <label class="field"><span class="field-label">Unidad de rendimiento</span>
         <select id="subelabUnidad"></select></label>
 
+      <div id="platoCampos" style="display:none;">
+        <div class="cierre-row2">
+          <label class="field"><span class="field-label">Categoría</span>
+            <select id="platoCategoria">
+              <option value="">(sin categoría)</option>
+              <option value="snack">Snack</option>
+              <option value="entrada">Entrada</option>
+              <option value="principal">Principal</option>
+              <option value="postre">Postre</option>
+              <option value="pan">Pan</option>
+            </select></label>
+          <label class="field"><span class="field-label">Precio de venta</span>
+            <input type="number" min="0" step="any" id="platoPrecio" placeholder="0"></label>
+        </div>
+      </div>
+
       <div class="cierre-section" style="margin-top:6px;">
         <div class="cierre-section-title"><i class="ti ti-list-details"></i> Componentes</div>
         <div class="comp-add">
@@ -1449,7 +1465,6 @@
           </div>
         </div>
         <div id="componentesLista" style="margin-top:10px;"></div>
-        <div class="cierre-hint" style="margin-top:8px;">El costo se calcula solo al guardar, a partir de los componentes.</div>
       </div>
 
       <label class="field"><span class="field-label">Procedimiento (opcional)</span>
