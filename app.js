@@ -2191,7 +2191,11 @@ async function cargarDatosCosteo() {
   RECETAS_COSTO_CALC = {};
   const cache = {};
   Object.keys(COSTEO_RECETAS).forEach(id => {
-    RECETAS_COSTO_CALC[id] = computeCostoReceta(parseInt(id, 10), cache, {});
+    try {
+      RECETAS_COSTO_CALC[id] = computeCostoReceta(parseInt(id, 10), cache, {});
+    } catch (e) {
+      RECETAS_COSTO_CALC[id] = 0;
+    }
   });
   COSTEO_CARGADO = true;
 }
@@ -2200,9 +2204,17 @@ async function cargarRecetas() {
   const lista = document.getElementById('recetasLista');
   const etiqueta = RECETA_TIPO === 'menu' ? 'menús' : (RECETA_TIPO === 'plato' ? 'platos' : 'sub-elaboraciones');
   if (lista) lista.innerHTML = '<div class="loading">Cargando ' + etiqueta + '...</div>';
+  // 1) Lo esencial: la lista. Si esto falla, mostramos el motivo real.
   try {
     RECETAS_DB = await api('recetas?tipo=eq.' + RECETA_TIPO + '&activo=eq.true&select=*&order=nombre.asc') || [];
-    await cargarDatosCosteo();
+  } catch (e) {
+    if (lista) lista.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar la lista. Revisá la conexión y volvé a entrar.<br><span style="font-size:11px;opacity:.7">' + esc(String((e && e.message) || e)) + '</span></div>';
+    return;
+  }
+  // 2) Costeo: si falla (ej: señal mala), igual mostramos la lista (sin costos)
+  try { await cargarDatosCosteo(); } catch (e) { console.warn('Costeo no disponible:', e); }
+  // 3) Datos para editar: no deben bloquear la lista
+  try {
     if (!RECETAS_INSUMOS_VAL.length) {
       RECETAS_INSUMOS_VAL = await api('ingredientes?validado=eq.true&activo=eq.true&select=id,nombre,unidad,costo,cantidad_por_presentacion&order=nombre.asc') || [];
     }
@@ -2212,11 +2224,9 @@ async function cargarRecetas() {
     if (!RECETAS_PLATOS_PICKER.length) {
       RECETAS_PLATOS_PICKER = await api('recetas?tipo=eq.plato&activo=eq.true&select=id,nombre&order=nombre.asc') || [];
     }
-    poblarFiltroLocalReceta();
-    renderRecetas();
-  } catch (e) {
-    if (lista) lista.innerHTML = '<div class="empty-list" style="color:var(--c-error)">Error al cargar</div>';
-  }
+  } catch (e) { console.warn('Datos de edición no disponibles:', e); }
+  poblarFiltroLocalReceta();
+  renderRecetas();
 }
 
 function poblarFiltroLocalReceta() {
