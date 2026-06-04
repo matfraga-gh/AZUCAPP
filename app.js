@@ -432,15 +432,6 @@ const MODULES = [
     action: () => openMiBiblioteca()
   },
   {
-    id: 'recetas',
-    icon: 'ti-chef-hat',
-    color: '#D85A30',
-    title: 'Mis recetas',
-    desc: 'Recetas y menús del local',
-    visible: () => isMaster() || isAdmin() || currentUser.editor_recetas,
-    action: () => openMisRecetas()
-  },
-  {
     id: 'misdatos',
     icon: 'ti-id-badge-2',
     color: '#5B8C7B',
@@ -448,6 +439,15 @@ const MODULES = [
     desc: 'Tus datos personales y de cobro',
     visible: () => !!(currentUser && currentUser.empleado_id),
     action: () => openMisDatos()
+  },
+  {
+    id: 'recetas',
+    icon: 'ti-chef-hat',
+    color: '#D85A30',
+    title: 'Mis recetas',
+    desc: 'Recetas y menús del local',
+    visible: () => isMaster() || isAdmin() || currentUser.editor_recetas,
+    action: () => openMisRecetas()
   },
   {
     id: 'pedidos',
