@@ -653,7 +653,9 @@ function showDashboard() {
   }[perfil] || 'Usuario';
 
   // Saludo según hora del día + nombre de pila
-  const primerNombre = nombre.trim().split(/\s+/)[0];
+  let primerNombre = (currentEmpleado && currentEmpleado.nombre_p)
+    ? currentEmpleado.nombre_p.trim().split(/\s+/)[0]
+    : nombre.trim().split(/\s+/)[0];
   const hora = new Date().getHours();
   let saludo, emoji;
   if (hora >= 5 && hora < 12) {
@@ -668,6 +670,17 @@ function showDashboard() {
   }
   document.getElementById('greetingText').textContent = `${saludo}, ${primerNombre}`;
   document.getElementById('greetingEmoji').textContent = emoji;
+  // Si no tenemos el nombre de pila cargado, lo buscamos y corregimos el saludo
+  if (currentUser.empleado_id && (!currentEmpleado || !currentEmpleado.nombre_p)) {
+    api('empleados?id=eq.' + currentUser.empleado_id + '&select=*').then(function(emps) {
+      if (emps && emps.length) {
+        currentEmpleado = emps[0];
+        const pn = (currentEmpleado.nombre_p || '').trim().split(/\s+/)[0];
+        const el = document.getElementById('greetingText');
+        if (pn && el) el.textContent = saludo + ', ' + pn;
+      }
+    }).catch(function() {});
+  }
 
   // User pill
   document.getElementById('userPillName').textContent = nombre;
@@ -3092,13 +3105,19 @@ window.abrirFicha = function(key) {
   document.getElementById('fichaBody').innerHTML =
     fila('Apellido', p.apellido) +
     fila('Nombre', p.pila) +
+    fila('Documento', p.documento) +
     fila('Usuario', p.usuario ? '@' + p.usuario : '') +
     fila('Perfil', p.perfilLabel) +
     fila('Local', p.local ? (LOCAL_LABELS[p.local] || p.local) : '') +
     fila('Sector', p.sector) +
     fila('Categoría', p.categoria) +
     fila('Teléfono', p.telefono) +
+    fila('Email', p.email) +
+    fila('Alias (propinas)', p.alias) +
     fila('Fecha de nacimiento', formatearFecha(p.fechaNac)) +
+    fila('Talle remera', p.talleRemera) +
+    fila('Talle pantalón', p.tallePantalon) +
+    fila('Talle calzado', p.talleCalzado) +
     fila('Multilocal', p.esMultilocal ? 'Sí' : 'No') +
     fila('Estado de acceso', estado);
   document.getElementById('modalFicha').classList.add('show');
