@@ -3233,3 +3233,15 @@ select option {
 .paso-nombre { flex: 1; min-width: 110px; padding: 5px 8px; font-size: 12px;
   background: var(--c-cream-soft); border: 0.5px solid var(--c-cream-border); border-radius: 8px; color: var(--c-cream); }
 .paso-opc { font-size: 11px; color: var(--c-muted); display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+
+
+/* Módulo Mis Datos */
+.md-note {
+  background: var(--c-rust-soft, rgba(196,98,45,0.12));
+  border: 0.5px solid var(--c-cream-border);
+  border-radius: var(--r-md, 12px);
+  padding: 12px 14px; font-size: 13px; color: var(--c-sand);
+  margin-bottom: 16px; line-height: 1.5;
+}
+.md-note i { color: var(--c-rust); margin-right: 4px; }
+.md-ok { color: var(--c-success); font-size: 13px; margin-top: 8px; }

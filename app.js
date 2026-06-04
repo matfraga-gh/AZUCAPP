@@ -441,6 +441,15 @@ const MODULES = [
     action: () => openMisRecetas()
   },
   {
+    id: 'misdatos',
+    icon: 'ti-id-badge-2',
+    color: '#5B8C7B',
+    title: 'Mis Datos',
+    desc: 'Tus datos personales y de cobro',
+    visible: () => !!(currentUser && currentUser.empleado_id),
+    action: () => openMisDatos()
+  },
+  {
     id: 'pedidos',
     icon: 'ti-shopping-cart',
     color: '#378ADD',
@@ -1880,12 +1889,14 @@ window.generarLiquidacion = async function() {
     }
 
     const empIds = Array.from(new Set(asigs.map(a => a.empleado_id)));
-    const emps = await api('empleados?id=in.(' + empIds.join(',') + ')&select=id,nombre,apellido,nombre_p') || [];
+    const emps = await api('empleados?id=in.(' + empIds.join(',') + ')&select=id,nombre,apellido,nombre_p,alias') || [];
     const empMap = {};
+    const aliasMap = {};
     emps.forEach(e => {
       const ap = e.apellido || '';
       const pila = e.nombre_p || e.nombre || '';
       empMap[e.id] = (ap && pila) ? (ap + ', ' + pila) : (ap || pila || ('Empleado #' + e.id));
+      aliasMap[e.id] = e.alias || '';
     });
     const nombreEmp = id => empMap[id] || ('Empleado #' + id);
 
@@ -1931,7 +1942,8 @@ window.generarLiquidacion = async function() {
         'Puntos': g.puntos,
         'Pendiente': Math.round(g.pendiente),
         'Pagado': Math.round(g.pagado),
-        'Total': Math.round(g.pendiente + g.pagado)
+        'Total': Math.round(g.pendiente + g.pagado),
+        'Alias': aliasMap[g.empId] || ''
       };
     }).sort((x, y) => x.Empleado.localeCompare(y.Empleado, 'es'));
 
@@ -1981,6 +1993,73 @@ function puedeGestionarRecetas() {
 function fmtCant(n) {
   return (parseFloat(n) || 0).toLocaleString('es-AR', { maximumFractionDigits: 3 });
 }
+
+// ============================================
+// MÓDULO MIS DATOS (el empleado edita su propia ficha)
+// ============================================
+function openMisDatos() {
+  showView('vMisDatos');
+  cargarMisDatos();
+}
+window.openMisDatos = openMisDatos;
+
+async function cargarMisDatos() {
+  const form = document.getElementById('misDatosForm');
+  const noFicha = document.getElementById('misDatosNoFicha');
+  if (!currentUser || !currentUser.empleado_id) {
+    if (form) form.style.display = 'none';
+    if (noFicha) noFicha.style.display = '';
+    return;
+  }
+  if (noFicha) noFicha.style.display = 'none';
+  if (form) form.style.display = '';
+  try {
+    const emps = await api('empleados?id=eq.' + currentUser.empleado_id + '&select=*');
+    if (emps && emps.length) currentEmpleado = emps[0];
+  } catch (e) {}
+  const e = currentEmpleado || {};
+  document.getElementById('miNombre').value = e.nombre || '';
+  document.getElementById('miApellido').value = e.apellido || '';
+  document.getElementById('miDocumento').value = e.documento || '';
+  document.getElementById('miFechaNac').value = e.fecha_nac || '';
+  document.getElementById('miTelefono').value = e.telefono || '';
+  document.getElementById('miEmail').value = e.email || '';
+  document.getElementById('miAlias').value = e.alias || '';
+  document.getElementById('misDatosError').textContent = '';
+  document.getElementById('misDatosOk').textContent = '';
+}
+
+window.guardarMisDatos = async function() {
+  if (!currentUser || !currentUser.empleado_id) return;
+  const err = document.getElementById('misDatosError'); err.textContent = '';
+  const ok = document.getElementById('misDatosOk'); ok.textContent = '';
+  const nombre = document.getElementById('miNombre').value.trim();
+  if (!nombre) { err.textContent = 'El nombre no puede quedar vacío.'; return; }
+  const email = document.getElementById('miEmail').value.trim();
+  if (email && !/^\S+@\S+\.\S+$/.test(email)) { err.textContent = 'Revisá el email, no parece válido.'; return; }
+  const datos = {
+    nombre: nombre,
+    apellido: document.getElementById('miApellido').value.trim() || null,
+    documento: document.getElementById('miDocumento').value.trim() || null,
+    fecha_nac: document.getElementById('miFechaNac').value || null,
+    telefono: document.getElementById('miTelefono').value.trim() || null,
+    email: email || null,
+    alias: document.getElementById('miAlias').value.trim() || null
+  };
+  const btn = document.getElementById('btnGuardarMisDatos');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  try {
+    await api('empleados?id=eq.' + currentUser.empleado_id, { method: 'PATCH', body: JSON.stringify(datos) });
+    if (!currentEmpleado) currentEmpleado = {};
+    Object.assign(currentEmpleado, datos);
+    ok.textContent = '✓ Tus datos se guardaron correctamente.';
+    toast('✓ Datos guardados', 'success');
+  } catch (e) {
+    err.textContent = 'Error al guardar: ' + (e && e.message ? e.message.slice(0, 150) : e);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Guardar';
+  }
+};
 
 function openMisRecetas() {
   showView('vMisRecetas');

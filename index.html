@@ -1378,6 +1378,55 @@
 <!-- ============================================
      VISTA: MIS RECETAS - Sub-elaboraciones
 ============================================ -->
+<!-- ============================================
+     VISTA: MIS DATOS
+============================================ -->
+<div id="vMisDatos" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Mis Datos</div>
+        <div class="module-subtitle">Tus datos personales y de cobro</div>
+      </div>
+    </div>
+
+    <div id="misDatosNoFicha" class="empty-list" style="display:none;">
+      Todavía no tenés una ficha de empleado vinculada. Hablá con RRHH para que te asocien.
+    </div>
+
+    <div id="misDatosForm">
+      <div class="md-note"><i class="ti ti-info-circle"></i> Estos datos los completás y mantenés vos: sos responsable de que sean correctos. El <strong>alias</strong> se usa para el cobro de propinas.</div>
+
+      <div class="cierre-row2">
+        <label class="field"><span class="field-label">Nombre</span>
+          <input type="text" id="miNombre"></label>
+        <label class="field"><span class="field-label">Apellido</span>
+          <input type="text" id="miApellido"></label>
+      </div>
+      <div class="cierre-row2">
+        <label class="field"><span class="field-label">Documento</span>
+          <input type="text" id="miDocumento" placeholder="DNI"></label>
+        <label class="field"><span class="field-label">Fecha de nacimiento</span>
+          <input type="date" id="miFechaNac"></label>
+      </div>
+      <label class="field"><span class="field-label">Teléfono</span>
+        <input type="tel" id="miTelefono" placeholder="Ej: 261 555 1234"></label>
+      <label class="field"><span class="field-label">Email</span>
+        <input type="email" id="miEmail" placeholder="tucorreo@ejemplo.com"></label>
+      <label class="field"><span class="field-label">Alias (para cobro de propinas)</span>
+        <input type="text" id="miAlias" placeholder="alias.mp o CBU"></label>
+
+      <div class="login-error" id="misDatosError"></div>
+      <div class="md-ok" id="misDatosOk"></div>
+
+      <div style="margin-top:16px;">
+        <button class="btn-primary" id="btnGuardarMisDatos" onclick="guardarMisDatos()" style="width:100%;">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="vMisRecetas" class="view">
   <div class="module-wrap">
 
