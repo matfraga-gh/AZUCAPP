@@ -3303,3 +3303,5 @@ select option {
   border-radius: 8px; padding: 8px 10px; color: var(--c-cream); font-size: 13px; font-family: inherit;
 }
 .rost-plantilla-row .btn-ghost { white-space: nowrap; flex: 0 0 auto; }
+
+.rost-hora::-webkit-calendar-picker-indicator { filter: brightness(0); cursor: pointer; }
