@@ -1971,6 +1971,7 @@ let COSTEO_PASOS = {};               // menu_id -> [pasos]
 let RECETAS_PLATOS_PICKER = [];      // platos disponibles como paso de menú
 let MENU_PASOS_EDIT = [];            // pasos en edición
 let MENU_PASOS_VIEJOS = [];          // ids de pasos existentes (para borrar al editar)
+let COSTEO_CARGADO = false;          // cache: evita recargar el costeo en cada cambio de pestaña
 
 function puedeGestionarRecetas() {
   return isMaster() || isAdmin() || (currentUser && currentUser.editor_recetas === true);
@@ -1984,6 +1985,7 @@ function fmtCant(n) {
 function openMisRecetas() {
   showView('vMisRecetas');
   RECETA_TIPO = 'elaboracion';
+  COSTEO_CARGADO = false;
   actualizarTabsReceta();
   RECETA_FILTRO_LOCAL = '';
   const s = document.getElementById('recetaSearch'); if (s) s.value = '';
@@ -2058,6 +2060,7 @@ function computeCostoReceta(id, cache, stack) {
 
 // Carga todo el árbol de recetas/insumos y precalcula el costo de cada receta
 async function cargarDatosCosteo() {
+  if (COSTEO_CARGADO) return;
   const recs = await api('recetas?select=id,tipo,rendimiento,unidad_rendimiento,precio_venta') || [];
   const comps = await api('receta_componentes?select=receta_id,tipo_componente,ingrediente_id,sub_receta_id,cantidad,unidad') || [];
   const inss = await api('ingredientes?activo=eq.true&select=id,costo,cantidad_por_presentacion,unidad') || [];
@@ -2075,6 +2078,7 @@ async function cargarDatosCosteo() {
   Object.keys(COSTEO_RECETAS).forEach(id => {
     RECETAS_COSTO_CALC[id] = computeCostoReceta(parseInt(id, 10), cache, {});
   });
+  COSTEO_CARGADO = true;
 }
 
 async function cargarRecetas() {
@@ -2554,6 +2558,7 @@ window.guardarSubelab = async function() {
     const gen = (esMenu || RECETA_TIPO === 'plato') ? 'o' : 'a';
     toast('✓ ' + lbl + ' ' + (esEdicion ? 'actualizad' : 'cread') + gen, 'success');
     if (esMenu) { await cargarPasosEnEditor(recetaId); } else { await cargarComponentesEnEditor(recetaId); }
+    COSTEO_CARGADO = false;
     cargarRecetas();
   } catch (e) {
     console.error('guardarSubelab error:', e);
