@@ -2894,6 +2894,8 @@ const PERFIL_LABELS = { master: 'Master', admin: 'Admin', editor: 'Editor', usua
 
 let PERSONAS_CACHE = [];
 let PERFIL_EDIT_USERID = null;
+let FICHA_EDIT_KEY = null;
+let FICHA_VISTA_KEY = null;
 
 // Quita tildes y pasa a minúsculas para buscar con tolerancia
 function normalizar(s) {
@@ -3120,10 +3122,138 @@ window.abrirFicha = function(key) {
     fila('Talle calzado', p.talleCalzado) +
     fila('Multilocal', p.esMultilocal ? 'Sí' : 'No') +
     fila('Estado de acceso', estado);
+  const btnEd = document.getElementById('fichaEditarBtn');
+  if (btnEd) btnEd.style.display = ((isMaster() || isAdmin()) && p.empleado) ? '' : 'none';
+  FICHA_VISTA_KEY = key;
   document.getElementById('modalFicha').classList.add('show');
 };
 window.closeFichaModal = function() {
   document.getElementById('modalFicha').classList.remove('show');
+};
+
+// ---- Editar ficha (Master + Admin): datos base + locales asignados ----
+window.editarDesdeFicha = function() {
+  if (!FICHA_VISTA_KEY) return;
+  closeFichaModal();
+  abrirEditarFicha(FICHA_VISTA_KEY);
+};
+window.abrirEditarFicha = function(key) {
+  if (!isMaster() && !isAdmin()) return;
+  const p = PERSONAS_CACHE.find(x => x.key === key);
+  if (!p || !p.empleado) { showAlert('Esta persona no tiene ficha de empleado para editar.'); return; }
+  FICHA_EDIT_KEY = key;
+  document.getElementById('efPersonaNombre').textContent = p.nombreCompleto;
+  document.getElementById('efNombre').value = p.pila || '';
+  document.getElementById('efApellido').value = p.apellido || '';
+  document.getElementById('efSector').value = p.sector || '';
+  document.getElementById('efCategoria').value = p.categoria || '';
+  document.getElementById('efMultilocal').checked = !!p.esMultilocal;
+
+  // Local principal (incluye el actual aunque esté inactivo)
+  const todos = getLocalesActivos().slice();
+  if (p.local && todos.indexOf(p.local) === -1) todos.unshift(p.local);
+  document.getElementById('efLocal').innerHTML =
+    '<option value="">— Sin local —</option>' +
+    todos.map(loc => '<option value="' + esc(loc) + '"' + (loc === p.local ? ' selected' : '') + '>' + esc(LOCAL_LABELS[loc] || loc) + '</option>').join('');
+
+  // Datalists de sector/categoría con valores existentes
+  const setData = (id, vals) => {
+    const dl = document.getElementById(id);
+    if (dl) dl.innerHTML = Array.from(new Set(vals.filter(Boolean))).sort()
+      .map(v => '<option value="' + esc(v) + '"></option>').join('');
+  };
+  setData('efSectorList', (ADMIN_EMPLEADOS_CACHE || []).map(e => e.sector));
+  setData('efCategoriaList', (ADMIN_EMPLEADOS_CACHE || []).map(e => e.categoria));
+
+  // Locales asignados (solo si tiene cuenta de acceso)
+  const sec = document.getElementById('efLocalesSection');
+  if (p.user) {
+    sec.style.display = '';
+    const asignados = p.user.locales_asignados || [];
+    document.getElementById('efLocalesGrid').innerHTML = getLocalesActivos().map(loc => {
+      const on = asignados.indexOf(loc) !== -1;
+      return '<label class="local-check' + (on ? ' activo' : '') + '" data-local="' + esc(loc) + '">' +
+             '<input type="checkbox" ' + (on ? 'checked' : '') + '>' + esc(LOCAL_LABELS[loc] || loc) + '</label>';
+    }).join('');
+    document.querySelectorAll('#efLocalesGrid .local-check').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        el.classList.toggle('activo');
+        el.querySelector('input').checked = el.classList.contains('activo');
+      });
+    });
+  } else {
+    sec.style.display = 'none';
+    document.getElementById('efLocalesGrid').innerHTML = '';
+  }
+
+  document.getElementById('efError').textContent = '';
+  document.getElementById('modalEditarFicha').classList.add('show');
+};
+window.closeEditarFichaModal = function() {
+  document.getElementById('modalEditarFicha').classList.remove('show');
+};
+window.guardarEditarFicha = async function() {
+  const p = PERSONAS_CACHE.find(x => x.key === FICHA_EDIT_KEY);
+  const err = document.getElementById('efError');
+  err.textContent = '';
+  if (!p || !p.empleado) { err.textContent = 'No se encontró la ficha.'; return; }
+
+  const nombre_p = document.getElementById('efNombre').value.trim();
+  const apellido = document.getElementById('efApellido').value.trim();
+  const sector = document.getElementById('efSector').value.trim();
+  const categoria = document.getElementById('efCategoria').value.trim();
+  const local = document.getElementById('efLocal').value || null;
+  const multilocal = document.getElementById('efMultilocal').checked;
+
+  if (!nombre_p && !apellido) { err.textContent = 'Cargá al menos nombre o apellido.'; return; }
+
+  const btn = document.getElementById('efGuardarBtn');
+  btn.disabled = true; const txt = btn.textContent; btn.textContent = 'Guardando...';
+  try {
+    const empPatch = {
+      nombre_p: nombre_p || null,
+      nombre: nombre_p || null,
+      apellido: apellido || null,
+      sector: sector || null,
+      categoria: categoria || null,
+      local: local,
+      es_multilocal: multilocal
+    };
+    await api('empleados?id=eq.' + p.empleado.id, { method: 'PATCH', body: JSON.stringify(empPatch) });
+    const ec = (ADMIN_EMPLEADOS_CACHE || []).find(e => e.id === p.empleado.id);
+    if (ec) Object.assign(ec, empPatch);
+
+    if (p.user) {
+      const checks = document.querySelectorAll('#efLocalesGrid .local-check.activo');
+      const locs = Array.from(checks).map(c => c.dataset.local);
+      const usrPatch = {
+        locales_asignados: locs.length ? locs : null,
+        nombre: ((apellido || '') + ' ' + (nombre_p || '')).trim() || null
+      };
+      await api('roster_usuarios?id=eq.' + p.user.id, { method: 'PATCH', body: JSON.stringify(usrPatch) });
+      const uc = (ADMIN_USUARIOS_CACHE || []).find(u => u.id === p.user.id);
+      if (uc) Object.assign(uc, usrPatch);
+      const ec2 = (EDITORES_CACHE || []).find(u => u.id === p.user.id);
+      if (ec2) Object.assign(ec2, usrPatch);
+      if (currentUser && p.user.id === currentUser.id) {
+        currentUser.locales_asignados = usrPatch.locales_asignados;
+        currentUser.nombre = usrPatch.nombre;
+      }
+    }
+    if (currentEmpleado && currentEmpleado.id === p.empleado.id) {
+      Object.assign(currentEmpleado, empPatch);
+    }
+
+    closeEditarFichaModal();
+    construirPersonas();
+    renderPersonal();
+    toast('✓ Ficha actualizada', 'success');
+  } catch (e) {
+    err.textContent = 'No se pudo guardar: ' + (e.message || e);
+  } finally {
+    btn.disabled = false; btn.textContent = txt;
+  }
 };
 
 // ---- Cambiar perfil (Master + Admin) ----

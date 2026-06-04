@@ -1246,6 +1246,56 @@
     <div class="modal-body" id="fichaBody"></div>
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeFichaModal()">Cerrar</button>
+      <button class="btn-primary" id="fichaEditarBtn" style="display:none;" onclick="editarDesdeFicha()"><i class="ti ti-edit"></i> Editar datos</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: EDITAR FICHA (Admin/Master)
+============================================ -->
+<div class="modal-overlay" id="modalEditarFicha">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Editar ficha</h2>
+      <button class="modal-close" onclick="closeEditarFichaModal()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-text" id="efPersonaNombre" style="font-weight:600;">—</p>
+      <div class="cierre-row2">
+        <label class="field"><span class="field-label">Nombre</span>
+          <input type="text" id="efNombre"></label>
+        <label class="field"><span class="field-label">Apellido</span>
+          <input type="text" id="efApellido"></label>
+      </div>
+      <div class="cierre-row2">
+        <label class="field"><span class="field-label">Sector</span>
+          <input type="text" id="efSector" list="efSectorList" placeholder="Ej: Cocina, Salón"></label>
+        <label class="field"><span class="field-label">Categoría</span>
+          <input type="text" id="efCategoria" list="efCategoriaList" placeholder="Ej: Mozo, Cocinero"></label>
+      </div>
+      <datalist id="efSectorList"></datalist>
+      <datalist id="efCategoriaList"></datalist>
+      <label class="field"><span class="field-label">Local principal</span>
+        <select id="efLocal"></select></label>
+      <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
+        <input type="checkbox" id="efMultilocal" style="width:auto;">
+        <span class="field-label" style="margin:0;">Trabaja en varios locales (multilocal)</span>
+      </label>
+
+      <div id="efLocalesSection" style="margin-top:16px;">
+        <p class="field-label" style="margin-bottom:4px;">Locales asignados</p>
+        <p class="modal-text" style="font-size:12px;color:var(--c-muted);margin-top:0;">
+          Locales donde esta persona puede operar además del principal (multilocal y editores).
+        </p>
+        <div class="locales-grid" id="efLocalesGrid"></div>
+      </div>
+
+      <div class="login-error" id="efError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeEditarFichaModal()">Cancelar</button>
+      <button class="btn-primary" id="efGuardarBtn" onclick="guardarEditarFicha()">Guardar</button>
     </div>
   </div>
 </div>
