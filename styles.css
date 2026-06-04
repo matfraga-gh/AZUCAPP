@@ -3250,3 +3250,56 @@ select option {
 /* Talles en Mis Datos */
 .md-subhead { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--c-muted); margin: 18px 0 8px; }
 .md-talles { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+
+
+/* ===== Gestión de Rosters ===== */
+.rost-controls { margin-bottom: 12px; }
+.rost-nota { margin: 6px 0 18px; }
+.rost-nota-btn { margin-top: 8px; }
+.rost-emp {
+  background: var(--c-cream-soft);
+  border: 1px solid var(--c-cream-border);
+  border-radius: 14px; padding: 12px 14px; margin-bottom: 10px;
+  cursor: pointer; transition: border-color .15s;
+}
+.rost-emp:hover { border-color: var(--c-rust); }
+.rost-emp-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.rost-emp-nom { font-weight: 600; color: var(--c-cream); }
+.rost-emp-top i { color: var(--c-muted); }
+.rost-chips { display: flex; gap: 4px; }
+.rost-chip-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+.rost-dia-lbl { font-size: 10px; color: var(--c-muted); text-transform: uppercase; }
+.rost-chip {
+  width: 100%; text-align: center; font-size: 11px; padding: 4px 2px; border-radius: 7px;
+  background: rgba(245,240,232,0.05); color: var(--c-muted); border: 1px solid transparent;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rost-chip.on { background: var(--c-rust-soft); color: var(--c-cream); border-color: var(--c-cream-border); }
+.rost-chip.off { background: rgba(138,130,120,0.18); color: var(--c-muted); }
+.rost-chip.flex { background: rgba(127,119,221,0.18); color: #b3aef0; }
+
+.rost-dia { border: 1px solid var(--c-cream-border); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+.rost-dia-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.rost-dia-head strong { color: var(--c-cream); }
+.rost-dia-head span { font-size: 12px; color: var(--c-muted); }
+.rost-estados { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.rost-est {
+  flex: 1; min-width: 56px; padding: 7px 4px; font-size: 12px; cursor: pointer; border-radius: 8px;
+  border: 1px solid var(--c-cream-border); background: transparent; color: var(--c-muted); transition: all .12s;
+}
+.rost-est.activo { background: var(--c-rust); color: #fff; border-color: var(--c-rust); }
+.rost-dia-extra { display: flex; gap: 8px; }
+.rost-dia-extra .rost-hora { flex: 0 0 110px; }
+.rost-dia-extra .rost-coment { flex: 1; min-width: 0; }
+.rost-hora, .rost-coment {
+  background: var(--c-bg-soft); border: 1px solid var(--c-cream-border); border-radius: 8px;
+  padding: 8px 10px; color: var(--c-cream); font-size: 13px; font-family: inherit;
+}
+.rost-hora:focus, .rost-coment:focus { outline: none; border-color: var(--c-rust); }
+
+.rost-plantilla-row { display: flex; gap: 8px; margin-bottom: 14px; align-items: stretch; }
+.rost-plantilla-row select {
+  flex: 1; min-width: 0; background: var(--c-bg-soft); border: 1px solid var(--c-cream-border);
+  border-radius: 8px; padding: 8px 10px; color: var(--c-cream); font-size: 13px; font-family: inherit;
+}
+.rost-plantilla-row .btn-ghost { white-space: nowrap; flex: 0 0 auto; }

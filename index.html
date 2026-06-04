@@ -663,6 +663,31 @@
 <!-- ============================================
      MODAL: EDITAR LOCALES DE UN EDITOR
 ============================================ -->
+<!-- ============================================
+     MODAL: EDITAR TURNOS DE UN EMPLEADO
+============================================ -->
+<div class="modal-overlay" id="modalEditarTurnos">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title" id="rostEmpNombre">Turnos</h2>
+      <button class="modal-close" onclick="closeEditarTurnosModal()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-text" id="rostEmpSemana" style="font-size:12px;color:var(--c-muted);margin-top:0;">—</p>
+      <div class="rost-plantilla-row" id="rostPlantillaRow">
+        <select id="rostPlantilla"></select>
+        <button type="button" class="btn-ghost" onclick="aplicarPlantilla()"><i class="ti ti-wand"></i> Aplicar</button>
+      </div>
+      <div id="rostDias"></div>
+      <div class="login-error" id="rostError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeEditarTurnosModal()">Cancelar</button>
+      <button class="btn-primary" id="rostGuardarBtn" onclick="guardarTurnosEmp()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalLocales">
   <div class="modal-card">
     <div class="modal-header">
@@ -1431,6 +1456,40 @@
 <!-- ============================================
      VISTA: MIS DATOS
 ============================================ -->
+<!-- ============================================
+     VISTA: GESTIÓN DE ROSTERS
+============================================ -->
+<div id="vGestionRosters" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Gestión de Rosters</div>
+        <div class="module-subtitle">Armá la semana de cada empleado</div>
+      </div>
+    </div>
+
+    <div class="rost-controls">
+      <label class="field"><span class="field-label">Local</span>
+        <select id="rostLocal" onchange="onChangeLocalRoster()"></select></label>
+    </div>
+
+    <div class="week-nav">
+      <button class="week-arrow" onclick="cambiarSemanaRoster(-1)" aria-label="Semana anterior"><i class="ti ti-chevron-left"></i></button>
+      <div class="week-label" id="rostWeekLabel">—</div>
+      <button class="week-arrow" onclick="cambiarSemanaRoster(1)" aria-label="Semana siguiente"><i class="ti ti-chevron-right"></i></button>
+    </div>
+
+    <div class="rost-nota">
+      <label class="field"><span class="field-label">Nota general de la semana (la ve todo el local)</span>
+        <textarea id="rostNota" rows="2" placeholder="Opcional"></textarea></label>
+      <button class="btn-ghost rost-nota-btn" onclick="guardarNotaSemana()"><i class="ti ti-device-floppy"></i> Guardar nota</button>
+    </div>
+
+    <div id="rostLista"></div>
+  </div>
+</div>
+
 <div id="vMisDatos" class="view">
   <div class="module-wrap">
     <div class="module-header">

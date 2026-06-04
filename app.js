@@ -468,6 +468,15 @@ const MODULES = [
     action: () => openAdminInsumos()
   },
   {
+    id: 'rosters',
+    icon: 'ti-calendar-event',
+    color: '#7F77DD',
+    title: 'Gestión de Rosters',
+    desc: 'Armá la semana del equipo',
+    visible: () => puedeGestionarRosters(),
+    action: () => openGestionRosters()
+  },
+  {
     id: 'admin',
     icon: 'ti-settings',
     color: '#B4B2A9',
@@ -5530,6 +5539,275 @@ window.openRenombrarProv = openRenombrarProv;
 window.closeRenombrarProv = closeRenombrarProv;
 window.guardarRenombrarProv = guardarRenombrarProv;
 window.borrarProveedor = borrarProveedor;
+
+
+// ============================================
+// GESTIÓN DE ROSTERS (Admin / Master / editor_rosters)
+// ============================================
+function puedeGestionarRosters() {
+  return isMaster() || isAdmin() || (currentUser && currentUser.editor_rosters === true);
+}
+function rostLocalesPermitidos() {
+  const activos = getLocalesActivos();
+  if (isMaster() || isAdmin()) return activos;
+  const mios = (currentUser && currentUser.locales_asignados) || [];
+  return activos.filter(l => mios.indexOf(l) !== -1);
+}
+function rostNombreEmp(e) {
+  const pila = e.nombre_p || e.nombre || '';
+  const ap = e.apellido || '';
+  if (ap && pila) return ap + ', ' + pila;
+  return (ap || pila || 'Sin nombre');
+}
+
+let ROST_LOCAL = null, ROST_LUNES = null, ROST_SEMANA = null;
+let ROST_EMPLEADOS = [], ROST_TURNOS = {}, ROST_EMP_EDIT = null, ROST_PLANTILLAS = [];
+
+async function openGestionRosters() {
+  if (!puedeGestionarRosters()) return;
+  showView('vGestionRosters');
+  const locs = rostLocalesPermitidos();
+  const sel = document.getElementById('rostLocal');
+  sel.innerHTML = locs.map(l => '<option value="' + esc(l) + '">' + esc(LOCAL_LABELS[l] || l) + '</option>').join('');
+  if (!locs.length) {
+    document.getElementById('rostWeekLabel').textContent = '—';
+    document.getElementById('rostLista').innerHTML = '<div class="empty-list">No tenés locales asignados para gestionar rosters.</div>';
+    return;
+  }
+  let def = locs[0];
+  if (currentEmpleado && currentEmpleado.local && locs.indexOf(currentEmpleado.local) !== -1) def = currentEmpleado.local;
+  sel.value = def;
+  ROST_LOCAL = def;
+  ROST_LUNES = getLunes(hoyStr());
+  await cargarPlantillasRoster();
+  await cargarRosterSemana();
+}
+window.onChangeLocalRoster = function() {
+  ROST_LOCAL = document.getElementById('rostLocal').value;
+  cargarRosterSemana();
+};
+window.cambiarSemanaRoster = function(n) {
+  ROST_LUNES = addDays(ROST_LUNES, n * 7);
+  cargarRosterSemana();
+};
+
+async function cargarPlantillasRoster() {
+  try {
+    ROST_PLANTILLAS = await api('turnos_estandar?activo=eq.true&select=*&order=nombre') || [];
+  } catch (e) {
+    ROST_PLANTILLAS = [];
+    console.warn('No se pudieron cargar plantillas:', e);
+  }
+}
+
+async function cargarRosterSemana() {
+  const lista = document.getElementById('rostLista');
+  document.getElementById('rostWeekLabel').textContent = fmtSemana(ROST_LUNES);
+  lista.innerHTML = '<div class="loading">Cargando...</div>';
+  try {
+    const sem = await api('roster_semanas?local=eq.' + encodeURIComponent(ROST_LOCAL) + '&fecha_lunes=eq.' + ROST_LUNES + '&select=*');
+    ROST_SEMANA = (sem && sem.length) ? sem[0] : null;
+    document.getElementById('rostNota').value = ROST_SEMANA ? (ROST_SEMANA.comentario_general || '') : '';
+
+    ROST_EMPLEADOS = await api('empleados?local=eq.' + encodeURIComponent(ROST_LOCAL) + '&activo=eq.true&select=*') || [];
+    ROST_EMPLEADOS.sort((a, b) => rostNombreEmp(a).localeCompare(rostNombreEmp(b), 'es'));
+
+    ROST_TURNOS = {};
+    if (ROST_SEMANA) {
+      const tts = await api('roster_turnos?semana_id=eq.' + ROST_SEMANA.id + '&select=*') || [];
+      tts.forEach(t => {
+        if (!ROST_TURNOS[t.empleado_id]) ROST_TURNOS[t.empleado_id] = {};
+        ROST_TURNOS[t.empleado_id][t.dia] = t;
+      });
+    }
+    renderRosterLista();
+  } catch (e) {
+    lista.innerHTML = '<div class="loading" style="color:var(--c-error)">Error al cargar la semana</div>';
+    console.error(e);
+  }
+}
+
+function renderRosterLista() {
+  const lista = document.getElementById('rostLista');
+  if (!ROST_EMPLEADOS.length) {
+    lista.innerHTML = '<div class="empty-list">No hay empleados activos en este local.</div>';
+    return;
+  }
+  const dias = diasDeSemana(ROST_LUNES);
+  const cortos = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'];
+  lista.innerHTML = ROST_EMPLEADOS.map(e => {
+    const chips = dias.map((d, i) => {
+      const t = (ROST_TURNOS[e.id] || {})[d];
+      let txt = '—', cls = 'rost-chip';
+      if (t) {
+        if (t.es_off) { txt = 'OFF'; cls += ' off'; }
+        else if (t.es_flex) { txt = t.hora_entrada ? 'F ' + t.hora_entrada.slice(0, 5) : 'FLEX'; cls += ' flex'; }
+        else if (t.hora_entrada) { txt = t.hora_entrada.slice(0, 5); cls += ' on'; }
+      }
+      return '<div class="rost-chip-wrap"><span class="rost-dia-lbl">' + cortos[i] + '</span><span class="' + cls + '">' + esc(txt) + '</span></div>';
+    }).join('');
+    return '<div class="rost-emp" onclick="abrirEditarTurnosEmp(' + e.id + ')">' +
+      '<div class="rost-emp-top"><span class="rost-emp-nom">' + esc(rostNombreEmp(e)) + '</span><i class="ti ti-chevron-right"></i></div>' +
+      '<div class="rost-chips">' + chips + '</div></div>';
+  }).join('');
+}
+
+window.abrirEditarTurnosEmp = function(empId) {
+  const e = ROST_EMPLEADOS.find(x => x.id === empId);
+  if (!e) return;
+  ROST_EMP_EDIT = empId;
+  document.getElementById('rostEmpNombre').textContent = rostNombreEmp(e);
+  document.getElementById('rostEmpSemana').textContent = (LOCAL_LABELS[ROST_LOCAL] || ROST_LOCAL) + ' · ' + fmtSemana(ROST_LUNES);
+  document.getElementById('rostError').textContent = '';
+
+  const dias = diasDeSemana(ROST_LUNES);
+  const empT = ROST_TURNOS[empId] || {};
+  const estados = [['trabaja', 'Trabaja'], ['off', 'OFF'], ['flex', 'FLEX'], ['', '—']];
+  document.getElementById('rostDias').innerHTML = dias.map((d, i) => {
+    const t = empT[d];
+    let est = '';
+    if (t) { if (t.es_off) est = 'off'; else if (t.es_flex) est = 'flex'; else est = 'trabaja'; }
+    const hora = t && t.hora_entrada ? t.hora_entrada.slice(0, 5) : '';
+    const coment = t && t.comentario ? t.comentario : '';
+    const btns = estados.map(p => '<button type="button" class="rost-est' + (est === p[0] ? ' activo' : '') + '" data-est="' + p[0] + '">' + p[1] + '</button>').join('');
+    const showHora = (est === 'trabaja' || est === 'flex');
+    return '<div class="rost-dia" data-dia="' + d + '" data-est="' + est + '">' +
+      '<div class="rost-dia-head"><strong>' + DIAS_LARGO[i] + '</strong> <span>' + fmtFechaCorta(d) + '</span></div>' +
+      '<div class="rost-estados">' + btns + '</div>' +
+      '<div class="rost-dia-extra">' +
+        '<input type="time" class="rost-hora" value="' + hora + '"' + (showHora ? '' : ' style="display:none;"') + '>' +
+        '<input type="text" class="rost-coment" placeholder="Comentario (opcional)" value="' + esc(coment) + '">' +
+      '</div></div>';
+  }).join('');
+
+  document.querySelectorAll('#rostDias .rost-dia').forEach(block => {
+    block.querySelectorAll('.rost-est').forEach(btn => {
+      btn.addEventListener('click', () => {
+        block.querySelectorAll('.rost-est').forEach(b => b.classList.remove('activo'));
+        btn.classList.add('activo');
+        const est = btn.dataset.est;
+        block.dataset.est = est;
+        block.querySelector('.rost-hora').style.display = (est === 'trabaja' || est === 'flex') ? '' : 'none';
+      });
+    });
+  });
+
+  // Plantillas disponibles para este local (o 'TODOS')
+  const dispo = ROST_PLANTILLAS.filter(p => p.local === ROST_LOCAL || p.local === 'TODOS');
+  const selP = document.getElementById('rostPlantilla');
+  selP.innerHTML = '<option value="">Aplicar una plantilla\u2026</option>' +
+    dispo.map(p => '<option value="' + p.id + '">' + esc(p.nombre) +
+      ' (' + esc(p.local === 'TODOS' ? 'Todos' : (LOCAL_LABELS[p.local] || p.local)) + ')</option>').join('');
+  document.getElementById('rostPlantillaRow').style.display = dispo.length ? 'flex' : 'none';
+
+  document.getElementById('modalEditarTurnos').classList.add('show');
+};
+window.closeEditarTurnosModal = function() {
+  document.getElementById('modalEditarTurnos').classList.remove('show');
+};
+
+window.aplicarPlantilla = function() {
+  const id = parseInt(document.getElementById('rostPlantilla').value, 10);
+  if (!id) return;
+  const tpl = ROST_PLANTILLAS.find(p => p.id === id);
+  if (!tpl) return;
+  const dayKeys = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'];
+  const blocks = document.querySelectorAll('#rostDias .rost-dia');
+  blocks.forEach((block, i) => {
+    const hora = tpl[dayKeys[i]];
+    const flex = !!tpl[dayKeys[i] + '_flex'];
+    let est = null;
+    if (flex) est = 'flex';
+    else if (hora && String(hora).trim()) est = 'trabaja';
+    if (!est) return; // día vacío en la plantilla → no se toca
+    block.querySelectorAll('.rost-est').forEach(b => b.classList.toggle('activo', b.dataset.est === est));
+    block.dataset.est = est;
+    const horaEl = block.querySelector('.rost-hora');
+    horaEl.style.display = '';
+    horaEl.value = hora ? String(hora).slice(0, 5) : '';
+  });
+  toast('Plantilla aplicada — revisá y guardá', 'success');
+};
+
+async function asegurarSemanaRoster() {
+  if (ROST_SEMANA) return ROST_SEMANA;
+  const ins = await api('roster_semanas', {
+    method: 'POST',
+    body: JSON.stringify({ local: ROST_LOCAL, fecha_lunes: ROST_LUNES, creado_por: currentUser ? currentUser.id : null })
+  });
+  ROST_SEMANA = Array.isArray(ins) ? ins[0] : ins;
+  return ROST_SEMANA;
+}
+
+window.guardarTurnosEmp = async function() {
+  const err = document.getElementById('rostError');
+  err.textContent = '';
+  const empId = ROST_EMP_EDIT;
+  if (!empId) return;
+  const btn = document.getElementById('rostGuardarBtn');
+  btn.disabled = true; const txt = btn.textContent; btn.textContent = 'Guardando...';
+  try {
+    const semana = await asegurarSemanaRoster();
+    const empT = ROST_TURNOS[empId] || {};
+    const blocks = document.querySelectorAll('#rostDias .rost-dia');
+    const aInsertar = [];
+    for (const block of blocks) {
+      const dia = block.dataset.dia;
+      const est = block.dataset.est || '';
+      const hora = block.querySelector('.rost-hora').value || null;
+      const coment = block.querySelector('.rost-coment').value.trim() || null;
+      const existente = empT[dia];
+
+      if (!est) {
+        if (existente) {
+          await api('roster_turnos?id=eq.' + existente.id, { method: 'DELETE' });
+          delete empT[dia];
+        }
+        continue;
+      }
+      const payload = {
+        semana_id: semana.id,
+        empleado_id: empId,
+        dia: dia,
+        hora_entrada: (est === 'off') ? null : hora,
+        es_off: est === 'off',
+        es_flex: est === 'flex',
+        comentario: coment
+      };
+      if (existente) {
+        const upd = await api('roster_turnos?id=eq.' + existente.id, { method: 'PATCH', body: JSON.stringify(payload) });
+        empT[dia] = (Array.isArray(upd) && upd.length) ? upd[0] : Object.assign({}, existente, payload);
+      } else {
+        aInsertar.push(payload);
+      }
+    }
+    if (aInsertar.length) {
+      const inserted = await api('roster_turnos', { method: 'POST', body: JSON.stringify(aInsertar) });
+      (Array.isArray(inserted) ? inserted : [inserted]).forEach(t => { if (t && t.dia) empT[t.dia] = t; });
+    }
+    ROST_TURNOS[empId] = empT;
+    closeEditarTurnosModal();
+    renderRosterLista();
+    toast('\u2713 Turnos guardados', 'success');
+  } catch (e) {
+    err.textContent = 'No se pudo guardar: ' + (e.message || e);
+  } finally {
+    btn.disabled = false; btn.textContent = txt;
+  }
+};
+
+window.guardarNotaSemana = async function() {
+  try {
+    const nota = document.getElementById('rostNota').value.trim() || null;
+    const semana = await asegurarSemanaRoster();
+    await api('roster_semanas?id=eq.' + semana.id, { method: 'PATCH', body: JSON.stringify({ comentario_general: nota }) });
+    ROST_SEMANA.comentario_general = nota;
+    toast('\u2713 Nota guardada', 'success');
+  } catch (e) {
+    toast('No se pudo guardar la nota', 'error');
+  }
+};
+
 
 init();
 
