@@ -3245,3 +3245,8 @@ select option {
 }
 .md-note i { color: var(--c-rust); margin-right: 4px; }
 .md-ok { color: var(--c-success); font-size: 13px; margin-top: 8px; }
+
+
+/* Talles en Mis Datos */
+.md-subhead { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--c-muted); margin: 18px 0 8px; }
+.md-talles { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }

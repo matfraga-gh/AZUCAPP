@@ -2003,6 +2003,11 @@ function openMisDatos() {
 }
 window.openMisDatos = openMisDatos;
 
+function opcionesTalle(valores, sel) {
+  return '<option value="">—</option>' + valores.map(v =>
+    '<option value="' + v + '"' + (String(v) === String(sel || '') ? ' selected' : '') + '>' + v + '</option>').join('');
+}
+
 async function cargarMisDatos() {
   const form = document.getElementById('misDatosForm');
   const noFicha = document.getElementById('misDatosNoFicha');
@@ -2018,13 +2023,18 @@ async function cargarMisDatos() {
     if (emps && emps.length) currentEmpleado = emps[0];
   } catch (e) {}
   const e = currentEmpleado || {};
-  document.getElementById('miNombre').value = e.nombre || '';
+  document.getElementById('miNombre').value = e.nombre_p || e.nombre || '';
   document.getElementById('miApellido').value = e.apellido || '';
   document.getElementById('miDocumento').value = e.documento || '';
   document.getElementById('miFechaNac').value = e.fecha_nac || '';
   document.getElementById('miTelefono').value = e.telefono || '';
   document.getElementById('miEmail').value = e.email || '';
   document.getElementById('miAlias').value = e.alias || '';
+  const pantalones = []; for (let i = 36; i <= 56; i += 2) pantalones.push(i);
+  const calzados = []; for (let i = 35; i <= 46; i++) calzados.push(i);
+  document.getElementById('miTalleRemera').innerHTML = opcionesTalle(['XS','S','M','L','XL','XXL','XXXL'], e.talle_remera);
+  document.getElementById('miTallePantalon').innerHTML = opcionesTalle(pantalones, e.talle_pantalon);
+  document.getElementById('miTalleCalzado').innerHTML = opcionesTalle(calzados, e.talle_calzado);
   document.getElementById('misDatosError').textContent = '';
   document.getElementById('misDatosOk').textContent = '';
 }
@@ -2039,12 +2049,16 @@ window.guardarMisDatos = async function() {
   if (email && !/^\S+@\S+\.\S+$/.test(email)) { err.textContent = 'Revisá el email, no parece válido.'; return; }
   const datos = {
     nombre: nombre,
+    nombre_p: nombre,
     apellido: document.getElementById('miApellido').value.trim() || null,
     documento: document.getElementById('miDocumento').value.trim() || null,
     fecha_nac: document.getElementById('miFechaNac').value || null,
     telefono: document.getElementById('miTelefono').value.trim() || null,
     email: email || null,
-    alias: document.getElementById('miAlias').value.trim() || null
+    alias: document.getElementById('miAlias').value.trim() || null,
+    talle_remera: document.getElementById('miTalleRemera').value || null,
+    talle_pantalon: document.getElementById('miTallePantalon').value || null,
+    talle_calzado: document.getElementById('miTalleCalzado').value || null
   };
   const btn = document.getElementById('btnGuardarMisDatos');
   btn.disabled = true; btn.textContent = 'Guardando...';
@@ -2908,7 +2922,7 @@ async function cargarUsuarios() {
 
 async function cargarEmpleados() {
   try {
-    ADMIN_EMPLEADOS_CACHE = await api('empleados?activo=eq.true&select=id,nombre,apellido,nombre_p,sector,categoria,local,telefono,fecha_nac,es_multilocal,activo&order=apellido.asc') || [];
+    ADMIN_EMPLEADOS_CACHE = await api('empleados?activo=eq.true&select=id,nombre,apellido,nombre_p,sector,categoria,local,telefono,fecha_nac,es_multilocal,activo,documento,email,alias,talle_remera,talle_pantalon,talle_calzado&order=apellido.asc') || [];
   } catch (e) {
     console.warn('Error al cargar empleados:', e);
     ADMIN_EMPLEADOS_CACHE = [];
@@ -2935,6 +2949,12 @@ function armarPersona(e, u) {
     categoria: e ? (e.categoria || '') : '',
     telefono: e ? (e.telefono || '') : '',
     fechaNac: e ? (e.fecha_nac || '') : '',
+    documento: e ? (e.documento || '') : '',
+    email: e ? (e.email || '') : '',
+    alias: e ? (e.alias || '') : '',
+    talleRemera: e ? (e.talle_remera || '') : '',
+    tallePantalon: e ? (e.talle_pantalon || '') : '',
+    talleCalzado: e ? (e.talle_calzado || '') : '',
     esMultilocal: e ? !!e.es_multilocal : false,
     tieneAcceso: !!u,
     accesoActivo: u ? !!u.activo : false,
@@ -3193,13 +3213,19 @@ window.exportarPersonalExcel = function() {
   const filas = items.map(p => ({
     'Apellido': p.apellido,
     'Nombre': p.pila,
+    'Documento': p.documento,
     'Usuario': p.usuario,
     'Perfil': p.perfilLabel,
     'Local': p.local ? (LOCAL_LABELS[p.local] || p.local) : '',
     'Sector': p.sector,
     'Categoría': p.categoria,
     'Teléfono': p.telefono,
+    'Email': p.email,
+    'Alias': p.alias,
     'Fecha nacimiento': p.fechaNac || '',
+    'Talle remera': p.talleRemera,
+    'Talle pantalón': p.tallePantalon,
+    'Talle calzado': p.talleCalzado,
     'Multilocal': p.esMultilocal ? 'Sí' : 'No',
     'Acceso': p.tieneAcceso ? (p.accesoActivo ? 'Activo' : 'Inactivo') : 'Sin acceso'
   }));
