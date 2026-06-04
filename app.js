@@ -3107,6 +3107,9 @@ function renderPersonal() {
       } else if (p.empleado) {
         acciones += '<button class="btn-ghost pc-btn" onclick="crearAccesoEmpleado(' + p.empleado.id + ')"><i class="ti ti-user-plus"></i>Crear acceso</button>';
       }
+      if (p.empleado) {
+        acciones += '<button class="btn-ghost pc-btn pc-btn-danger" onclick="eliminarPersona(' + p.empleado.id + ', ' + (p.user ? p.user.id : 'null') + ')"><i class="ti ti-trash"></i>Eliminar</button>';
+      }
     }
 
     return '' +
@@ -3165,6 +3168,13 @@ window.editarDesdeFicha = function() {
   closeFichaModal();
   abrirEditarFicha(FICHA_VISTA_KEY);
 };
+function efRecomputarMultilocal() {
+  const grid = document.getElementById('efLocalesGrid');
+  const cb = document.getElementById('efMultilocal');
+  if (!grid || !cb) return;
+  const slugs = Array.from(grid.querySelectorAll('.local-check.activo')).map(el => el.dataset.local);
+  cb.checked = slugs.length >= 2 || slugs.indexOf('TRANSVERSAL') !== -1;
+}
 window.abrirEditarFicha = function(key) {
   if (!isMaster() && !isAdmin()) return;
   const p = PERSONAS_CACHE.find(x => x.key === key);
@@ -3208,11 +3218,15 @@ window.abrirEditarFicha = function(key) {
         e.preventDefault();
         el.classList.toggle('activo');
         el.querySelector('input').checked = el.classList.contains('activo');
+        efRecomputarMultilocal();
       });
     });
+    efRecomputarMultilocal();
+    document.getElementById('efMultilocal').disabled = true;
   } else {
     sec.style.display = 'none';
     document.getElementById('efLocalesGrid').innerHTML = '';
+    document.getElementById('efMultilocal').disabled = false;
   }
 
   document.getElementById('efError').textContent = '';
@@ -3232,7 +3246,11 @@ window.guardarEditarFicha = async function() {
   const sector = document.getElementById('efSector').value.trim();
   const categoria = document.getElementById('efCategoria').value.trim();
   const local = document.getElementById('efLocal').value || null;
-  const multilocal = document.getElementById('efMultilocal').checked;
+  let multilocal = document.getElementById('efMultilocal').checked;
+  const _gridSel = Array.from(document.querySelectorAll('#efLocalesGrid .local-check.activo')).map(el => el.dataset.local);
+  if (document.getElementById('efLocalesSection').style.display !== 'none') {
+    multilocal = _gridSel.length >= 2 || _gridSel.indexOf('TRANSVERSAL') !== -1;
+  }
 
   if (!nombre_p && !apellido) { err.textContent = 'Cargá al menos nombre o apellido.'; return; }
 
@@ -5581,6 +5599,7 @@ function rostNombreEmp(e) {
 
 let ROST_LOCAL = null, ROST_LUNES = null, ROST_SEMANA = null;
 let ROST_EMPLEADOS = [], ROST_TURNOS = {}, ROST_EMP_EDIT = null, ROST_PLANTILLAS = [];
+let ROST_SECTOR_FILTRO = '', ROST_ALL_EMP = [], ROST_EMP_ASIG = {};
 
 async function openGestionRosters() {
   if (!puedeGestionarRosters()) return;
@@ -5599,6 +5618,7 @@ async function openGestionRosters() {
   ROST_LOCAL = def;
   ROST_LUNES = getLunes(hoyStr());
   await cargarPlantillasRoster();
+  await cargarEmpleadosRoster();
   await cargarRosterSemana();
 }
 window.onChangeLocalRoster = function() {
@@ -5619,6 +5639,27 @@ async function cargarPlantillasRoster() {
   }
 }
 
+async function cargarEmpleadosRoster() {
+  try {
+    ROST_ALL_EMP = await api('empleados?activo=eq.true&select=*') || [];
+    const users = await api('roster_usuarios?empleado_id=not.is.null&select=empleado_id,locales_asignados') || [];
+    ROST_EMP_ASIG = {};
+    users.forEach(u => { if (u.empleado_id != null) ROST_EMP_ASIG[u.empleado_id] = u.locales_asignados || []; });
+  } catch (e) { console.warn('No se pudieron cargar empleados:', e); ROST_ALL_EMP = ROST_ALL_EMP || []; }
+}
+function poblarSectorRoster() {
+  const sel = document.getElementById('rostSector');
+  if (!sel) return;
+  const sectores = Array.from(new Set(ROST_EMPLEADOS.map(e => e.sector).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es'));
+  const prev = ROST_SECTOR_FILTRO;
+  sel.innerHTML = '<option value="">Todos los sectores</option>' + sectores.map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>').join('');
+  if (sectores.indexOf(prev) !== -1) sel.value = prev; else { sel.value = ''; ROST_SECTOR_FILTRO = ''; }
+}
+window.onChangeSectorRoster = function() {
+  ROST_SECTOR_FILTRO = document.getElementById('rostSector').value;
+  renderRosterLista();
+};
+
 async function cargarRosterSemana() {
   const lista = document.getElementById('rostLista');
   document.getElementById('rostWeekLabel').textContent = fmtSemana(ROST_LUNES);
@@ -5628,8 +5669,12 @@ async function cargarRosterSemana() {
     ROST_SEMANA = (sem && sem.length) ? sem[0] : null;
     document.getElementById('rostNota').value = ROST_SEMANA ? (ROST_SEMANA.comentario_general || '') : '';
 
-    ROST_EMPLEADOS = await api('empleados?local=eq.' + encodeURIComponent(ROST_LOCAL) + '&activo=eq.true&select=*') || [];
+    ROST_EMPLEADOS = (ROST_ALL_EMP || []).filter(e =>
+      e.local === ROST_LOCAL ||
+      (e.es_multilocal && (ROST_EMP_ASIG[e.id] || []).indexOf(ROST_LOCAL) !== -1)
+    );
     ROST_EMPLEADOS.sort((a, b) => rostNombreEmp(a).localeCompare(rostNombreEmp(b), 'es'));
+    poblarSectorRoster();
 
     ROST_TURNOS = {};
     if (ROST_SEMANA) {
@@ -5648,13 +5693,15 @@ async function cargarRosterSemana() {
 
 function renderRosterLista() {
   const lista = document.getElementById('rostLista');
-  if (!ROST_EMPLEADOS.length) {
-    lista.innerHTML = '<div class="empty-list">No hay empleados activos en este local.</div>';
+  let emps = ROST_EMPLEADOS;
+  if (ROST_SECTOR_FILTRO) emps = emps.filter(e => e.sector === ROST_SECTOR_FILTRO);
+  if (!emps.length) {
+    lista.innerHTML = '<div class="empty-list">No hay empleados ' + (ROST_SECTOR_FILTRO ? 'de ese sector ' : '') + 'en este local.</div>';
     return;
   }
   const dias = diasDeSemana(ROST_LUNES);
   const cortos = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'];
-  lista.innerHTML = ROST_EMPLEADOS.map(e => {
+  lista.innerHTML = emps.map(e => {
     const chips = dias.map((d, i) => {
       const t = (ROST_TURNOS[e.id] || {})[d];
       let txt = '—', cls = 'rost-chip';
@@ -5663,7 +5710,7 @@ function renderRosterLista() {
         else if (t.es_flex) { txt = t.hora_entrada ? 'F ' + t.hora_entrada.slice(0, 5) : 'FLEX'; cls += ' flex'; }
         else if (t.hora_entrada) { txt = t.hora_entrada.slice(0, 5); cls += ' on'; }
       }
-      return '<div class="rost-chip-wrap"><span class="rost-dia-lbl">' + cortos[i] + '</span><span class="' + cls + '">' + esc(txt) + '</span></div>';
+      return '<div class="rost-chip-wrap"><span class="rost-dia-lbl">' + cortos[i] + ' ' + Number(d.slice(8, 10)) + '</span><span class="' + cls + '">' + esc(txt) + '</span></div>';
     }).join('');
     return '<div class="rost-emp" onclick="abrirEditarTurnosEmp(' + e.id + ')">' +
       '<div class="rost-emp-top"><span class="rost-emp-nom">' + esc(rostNombreEmp(e)) + '</span><i class="ti ti-chevron-right"></i></div>' +
@@ -6234,15 +6281,14 @@ window.guardarPedido = async function(enviar) {
       const ins = await api('requerimientos', { method: 'POST', body: JSON.stringify({
         local: PED_ACTUAL.local, estado: 'borrador', fecha_creacion: hoyStr(),
         fecha_deseada: PED_ACTUAL.fecha_deseada || null,
-        observaciones_generales: PED_ACTUAL.observaciones_generales || null,
-        creado_por: currentUser ? currentUser.id : null
+        observaciones_generales: PED_ACTUAL.observaciones_generales || null
       })});
       PED_ACTUAL = Array.isArray(ins) ? ins[0] : ins;
     } else {
       await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({
         local: PED_ACTUAL.local, fecha_deseada: PED_ACTUAL.fecha_deseada || null,
         observaciones_generales: PED_ACTUAL.observaciones_generales || null,
-        actualizado_por: currentUser ? currentUser.id : null, actualizado_en: new Date().toISOString()
+        actualizado_en: new Date().toISOString()
       })});
     }
     await api('requerimiento_items?requerimiento_id=eq.' + PED_ACTUAL.id, { method: 'DELETE' });
@@ -6256,7 +6302,7 @@ window.guardarPedido = async function(enviar) {
       await api('requerimiento_items', { method: 'POST', body: JSON.stringify(payload) });
     }
     if (enviar) {
-      await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({ estado: 'pendiente', actualizado_por: currentUser ? currentUser.id : null, actualizado_en: new Date().toISOString() })});
+      await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({ estado: 'pendiente', actualizado_en: new Date().toISOString() })});
       toast('\u2713 Pedido enviado', 'success');
       openMisPedidos();
     } else {
@@ -6274,7 +6320,7 @@ window.confirmarPedido = async function() {
     await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({
       estado: 'confirmado', fecha_comprometida: (fcEl && fcEl.value) ? fcEl.value : null,
       observaciones_generales: obsEl ? (obsEl.value.trim() || null) : PED_ACTUAL.observaciones_generales,
-      actualizado_por: currentUser ? currentUser.id : null, actualizado_en: new Date().toISOString()
+      actualizado_en: new Date().toISOString()
     })});
     toast('\u2713 Pedido confirmado', 'success');
     openMisPedidos();
@@ -6284,7 +6330,7 @@ window.devolverPedido = async function() {
   const ok = await showConfirm({ title: 'Devolver a borrador', msg: 'El editor podr\u00e1 modificarlo de nuevo. \u00bfSeguimos?', okLabel: 'Devolver' });
   if (!ok) return;
   try {
-    await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({ estado: 'borrador', actualizado_por: currentUser ? currentUser.id : null, actualizado_en: new Date().toISOString() })});
+    await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({ estado: 'borrador', actualizado_en: new Date().toISOString() })});
     toast('Pedido devuelto a borrador', 'success');
     openMisPedidos();
   } catch (e) { toast('No se pudo devolver', 'error'); }
@@ -6302,12 +6348,11 @@ window.guardarRecepcion = async function(cerrar) {
         cantidad_recibida: recibido,
         estado_recepcion: b.querySelector('.ped-recep-estado').value || null,
         comentario_recepcion: b.querySelector('.ped-recep-coment').value.trim() || null,
-        recibido_en: recibido != null ? new Date().toISOString() : null,
-        recibido_por: recibido != null ? (currentUser ? currentUser.id : null) : null
+        recibido_en: recibido != null ? new Date().toISOString() : null
       })});
     }
     if (cerrar) {
-      await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({ estado: 'completado', actualizado_por: currentUser ? currentUser.id : null, actualizado_en: new Date().toISOString() })});
+      await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({ estado: 'completado', actualizado_en: new Date().toISOString() })});
       toast('\u2713 Pedido recibido y cerrado', 'success');
       openMisPedidos();
     } else {
@@ -6328,6 +6373,32 @@ window.eliminarPedido = async function() {
   } catch (e) { toast('No se pudo eliminar', 'error'); }
 };
 
+
+
+// ---- Eliminar persona (Master/Admin): borra ficha + acceso de forma permanente ----
+window.eliminarPersona = async function(empId, userId) {
+  if (!isMaster() && !isAdmin()) return;
+  const p = PERSONAS_CACHE.find(x => x.empleado && x.empleado.id === empId);
+  const nombre = p ? p.nombreCompleto : 'esta persona';
+  const ok = await showConfirm({
+    title: 'Eliminar persona',
+    msg: 'Vas a eliminar a ' + nombre + ' de forma permanente (ficha y acceso a la app). Esto NO se puede deshacer. Si la persona tiene turnos o propinas cargadas, el sistema no va a dejar borrarla: en ese caso us\u00e1 Desactivar.',
+    danger: true, okLabel: 'Eliminar', cancelLabel: 'Cancelar'
+  });
+  if (!ok) return;
+  try {
+    if (userId) await api('roster_usuarios?id=eq.' + userId, { method: 'DELETE' });
+    await api('empleados?id=eq.' + empId, { method: 'DELETE' });
+    ADMIN_EMPLEADOS_CACHE = (ADMIN_EMPLEADOS_CACHE || []).filter(e => e.id !== empId);
+    if (userId) ADMIN_USUARIOS_CACHE = (ADMIN_USUARIOS_CACHE || []).filter(u => u.id !== userId);
+    construirPersonas();
+    renderPersonal();
+    toast('Persona eliminada', 'success');
+  } catch (e) {
+    toast('No se pudo eliminar (puede tener turnos o propinas asociadas). Prob\u00e1 con Desactivar.', 'error');
+    try { openPersonal(); } catch (_) {}
+  }
+};
 
 init();
 

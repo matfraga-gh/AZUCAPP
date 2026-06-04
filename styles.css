@@ -3336,3 +3336,5 @@ select option {
 .ped-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
 .ped-actions .btn-primary, .ped-actions .btn-ghost { flex:1; min-width:130px; }
 .ped-danger { color:var(--c-error); }
+
+.pc-btn-danger { color: var(--c-error); }

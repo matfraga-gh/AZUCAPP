@@ -1354,7 +1354,7 @@
         <select id="efLocal"></select></label>
       <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
         <input type="checkbox" id="efMultilocal" style="width:auto;">
-        <span class="field-label" style="margin:0;">Trabaja en varios locales (multilocal)</span>
+        <span class="field-label" style="margin:0;">Multilocal (se marca solo según los locales asignados)</span>
       </label>
 
       <div id="efLocalesSection" style="margin-top:16px;">
@@ -1564,6 +1564,8 @@
     <div class="rost-controls">
       <label class="field"><span class="field-label">Local</span>
         <select id="rostLocal" onchange="onChangeLocalRoster()"></select></label>
+      <label class="field" style="margin-top:10px;"><span class="field-label">Sector</span>
+        <select id="rostSector" onchange="onChangeSectorRoster()"></select></label>
     </div>
 
     <div class="week-nav">
