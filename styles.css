@@ -3307,3 +3307,32 @@ select option {
 .rost-hora::-webkit-calendar-picker-indicator { filter: brightness(0); cursor: pointer; }
 
 .rost-emp.inactive { opacity: 0.55; }
+
+/* ===== Mis Pedidos ===== */
+.ped-filtros { display:flex; gap:8px; margin-bottom:12px; }
+.ped-filtros select { flex:1; min-width:0; background:var(--c-bg-soft); border:1px solid var(--c-cream-border); border-radius:8px; padding:8px 10px; color:var(--c-cream); font-size:13px; font-family:inherit; }
+.ped-card { background:var(--c-cream-soft); border:1px solid var(--c-cream-border); border-radius:14px; padding:12px 14px; margin-bottom:10px; cursor:pointer; transition:border-color .15s; }
+.ped-card:hover { border-color:var(--c-rust); }
+.ped-card-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; gap:8px; }
+.ped-local { font-weight:600; color:var(--c-cream); }
+.ped-estado { font-size:11px; padding:3px 9px; border-radius:20px; font-weight:600; white-space:nowrap; }
+.ped-card-sub { font-size:12px; color:var(--c-muted); }
+.ped-section { margin-bottom:18px; }
+.ped-section-title { font-size:13px; font-weight:600; color:var(--c-sand); text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px; }
+.ped-info { display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--c-cream-border); font-size:13px; }
+.ped-info span { color:var(--c-muted); }
+.ped-info strong { color:var(--c-cream); text-align:right; }
+.ped-item { border:1px solid var(--c-cream-border); border-radius:12px; padding:10px 12px; margin-bottom:10px; }
+.ped-item-head { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+.ped-item-head select { flex:1; min-width:0; }
+.ped-item-head strong { color:var(--c-cream); }
+.ped-item-sub { font-size:12px; color:var(--c-muted); margin-bottom:8px; }
+.ped-item-del { flex:0 0 auto; background:transparent; border:1px solid var(--c-cream-border); border-radius:8px; color:var(--c-error); padding:6px 9px; cursor:pointer; }
+.ped-item-row { display:flex; gap:8px; margin-bottom:8px; }
+.ped-item-row:last-child { margin-bottom:0; }
+.ped-item input, .ped-item select { background:var(--c-bg-soft); border:1px solid var(--c-cream-border); border-radius:8px; padding:8px 10px; color:var(--c-cream); font-size:13px; font-family:inherit; min-width:0; flex:1; }
+.ped-item input:focus, .ped-item select:focus { outline:none; border-color:var(--c-rust); }
+.ped-item .ped-recep-coment { width:100%; }
+.ped-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+.ped-actions .btn-primary, .ped-actions .btn-ghost { flex:1; min-width:130px; }
+.ped-danger { color:var(--c-error); }

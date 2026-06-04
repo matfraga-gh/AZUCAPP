@@ -456,7 +456,7 @@ const MODULES = [
     title: 'Mis pedidos',
     desc: 'Requerimientos y stock',
     visible: () => isMaster() || isAdmin() || currentUser.editor_pedidos,
-    action: () => toast('Módulo "Mis pedidos" - próximamente', 'warning')
+    action: () => openMisPedidos()
   },
   {
     id: 'insumos',
@@ -5971,6 +5971,361 @@ window.guardarPlantilla = async function() {
   } finally {
     btn.disabled = false; btn.textContent = txt;
   }
+};
+
+
+
+// ============================================
+// MIS PEDIDOS (requerimientos + requerimiento_items)
+// ============================================
+function puedeGestionarPedidos() {
+  return isMaster() || isAdmin() || (currentUser && currentUser.editor_pedidos === true);
+}
+function pedLocalesPermitidos() {
+  const activos = getLocalesActivos();
+  if (isMaster() || isAdmin()) return activos;
+  const mios = (currentUser && currentUser.locales_asignados) || [];
+  return activos.filter(l => mios.indexOf(l) !== -1);
+}
+const PED_ESTADOS = {
+  borrador:   { label: 'Borrador',   color: '#B4B2A9' },
+  pendiente:  { label: 'Pendiente',  color: '#EF9F27' },
+  confirmado: { label: 'Confirmado', color: '#378ADD' },
+  completado: { label: 'Completado', color: '#1D9E75' }
+};
+function pedFecha(x) { return x ? fmtFechaCorta(String(x).slice(0, 10)) : ''; }
+
+let PED_LOCAL_FILTRO = '', PED_ESTADO_FILTRO = '';
+let PED_LISTA = [], PED_INSUMOS = [], PED_UNIDADES = [];
+let PED_ACTUAL = null, PED_ITEMS = [];
+
+async function openMisPedidos() {
+  if (!puedeGestionarPedidos()) { showDashboard(); return; }
+  showView('vMisPedidos');
+  const locs = pedLocalesPermitidos();
+  const sel = document.getElementById('pedLocalFiltro');
+  sel.innerHTML = '<option value="">Todos mis locales</option>' +
+    locs.map(l => '<option value="' + esc(l) + '">' + esc(LOCAL_LABELS[l] || l) + '</option>').join('');
+  document.getElementById('pedNuevoBtn').style.display = locs.length ? '' : 'none';
+  await cargarCatalogosPedidos();
+  await cargarPedidos();
+}
+async function cargarCatalogosPedidos() {
+  try {
+    if (!PED_INSUMOS.length) PED_INSUMOS = await api('ingredientes?activo=eq.true&select=id,nombre,unidad,costo,cantidad_por_presentacion&order=nombre.asc') || [];
+    if (!PED_UNIDADES.length) PED_UNIDADES = await api('unidades_pedido?activo=eq.true&select=*&order=orden.asc') || [];
+  } catch (e) { console.warn('catalogos pedidos:', e); }
+}
+window.onFiltroPedidos = function() {
+  PED_LOCAL_FILTRO = document.getElementById('pedLocalFiltro').value;
+  PED_ESTADO_FILTRO = document.getElementById('pedEstadoFiltro').value;
+  cargarPedidos();
+};
+async function cargarPedidos() {
+  const lista = document.getElementById('pedidosLista');
+  lista.innerHTML = '<div class="loading">Cargando pedidos...</div>';
+  const locs = pedLocalesPermitidos();
+  try {
+    let q = 'requerimientos?activo=eq.true&select=*&order=fecha_creacion.desc';
+    if (PED_LOCAL_FILTRO) {
+      q += '&local=eq.' + encodeURIComponent(PED_LOCAL_FILTRO);
+    } else if (!isMaster() && !isAdmin()) {
+      if (!locs.length) { lista.innerHTML = '<div class="empty-list">No ten\u00e9s locales asignados.</div>'; return; }
+      q += '&local=in.(' + locs.map(encodeURIComponent).join(',') + ')';
+    }
+    if (PED_ESTADO_FILTRO) q += '&estado=eq.' + PED_ESTADO_FILTRO;
+    PED_LISTA = await api(q) || [];
+    renderPedidos();
+  } catch (e) {
+    lista.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los pedidos.<br><span style="font-size:11px;opacity:.7">' + esc(String((e && e.message) || e)) + '</span></div>';
+  }
+}
+function renderPedidos() {
+  const lista = document.getElementById('pedidosLista');
+  if (!PED_LISTA.length) { lista.innerHTML = '<div class="empty-list">No hay pedidos con ese criterio.</div>'; return; }
+  lista.innerHTML = PED_LISTA.map(p => {
+    const est = PED_ESTADOS[p.estado] || { label: p.estado || '\u2014', color: '#8A8278' };
+    const partes = [];
+    if (p.fecha_deseada) partes.push('Para ' + pedFecha(p.fecha_deseada));
+    if (p.fecha_comprometida) partes.push('Entrega ' + pedFecha(p.fecha_comprometida));
+    const sub = partes.length ? partes.join(' \u00b7 ') : ('Creado ' + pedFecha(p.fecha_creacion));
+    return '<div class="ped-card" onclick="abrirPedido(' + p.id + ')">' +
+      '<div class="ped-card-top"><span class="ped-local">' + esc(LOCAL_LABELS[p.local] || p.local) + '</span>' +
+      '<span class="ped-estado" style="background:' + est.color + '22;color:' + est.color + '">' + esc(est.label) + '</span></div>' +
+      '<div class="ped-card-sub">' + esc(sub) + '</div></div>';
+  }).join('');
+}
+
+window.abrirNuevoPedido = function() {
+  const locs = pedLocalesPermitidos();
+  if (!locs.length) return;
+  PED_ACTUAL = { id: null, local: locs[0], estado: 'borrador', fecha_deseada: '', fecha_comprometida: '', observaciones_generales: '' };
+  PED_ITEMS = [];
+  showView('vPedidoEditor');
+  renderEditorPedido();
+};
+window.abrirPedido = async function(id) {
+  try {
+    const r = await api('requerimientos?id=eq.' + id + '&select=*');
+    if (!r || !r.length) { toast('No se encontr\u00f3 el pedido', 'error'); return; }
+    PED_ACTUAL = r[0];
+    PED_ITEMS = await api('requerimiento_items?requerimiento_id=eq.' + id + '&select=*&order=orden.asc') || [];
+    showView('vPedidoEditor');
+    renderEditorPedido();
+  } catch (e) { toast('Error al abrir el pedido', 'error'); }
+};
+async function recargarPedidoActual() {
+  const r = await api('requerimientos?id=eq.' + PED_ACTUAL.id + '&select=*');
+  if (r && r.length) PED_ACTUAL = r[0];
+  PED_ITEMS = await api('requerimiento_items?requerimiento_id=eq.' + PED_ACTUAL.id + '&select=*&order=orden.asc') || [];
+}
+
+function pedInsumoNombre(id) {
+  const ins = PED_INSUMOS.find(x => x.id === id);
+  return ins ? ins.nombre : ('Insumo #' + id);
+}
+function pedInsumoOptions(sel) {
+  return '<option value="">\u2014 Eleg\u00ed un insumo \u2014</option>' +
+    PED_INSUMOS.map(ins => '<option value="' + ins.id + '"' + (ins.id === sel ? ' selected' : '') + '>' + esc(ins.nombre) + '</option>').join('');
+}
+function pedUnidadOptions(sel) {
+  const us = PED_UNIDADES.map(u => u.nombre);
+  if (sel && us.indexOf(sel) === -1) us.unshift(sel);
+  return '<option value="">\u2014 unidad \u2014</option>' +
+    us.map(u => '<option value="' + esc(u) + '"' + (u === sel ? ' selected' : '') + '>' + esc(u) + '</option>').join('');
+}
+
+function renderItemPedido(it, i, editable, recepcion, completado) {
+  if (editable) {
+    return '<div class="ped-item" data-idx="' + i + '">' +
+      '<div class="ped-item-head"><select class="ped-ins">' + pedInsumoOptions(it.ingrediente_id) + '</select>' +
+      '<button class="ped-item-del" onclick="quitarItemPedido(' + i + ')" aria-label="Quitar"><i class="ti ti-trash"></i></button></div>' +
+      '<div class="ped-item-row">' +
+        '<input class="ped-cant" type="number" step="any" min="0" placeholder="Cantidad" value="' + (it.cantidad_pedida != null ? it.cantidad_pedida : '') + '">' +
+        '<select class="ped-unidad">' + pedUnidadOptions(it.unidad) + '</select></div>' +
+      '<div class="ped-item-row">' +
+        '<input class="ped-stock" type="number" step="any" min="0" placeholder="Stock hoy (opc.)" value="' + (it.stock_actual != null ? it.stock_actual : '') + '">' +
+        '<input class="ped-coment" type="text" placeholder="Comentario (opc.)" value="' + esc(it.comentario_pedido || '') + '"></div>' +
+      '</div>';
+  }
+  if (recepcion || completado) {
+    const recep = ['completo', 'parcial', 'faltante'];
+    const er = it.estado_recepcion || '';
+    const recibido = it.cantidad_recibida != null ? it.cantidad_recibida : '';
+    const dis = completado ? ' disabled' : '';
+    return '<div class="ped-item" data-idx="' + i + '" data-itemid="' + it.id + '">' +
+      '<div class="ped-item-head"><strong>' + esc(pedInsumoNombre(it.ingrediente_id)) + '</strong></div>' +
+      '<div class="ped-item-sub">Pedido: ' + fmtCant(it.cantidad_pedida || 0) + ' ' + esc(it.unidad || '') + '</div>' +
+      '<div class="ped-item-row">' +
+        '<input class="ped-recibido" type="number" step="any" min="0" placeholder="Recibido" value="' + recibido + '"' + dis + '>' +
+        '<select class="ped-recep-estado"' + dis + '><option value="">\u2014 estado \u2014</option>' +
+          recep.map(r => '<option value="' + r + '"' + (er === r ? ' selected' : '') + '>' + r + '</option>').join('') + '</select></div>' +
+      '<input class="ped-recep-coment" type="text" placeholder="Comentario recepci\u00f3n (opc.)" value="' + esc(it.comentario_recepcion || '') + '"' + dis + '>' +
+      '</div>';
+  }
+  return '<div class="ped-item" data-idx="' + i + '">' +
+    '<div class="ped-item-head"><strong>' + esc(pedInsumoNombre(it.ingrediente_id)) + '</strong></div>' +
+    '<div class="ped-item-sub">' + fmtCant(it.cantidad_pedida || 0) + ' ' + esc(it.unidad || '') + (it.comentario_pedido ? (' \u00b7 ' + esc(it.comentario_pedido)) : '') + '</div></div>';
+}
+
+function renderEditorPedido() {
+  const p = PED_ACTUAL;
+  const est = p.estado || 'borrador';
+  const estInfo = PED_ESTADOS[est] || { label: est, color: '#8A8278' };
+  const soyAdmin = isMaster() || isAdmin();
+  const esNuevo = !p.id;
+  const editable = (est === 'borrador');
+  const recepcion = (est === 'confirmado');
+  const completado = (est === 'completado');
+
+  document.getElementById('pedEditorTitulo').textContent = esNuevo ? 'Nuevo pedido' : ('Pedido \u00b7 ' + (LOCAL_LABELS[p.local] || p.local));
+  document.getElementById('pedEditorSub').innerHTML = '<span class="ped-estado" style="background:' + estInfo.color + '22;color:' + estInfo.color + '">' + esc(estInfo.label) + '</span>';
+
+  let html = '<div class="ped-section">';
+  if (esNuevo) {
+    const locs = pedLocalesPermitidos();
+    html += '<label class="field"><span class="field-label">Local</span><select id="pedLocal">' +
+      locs.map(l => '<option value="' + esc(l) + '"' + (l === p.local ? ' selected' : '') + '>' + esc(LOCAL_LABELS[l] || l) + '</option>').join('') + '</select></label>';
+  }
+  const fd = p.fecha_deseada ? String(p.fecha_deseada).slice(0, 10) : '';
+  if (editable) html += '<label class="field"><span class="field-label">Fecha que lo necesit\u00e1s</span><input type="date" id="pedFechaDeseada" value="' + fd + '"></label>';
+  else if (fd) html += '<div class="ped-info"><span>Fecha deseada</span><strong>' + pedFecha(p.fecha_deseada) + '</strong></div>';
+
+  const fc = p.fecha_comprometida ? String(p.fecha_comprometida).slice(0, 10) : '';
+  if (soyAdmin && est === 'pendiente') html += '<label class="field"><span class="field-label">Fecha comprometida (entrega)</span><input type="date" id="pedFechaComprometida" value="' + fc + '"></label>';
+  else if (fc) html += '<div class="ped-info"><span>Fecha comprometida</span><strong>' + pedFecha(p.fecha_comprometida) + '</strong></div>';
+
+  const obs = p.observaciones_generales || '';
+  if (editable || (soyAdmin && est === 'pendiente')) html += '<label class="field"><span class="field-label">Observaciones</span><textarea id="pedObs" rows="2" placeholder="Opcional">' + esc(obs) + '</textarea></label>';
+  else if (obs) html += '<div class="ped-info"><span>Observaciones</span><strong>' + esc(obs) + '</strong></div>';
+  html += '</div>';
+
+  html += '<div class="ped-section"><div class="ped-section-title">Insumos</div>';
+  if (!PED_ITEMS.length && !editable) html += '<div class="empty-list">Este pedido no tiene insumos.</div>';
+  html += '<div id="pedItems">';
+  PED_ITEMS.forEach((it, i) => { html += renderItemPedido(it, i, editable, recepcion, completado); });
+  html += '</div>';
+  if (editable) html += '<button class="btn-ghost" style="width:100%;margin-top:8px;" onclick="agregarItemPedido()"><i class="ti ti-plus"></i> Agregar insumo</button>';
+  html += '</div>';
+
+  html += '<div class="ped-actions">';
+  if (editable) {
+    html += '<button class="btn-ghost" onclick="guardarPedido(false)">Guardar borrador</button>';
+    html += '<button class="btn-primary" onclick="guardarPedido(true)">Enviar pedido</button>';
+    if (!esNuevo) html += '<button class="btn-ghost ped-danger" onclick="eliminarPedido()">Eliminar</button>';
+  } else if (est === 'pendiente') {
+    if (soyAdmin) {
+      html += '<button class="btn-ghost" onclick="devolverPedido()">Devolver a borrador</button>';
+      html += '<button class="btn-primary" onclick="confirmarPedido()">Confirmar</button>';
+    } else {
+      html += '<div class="ped-info" style="width:100%"><span>Estado</span><strong>Esperando confirmaci\u00f3n de un Admin</strong></div>';
+    }
+  } else if (recepcion) {
+    html += '<button class="btn-ghost" onclick="guardarRecepcion(false)">Guardar recepci\u00f3n</button>';
+    html += '<button class="btn-primary" onclick="guardarRecepcion(true)">Cerrar pedido (recibido)</button>';
+  }
+  html += '</div>';
+
+  document.getElementById('pedEditorBody').innerHTML = html;
+}
+
+function leerItemsDesdeDOM() {
+  const cont = document.getElementById('pedItems');
+  if (!cont) return;
+  cont.querySelectorAll('.ped-item').forEach(b => {
+    const idx = parseInt(b.dataset.idx, 10);
+    if (isNaN(idx) || !PED_ITEMS[idx]) return;
+    const insEl = b.querySelector('.ped-ins');
+    if (insEl) {
+      PED_ITEMS[idx].ingrediente_id = insEl.value ? parseInt(insEl.value, 10) : null;
+      PED_ITEMS[idx].cantidad_pedida = b.querySelector('.ped-cant').value;
+      PED_ITEMS[idx].unidad = b.querySelector('.ped-unidad').value;
+      PED_ITEMS[idx].stock_actual = b.querySelector('.ped-stock').value;
+      PED_ITEMS[idx].comentario_pedido = b.querySelector('.ped-coment').value;
+    }
+  });
+}
+function leerHeaderDesdeDOM() {
+  const localEl = document.getElementById('pedLocal');
+  if (localEl) PED_ACTUAL.local = localEl.value;
+  const fdEl = document.getElementById('pedFechaDeseada');
+  if (fdEl) PED_ACTUAL.fecha_deseada = fdEl.value || null;
+  const obsEl = document.getElementById('pedObs');
+  if (obsEl) PED_ACTUAL.observaciones_generales = obsEl.value.trim() || null;
+}
+window.agregarItemPedido = function() {
+  leerItemsDesdeDOM();
+  PED_ITEMS.push({ ingrediente_id: null, cantidad_pedida: '', unidad: '', stock_actual: '', comentario_pedido: '' });
+  renderEditorPedido();
+};
+window.quitarItemPedido = function(i) {
+  leerItemsDesdeDOM();
+  PED_ITEMS.splice(i, 1);
+  renderEditorPedido();
+};
+
+window.guardarPedido = async function(enviar) {
+  leerHeaderDesdeDOM();
+  leerItemsDesdeDOM();
+  const validos = PED_ITEMS.filter(it => it.ingrediente_id && parseFloat(it.cantidad_pedida) > 0);
+  if (enviar && !validos.length) { toast('Agreg\u00e1 al menos un insumo con cantidad', 'warning'); return; }
+  try {
+    if (!PED_ACTUAL.id) {
+      const ins = await api('requerimientos', { method: 'POST', body: JSON.stringify({
+        local: PED_ACTUAL.local, estado: 'borrador', fecha_creacion: hoyStr(),
+        fecha_deseada: PED_ACTUAL.fecha_deseada || null,
+        observaciones_generales: PED_ACTUAL.observaciones_generales || null,
+        creado_por: currentUser ? currentUser.id : null
+      })});
+      PED_ACTUAL = Array.isArray(ins) ? ins[0] : ins;
+    } else {
+      await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({
+        local: PED_ACTUAL.local, fecha_deseada: PED_ACTUAL.fecha_deseada || null,
+        observaciones_generales: PED_ACTUAL.observaciones_generales || null,
+        actualizado_por: currentUser ? currentUser.id : null, actualizado_en: new Date().toISOString()
+      })});
+    }
+    await api('requerimiento_items?requerimiento_id=eq.' + PED_ACTUAL.id, { method: 'DELETE' });
+    if (validos.length) {
+      const payload = validos.map((it, i) => ({
+        requerimiento_id: PED_ACTUAL.id, ingrediente_id: it.ingrediente_id,
+        cantidad_pedida: parseFloat(it.cantidad_pedida) || 0, unidad: it.unidad || null,
+        stock_actual: (it.stock_actual !== '' && it.stock_actual != null) ? (parseFloat(it.stock_actual) || 0) : null,
+        comentario_pedido: it.comentario_pedido || null, orden: i
+      }));
+      await api('requerimiento_items', { method: 'POST', body: JSON.stringify(payload) });
+    }
+    if (enviar) {
+      await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({ estado: 'pendiente', actualizado_por: currentUser ? currentUser.id : null, actualizado_en: new Date().toISOString() })});
+      toast('\u2713 Pedido enviado', 'success');
+      openMisPedidos();
+    } else {
+      toast('\u2713 Borrador guardado', 'success');
+      await recargarPedidoActual();
+      renderEditorPedido();
+    }
+  } catch (e) { toast('No se pudo guardar: ' + ((e && e.message) || e), 'error'); }
+};
+
+window.confirmarPedido = async function() {
+  const fcEl = document.getElementById('pedFechaComprometida');
+  const obsEl = document.getElementById('pedObs');
+  try {
+    await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({
+      estado: 'confirmado', fecha_comprometida: (fcEl && fcEl.value) ? fcEl.value : null,
+      observaciones_generales: obsEl ? (obsEl.value.trim() || null) : PED_ACTUAL.observaciones_generales,
+      actualizado_por: currentUser ? currentUser.id : null, actualizado_en: new Date().toISOString()
+    })});
+    toast('\u2713 Pedido confirmado', 'success');
+    openMisPedidos();
+  } catch (e) { toast('No se pudo confirmar: ' + ((e && e.message) || e), 'error'); }
+};
+window.devolverPedido = async function() {
+  const ok = await showConfirm({ title: 'Devolver a borrador', msg: 'El editor podr\u00e1 modificarlo de nuevo. \u00bfSeguimos?', okLabel: 'Devolver' });
+  if (!ok) return;
+  try {
+    await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({ estado: 'borrador', actualizado_por: currentUser ? currentUser.id : null, actualizado_en: new Date().toISOString() })});
+    toast('Pedido devuelto a borrador', 'success');
+    openMisPedidos();
+  } catch (e) { toast('No se pudo devolver', 'error'); }
+};
+window.guardarRecepcion = async function(cerrar) {
+  const cont = document.getElementById('pedItems');
+  const blocks = cont.querySelectorAll('.ped-item');
+  try {
+    for (const b of blocks) {
+      const itemId = b.dataset.itemid;
+      if (!itemId) continue;
+      const rec = b.querySelector('.ped-recibido').value;
+      const recibido = (rec !== '') ? (parseFloat(rec) || 0) : null;
+      await api('requerimiento_items?id=eq.' + itemId, { method: 'PATCH', body: JSON.stringify({
+        cantidad_recibida: recibido,
+        estado_recepcion: b.querySelector('.ped-recep-estado').value || null,
+        comentario_recepcion: b.querySelector('.ped-recep-coment').value.trim() || null,
+        recibido_en: recibido != null ? new Date().toISOString() : null,
+        recibido_por: recibido != null ? (currentUser ? currentUser.id : null) : null
+      })});
+    }
+    if (cerrar) {
+      await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({ estado: 'completado', actualizado_por: currentUser ? currentUser.id : null, actualizado_en: new Date().toISOString() })});
+      toast('\u2713 Pedido recibido y cerrado', 'success');
+      openMisPedidos();
+    } else {
+      toast('\u2713 Recepci\u00f3n guardada', 'success');
+      await recargarPedidoActual();
+      renderEditorPedido();
+    }
+  } catch (e) { toast('No se pudo guardar la recepci\u00f3n: ' + ((e && e.message) || e), 'error'); }
+};
+window.eliminarPedido = async function() {
+  if (!PED_ACTUAL.id) { openMisPedidos(); return; }
+  const ok = await showConfirm({ title: 'Eliminar pedido', msg: 'Se va a eliminar este borrador. \u00bfSeguro?', danger: true, okLabel: 'Eliminar' });
+  if (!ok) return;
+  try {
+    await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({ activo: false })});
+    toast('Pedido eliminado', 'success');
+    openMisPedidos();
+  } catch (e) { toast('No se pudo eliminar', 'error'); }
 };
 
 

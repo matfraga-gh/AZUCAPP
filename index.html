@@ -1506,6 +1506,49 @@
      VISTA: MIS DATOS
 ============================================ -->
 <!-- ============================================
+     VISTA: MIS PEDIDOS
+============================================ -->
+<div id="vMisPedidos" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Mis pedidos</div>
+        <div class="module-subtitle">Requerimientos de insumos</div>
+      </div>
+    </div>
+    <div class="ped-filtros">
+      <select id="pedLocalFiltro" onchange="onFiltroPedidos()"></select>
+      <select id="pedEstadoFiltro" onchange="onFiltroPedidos()">
+        <option value="">Todos los estados</option>
+        <option value="borrador">Borrador</option>
+        <option value="pendiente">Pendiente</option>
+        <option value="confirmado">Confirmado</option>
+        <option value="completado">Completado</option>
+      </select>
+    </div>
+    <button class="btn-primary" id="pedNuevoBtn" style="width:100%;margin-bottom:14px;" onclick="abrirNuevoPedido()"><i class="ti ti-plus"></i> Nuevo pedido</button>
+    <div id="pedidosLista"><div class="loading">Cargando...</div></div>
+  </div>
+</div>
+
+<!-- ============================================
+     VISTA: EDITOR DE PEDIDO
+============================================ -->
+<div id="vPedidoEditor" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="openMisPedidos()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title" id="pedEditorTitulo">Pedido</div>
+        <div class="module-subtitle" id="pedEditorSub"></div>
+      </div>
+    </div>
+    <div id="pedEditorBody"></div>
+  </div>
+</div>
+
+<!-- ============================================
      VISTA: GESTIÓN DE ROSTERS
 ============================================ -->
 <div id="vGestionRosters" class="view">
