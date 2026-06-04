@@ -436,6 +436,27 @@
 <!-- ============================================
      VISTA: ADMINISTRACIÓN - Locales
 ============================================ -->
+<!-- ============================================
+     VISTA: PLANTILLAS DE ROSTERS (Admin)
+============================================ -->
+<div id="vPlantillasRosters" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="openAdministracion()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Plantillas de Rosters</div>
+        <div class="module-subtitle" id="plantillasCount">Cargando...</div>
+      </div>
+    </div>
+    <div class="info-banner" style="margin-top:0;margin-bottom:14px;">
+      <i class="ti ti-info-circle"></i>
+      <span>Los editores usan estas plantillas al armar la semana, para no cargar día por día. Un día en “—” queda vacío para completar a mano.</span>
+    </div>
+    <button class="btn-primary" style="width:100%;margin-bottom:14px;" onclick="abrirNuevaPlantilla()"><i class="ti ti-plus"></i> Nueva plantilla</button>
+    <div id="plantillasLista"><div class="loading">Cargando...</div></div>
+  </div>
+</div>
+
 <div id="vAdminLocales" class="view">
   <div class="module-wrap">
 
@@ -666,6 +687,34 @@
 <!-- ============================================
      MODAL: EDITAR TURNOS DE UN EMPLEADO
 ============================================ -->
+<!-- ============================================
+     MODAL: EDITAR / NUEVA PLANTILLA
+============================================ -->
+<div class="modal-overlay" id="modalPlantilla">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title" id="plantillaModalTitulo">Nueva plantilla</h2>
+      <button class="modal-close" onclick="closePlantillaModal()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <label class="field"><span class="field-label">Nombre</span>
+        <input type="text" id="plNombre" placeholder="Ej: Cocina mañana"></label>
+      <label class="field"><span class="field-label">Local</span>
+        <select id="plLocal"></select></label>
+      <div id="plDias" style="margin-top:6px;"></div>
+      <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
+        <input type="checkbox" id="plActivo" checked style="width:auto;">
+        <span class="field-label" style="margin:0;">Plantilla activa (disponible para usar)</span>
+      </label>
+      <div class="login-error" id="plError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closePlantillaModal()">Cancelar</button>
+      <button class="btn-primary" id="plGuardarBtn" onclick="guardarPlantilla()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalEditarTurnos">
   <div class="modal-card">
     <div class="modal-header">

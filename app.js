@@ -2832,6 +2832,15 @@ const ADMIN_SECTIONS = [
     action: () => openAdminInsumos()
   },
   {
+    id: 'plantillas',
+    icon: 'ti-template',
+    color: '#7F77DD',
+    title: 'Plantillas de Rosters',
+    desc: 'Horarios estándar para armar la semana',
+    activa: true,
+    action: () => openPlantillasRosters()
+  },
+  {
     id: 'historial',
     icon: 'ti-history',
     color: '#B4B2A9',
@@ -5805,6 +5814,152 @@ window.guardarNotaSemana = async function() {
     toast('\u2713 Nota guardada', 'success');
   } catch (e) {
     toast('No se pudo guardar la nota', 'error');
+  }
+};
+
+
+
+// ============================================
+// ADMIN: PLANTILLAS DE ROSTERS (turnos_estandar)
+// ============================================
+let PLANTILLAS_CACHE = [], PLANTILLA_EDIT_ID = null;
+const PL_DIAS = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'];
+
+async function openPlantillasRosters() {
+  if (!isMaster() && !isAdmin()) { showDashboard(); return; }
+  showView('vPlantillasRosters');
+  await recargarPlantillas();
+}
+async function recargarPlantillas() {
+  const cont = document.getElementById('plantillasLista');
+  cont.innerHTML = '<div class="loading">Cargando...</div>';
+  try {
+    PLANTILLAS_CACHE = await api('turnos_estandar?select=*&order=local,nombre') || [];
+    renderPlantillasLista();
+  } catch (e) {
+    cont.innerHTML = '<div class="loading" style="color:var(--c-error)">Error al cargar las plantillas</div>';
+    console.error(e);
+  }
+}
+function renderPlantillasLista() {
+  const cont = document.getElementById('plantillasLista');
+  const count = document.getElementById('plantillasCount');
+  const activas = PLANTILLAS_CACHE.filter(p => p.activo).length;
+  count.textContent = activas + ' activa' + (activas !== 1 ? 's' : '') + ' de ' + PLANTILLAS_CACHE.length;
+  if (!PLANTILLAS_CACHE.length) {
+    cont.innerHTML = '<div class="empty-list">Todav\u00eda no hay plantillas. Cre\u00e1 la primera con el bot\u00f3n de arriba.</div>';
+    return;
+  }
+  const cortos = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'S\u00e1', 'Do'];
+  cont.innerHTML = PLANTILLAS_CACHE.map(p => {
+    const chips = PL_DIAS.map((k, i) => {
+      const hora = p[k]; const flex = !!p[k + '_flex'];
+      let txt = '\u2014', cls = 'rost-chip';
+      if (flex) { txt = hora ? 'F ' + String(hora).slice(0, 5) : 'FLEX'; cls += ' flex'; }
+      else if (hora) { txt = String(hora).slice(0, 5); cls += ' on'; }
+      return '<div class="rost-chip-wrap"><span class="rost-dia-lbl">' + cortos[i] + '</span><span class="' + cls + '">' + esc(txt) + '</span></div>';
+    }).join('');
+    const localTxt = p.local === 'TODOS' ? 'Todos' : (LOCAL_LABELS[p.local] || p.local);
+    const inact = p.activo ? '' : ' <span style="color:var(--c-muted);font-weight:400;font-size:11px;">(inactiva)</span>';
+    return '<div class="rost-emp' + (p.activo ? '' : ' inactive') + '" onclick="abrirEditarPlantilla(' + p.id + ')">' +
+      '<div class="rost-emp-top"><span class="rost-emp-nom">' + esc(p.nombre) + inact + '</span>' +
+      '<span style="font-size:11px;color:var(--c-muted);">' + esc(localTxt) + '</span></div>' +
+      '<div class="rost-chips">' + chips + '</div></div>';
+  }).join('');
+}
+
+function llenarLocalSelectPlantilla(sel) {
+  const todos = getLocalesActivos().slice();
+  if (sel && sel !== 'TODOS' && todos.indexOf(sel) === -1) todos.unshift(sel);
+  const opts = ['<option value="TODOS"' + (sel === 'TODOS' || !sel ? ' selected' : '') + '>Todos los locales</option>']
+    .concat(todos.map(l => '<option value="' + esc(l) + '"' + (l === sel ? ' selected' : '') + '>' + esc(LOCAL_LABELS[l] || l) + '</option>'));
+  document.getElementById('plLocal').innerHTML = opts.join('');
+}
+function renderPlantillaDias(p) {
+  const estados = [['trabaja', 'Trabaja'], ['flex', 'FLEX'], ['', '\u2014']];
+  document.getElementById('plDias').innerHTML = PL_DIAS.map((k, i) => {
+    let est = '', hora = '';
+    if (p) {
+      const flex = !!p[k + '_flex']; const h = p[k];
+      if (flex) est = 'flex'; else if (h) est = 'trabaja';
+      hora = h ? String(h).slice(0, 5) : '';
+    }
+    const btns = estados.map(e => '<button type="button" class="rost-est' + (est === e[0] ? ' activo' : '') + '" data-est="' + e[0] + '">' + e[1] + '</button>').join('');
+    const showHora = (est === 'trabaja' || est === 'flex');
+    return '<div class="rost-dia" data-key="' + k + '" data-est="' + est + '">' +
+      '<div class="rost-dia-head"><strong>' + DIAS_LARGO[i] + '</strong></div>' +
+      '<div class="rost-estados">' + btns + '</div>' +
+      '<div class="rost-dia-extra"><input type="time" class="rost-hora" value="' + hora + '"' + (showHora ? '' : ' style="display:none;"') + '></div>' +
+      '</div>';
+  }).join('');
+  document.querySelectorAll('#plDias .rost-dia').forEach(block => {
+    block.querySelectorAll('.rost-est').forEach(btn => {
+      btn.addEventListener('click', () => {
+        block.querySelectorAll('.rost-est').forEach(b => b.classList.remove('activo'));
+        btn.classList.add('activo');
+        const est = btn.dataset.est; block.dataset.est = est;
+        block.querySelector('.rost-hora').style.display = (est === 'trabaja' || est === 'flex') ? '' : 'none';
+      });
+    });
+  });
+}
+
+window.abrirNuevaPlantilla = function() {
+  PLANTILLA_EDIT_ID = null;
+  document.getElementById('plantillaModalTitulo').textContent = 'Nueva plantilla';
+  document.getElementById('plNombre').value = '';
+  document.getElementById('plActivo').checked = true;
+  llenarLocalSelectPlantilla(null);
+  renderPlantillaDias(null);
+  document.getElementById('plError').textContent = '';
+  document.getElementById('modalPlantilla').classList.add('show');
+};
+window.abrirEditarPlantilla = function(id) {
+  const p = PLANTILLAS_CACHE.find(x => x.id === id);
+  if (!p) return;
+  PLANTILLA_EDIT_ID = id;
+  document.getElementById('plantillaModalTitulo').textContent = 'Editar plantilla';
+  document.getElementById('plNombre').value = p.nombre || '';
+  document.getElementById('plActivo').checked = !!p.activo;
+  llenarLocalSelectPlantilla(p.local);
+  renderPlantillaDias(p);
+  document.getElementById('plError').textContent = '';
+  document.getElementById('modalPlantilla').classList.add('show');
+};
+window.closePlantillaModal = function() {
+  document.getElementById('modalPlantilla').classList.remove('show');
+};
+window.guardarPlantilla = async function() {
+  const err = document.getElementById('plError'); err.textContent = '';
+  const nombre = document.getElementById('plNombre').value.trim();
+  if (!nombre) { err.textContent = 'Pon\u00e9 un nombre para la plantilla.'; return; }
+  const payload = {
+    nombre: nombre,
+    local: document.getElementById('plLocal').value,
+    activo: document.getElementById('plActivo').checked
+  };
+  document.querySelectorAll('#plDias .rost-dia').forEach(block => {
+    const k = block.dataset.key; const est = block.dataset.est || '';
+    const hora = block.querySelector('.rost-hora').value || null;
+    payload[k] = (est === '') ? null : hora;
+    payload[k + '_flex'] = (est === 'flex');
+  });
+  const btn = document.getElementById('plGuardarBtn');
+  btn.disabled = true; const txt = btn.textContent; btn.textContent = 'Guardando...';
+  try {
+    if (PLANTILLA_EDIT_ID) {
+      await api('turnos_estandar?id=eq.' + PLANTILLA_EDIT_ID, { method: 'PATCH', body: JSON.stringify(payload) });
+    } else {
+      payload.creado_por = currentUser ? currentUser.id : null;
+      await api('turnos_estandar', { method: 'POST', body: JSON.stringify(payload) });
+    }
+    closePlantillaModal();
+    await recargarPlantillas();
+    toast('\u2713 Plantilla guardada', 'success');
+  } catch (e) {
+    err.textContent = 'No se pudo guardar: ' + (e.message || e);
+  } finally {
+    btn.disabled = false; btn.textContent = txt;
   }
 };
 

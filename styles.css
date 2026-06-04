@@ -3305,3 +3305,5 @@ select option {
 .rost-plantilla-row .btn-ghost { white-space: nowrap; flex: 0 0 auto; }
 
 .rost-hora::-webkit-calendar-picker-indicator { filter: brightness(0); cursor: pointer; }
+
+.rost-emp.inactive { opacity: 0.55; }
