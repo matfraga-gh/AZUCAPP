@@ -555,7 +555,7 @@
     </div>
 
     <!-- Botón crear nuevo -->
-    <button class="btn-primary-full" onclick="openModalInsumo(null)">
+    <button class="btn-primary-full" id="insumoNuevoBtn" onclick="openModalInsumo(null)">
       <i class="ti ti-plus"></i> Nuevo insumo
     </button>
 
@@ -704,8 +704,8 @@
     <div class="modal-body">
       <label class="field"><span class="field-label">Nombre</span>
         <input type="text" id="saNombre" placeholder="Ej: Copa Riedel Degustazione"></label>
-      <label class="field"><span class="field-label">Unidad (opcional)</span>
-        <input type="text" id="saUnidad" placeholder="Ej: unidad, copa, botella"></label>
+      <label class="field"><span class="field-label">Unidad de control</span>
+        <select id="saUnidad"></select></label>
       <p class="field-label" style="margin-bottom:6px;">Locales donde se controla</p>
       <div class="locales-grid" id="saLocalesGrid"></div>
       <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:12px;cursor:pointer;">
