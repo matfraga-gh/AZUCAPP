@@ -468,6 +468,15 @@ const MODULES = [
     action: () => openMiStock()
   },
   {
+    id: 'cierres',
+    icon: 'ti-cash-register',
+    color: '#C4622D',
+    title: 'Mis Cierres',
+    desc: 'Cierre de caja por local y turno',
+    visible: () => puedeGestionarCierres(),
+    action: () => openMisCierres()
+  },
+  {
     id: 'insumos',
     icon: 'ti-package',
     color: '#EF9F27',
@@ -1198,8 +1207,8 @@ async function openMiPropina() {
 
   let html = '';
 
-  // ===== 1. BOTÓN DE GESTIÓN (solo Master o Admin por ahora) =====
-  if (isMaster() || isAdmin()) {
+  // ===== 1. BOTÓN DE GESTIÓN (Master, Admin o editor de propinas) =====
+  if (puedeGestionarPropinas()) {
     html += `
       <button class="btn-gestion" onclick="abrirGestionPropinas()">
         <i class="ti ti-settings"></i> GESTIÓN DE PROPINAS
@@ -3706,7 +3715,8 @@ const PERMISOS_DEF = [
   { key: 'editor_recetas',    label: 'Recetas',       icon: 'ti-chef-hat',       tipo: 'editor' },
   { key: 'editor_pedidos',    label: 'Pedidos',       icon: 'ti-shopping-cart',  tipo: 'editor' },
   { key: 'editor_insumos',    label: 'Insumos / Compras', icon: 'ti-package',    tipo: 'editor' },
-  { key: 'editor_stock',      label: 'Stock',         icon: 'ti-clipboard-check', tipo: 'editor' }
+  { key: 'editor_stock',      label: 'Stock',         icon: 'ti-clipboard-check', tipo: 'editor' },
+  { key: 'editor_cierres',    label: 'Cierres de caja', icon: 'ti-cash-register', tipo: 'editor' }
 ];
 
 async function openAdminEditores() {
@@ -4712,6 +4722,9 @@ let INSUMOS_BUSCAR_TIMEOUT = null;
 function puedeGestionarInsumos() {
   return isMaster() || isAdmin() || (currentUser && currentUser.editor_insumos === true);
 }
+function puedeEditarInsumos() {
+  return isMaster() || isAdmin();
+}
 
 // Volver desde Insumos: Admin/Master -> panel Administración; editor de Compras -> inicio
 window.volverDeInsumos = function() {
@@ -4727,6 +4740,9 @@ async function openAdminInsumos() {
   }
 
   showView('vAdminInsumos');
+
+  const _nb = document.getElementById('insumoNuevoBtn');
+  if (_nb) _nb.style.display = puedeEditarInsumos() ? '' : 'none';
 
   // Reset filtros si es primera vez
   document.getElementById('insumoBuscar').value = INSUMOS_FILTRO_TEXTO;
@@ -4924,14 +4940,14 @@ function renderInsumosLista() {
           </div>
           ${i.subfamilia ? `<div class="insumo-meta" style="margin-top:6px"><i class="ti ti-tag" style="font-size:11px;vertical-align:-1px"></i> ${esc(i.subfamilia)}</div>` : ''}
         </div>
-        <div class="insumo-actions">
+        ${puedeEditarInsumos() ? `<div class="insumo-actions">
           <button class="bib-btn-edit" onclick="openModalInsumo(${i.id})" title="Editar">
             <i class="ti ti-edit"></i>
           </button>
           <button class="bib-btn-delete" onclick="borrarInsumo(${i.id})" title="Borrar">
             <i class="ti ti-trash"></i>
           </button>
-        </div>
+        </div>` : ''}
       </div>`;
   });
   cont.innerHTML = html;
@@ -5010,6 +5026,7 @@ window.limpiarFiltrosInsumos = function() {
 // MODAL: CREAR / EDITAR INSUMO
 // ============================================
 function openModalInsumo(id) {
+  if (!puedeEditarInsumos()) { toast('Solo Master/Admin puede editar insumos', 'error'); return; }
   INSUMO_EDITANDO = id;
   const ins = id ? INSUMOS_DB.find(x => x.id === id) : null;
 
@@ -5074,7 +5091,7 @@ function actualizarCostoUnidad() {
 }
 
 async function guardarInsumo(validar) {
-  if (!puedeGestionarInsumos()) { toast('No tenés permiso para esta acción', 'error'); return; }
+  if (!puedeEditarInsumos()) { toast('Solo Master/Admin puede editar insumos', 'error'); return; }
   const nombre = document.getElementById('insNombre').value.trim();
   const formato = document.getElementById('insFormato').value.trim();
   const unidad = document.getElementById('insUnidad').value;
@@ -5143,7 +5160,7 @@ async function guardarInsumo(validar) {
 }
 
 async function borrarInsumo(id) {
-  if (!puedeGestionarInsumos()) { toast('No tenés permiso para esta acción', 'error'); return; }
+  if (!puedeEditarInsumos()) { toast('Solo Master/Admin puede editar insumos', 'error'); return; }
   const ins = INSUMOS_DB.find(x => x.id === id);
   if (!ins) return;
 
@@ -6550,11 +6567,17 @@ function stockRenderArticulos() {
   }).join('');
   body.innerHTML = html;
 }
+const STOCK_UNIDADES = ['unidad', 'litros', 'kilos'];
+function stockUnidadOptions(sel) {
+  const us = STOCK_UNIDADES.slice();
+  if (sel && us.indexOf(sel) === -1) us.unshift(sel);
+  return us.map(u => '<option value="' + esc(u) + '"' + (u === sel ? ' selected' : '') + '>' + esc(u) + '</option>').join('');
+}
 window.abrirNuevoStockArticulo = function() {
   STOCK_ART_EDIT = null;
   document.getElementById('stockArtTitulo').textContent = 'Nuevo art\u00edculo';
   document.getElementById('saNombre').value = '';
-  document.getElementById('saUnidad').value = '';
+  document.getElementById('saUnidad').innerHTML = stockUnidadOptions('unidad');
   document.getElementById('saActivo').checked = true;
   stockLlenarLocalesGrid([]);
   document.getElementById('saError').textContent = '';
@@ -6566,7 +6589,7 @@ window.abrirEditarStockArticulo = function(id) {
   STOCK_ART_EDIT = id;
   document.getElementById('stockArtTitulo').textContent = 'Editar art\u00edculo';
   document.getElementById('saNombre').value = a.nombre || '';
-  document.getElementById('saUnidad').value = a.unidad || '';
+  document.getElementById('saUnidad').innerHTML = stockUnidadOptions(a.unidad || 'unidad');
   document.getElementById('saActivo').checked = !!a.activo;
   stockLlenarLocalesGrid(a.locales || []);
   document.getElementById('saError').textContent = '';
@@ -6658,6 +6681,154 @@ window.stockDescargarReporte = function() {
     };
   });
   exportarAExcel('stock_' + STOCK_LOCAL + '_' + hoyStr(), [{ nombre: 'Stock', filas: filas }]);
+};
+
+
+
+// ============================================
+// MIS CIERRES (cierres_caja)
+// ============================================
+function puedeGestionarCierres() {
+  return isMaster() || isAdmin() || (currentUser && currentUser.editor_cierres === true);
+}
+function puedeEditarCierres() { return isMaster() || isAdmin(); }
+function cierresLocalesPermitidos() {
+  const activos = getLocalesActivos();
+  if (isMaster() || isAdmin()) return activos;
+  const mios = (currentUser && currentUser.locales_asignados) || [];
+  return activos.filter(l => mios.indexOf(l) !== -1);
+}
+const CIERRE_CAJA_TURNOS = [['mediodia', 'Mediod\u00eda'], ['noche', 'Noche'], ['evento', 'Evento'], ['especial', 'Especial']];
+function ccTurnoLabel(t) { const f = CIERRE_CAJA_TURNOS.find(x => x[0] === t); return f ? f[1] : (t || '\u2014'); }
+
+let CC_LOCAL_FILTRO = '', CC_LISTA = [], CC_EDIT = null;
+
+async function openMisCierres() {
+  if (!puedeGestionarCierres()) { showDashboard(); return; }
+  showView('vMisCierres');
+  const locs = cierresLocalesPermitidos();
+  document.getElementById('ccLocalFiltro').innerHTML = '<option value="">Todos mis locales</option>' +
+    locs.map(l => '<option value="' + esc(l) + '">' + esc(LOCAL_LABELS[l] || l) + '</option>').join('');
+  document.getElementById('ccNuevoBtn').style.display = locs.length ? '' : 'none';
+  await cargarCierres();
+}
+window.onFiltroCierres = function() {
+  CC_LOCAL_FILTRO = document.getElementById('ccLocalFiltro').value;
+  cargarCierres();
+};
+async function cargarCierres() {
+  const lista = document.getElementById('cierresLista');
+  lista.innerHTML = '<div class="loading">Cargando...</div>';
+  const locs = cierresLocalesPermitidos();
+  try {
+    let q = 'cierres_caja?select=*&order=fecha.desc,id.desc&limit=300';
+    if (CC_LOCAL_FILTRO) q += '&local=eq.' + encodeURIComponent(CC_LOCAL_FILTRO);
+    else if (!isMaster() && !isAdmin()) {
+      if (!locs.length) { lista.innerHTML = '<div class="empty-list">No ten\u00e9s locales asignados.</div>'; return; }
+      q += '&local=in.(' + locs.map(encodeURIComponent).join(',') + ')';
+    }
+    CC_LISTA = await api(q) || [];
+    renderCierres();
+  } catch (e) {
+    lista.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los cierres.<br><span style="font-size:11px;opacity:.7">' + esc(String((e && e.message) || e)) + '</span></div>';
+  }
+}
+function renderCierres() {
+  const lista = document.getElementById('cierresLista');
+  if (!CC_LISTA.length) { lista.innerHTML = '<div class="empty-list">No hay cierres cargados todav\u00eda.</div>'; return; }
+  const puedeEd = puedeEditarCierres();
+  lista.innerHTML = CC_LISTA.map(c => {
+    const prom = (c.pax && c.pax > 0) ? (c.ventas_total / c.pax) : null;
+    const click = puedeEd ? ' onclick="abrirEditarCierreCaja(' + c.id + ')" style="cursor:pointer"' : '';
+    return '<div class="ped-card"' + click + '>' +
+      '<div class="ped-card-top"><span class="ped-local">' + esc(LOCAL_LABELS[c.local] || c.local) + '</span>' +
+      '<span class="cc-venta">$' + formatNumber(c.ventas_total || 0) + '</span></div>' +
+      '<div class="ped-card-sub">' + pedFecha(c.fecha) + ' \u00b7 ' + esc(ccTurnoLabel(c.turno)) + ' \u00b7 ' + (c.pax || 0) + ' pax' +
+      (prom != null ? (' \u00b7 $' + formatNumber(prom) + '/pax') : '') + '</div></div>';
+  }).join('');
+}
+
+window.abrirNuevoCierreCaja = function() {
+  const locs = cierresLocalesPermitidos();
+  if (!locs.length) return;
+  CC_EDIT = null;
+  document.getElementById('ccModalTitulo').textContent = 'Nuevo cierre';
+  document.getElementById('ccLocal').innerHTML = locs.map(l => '<option value="' + esc(l) + '">' + esc(LOCAL_LABELS[l] || l) + '</option>').join('');
+  document.getElementById('ccLocal').disabled = false;
+  document.getElementById('ccFecha').value = hoyStr();
+  document.getElementById('ccTurno').innerHTML = CIERRE_CAJA_TURNOS.map(t => '<option value="' + t[0] + '"' + (t[0] === 'noche' ? ' selected' : '') + '>' + t[1] + '</option>').join('');
+  document.getElementById('ccVentas').value = '';
+  document.getElementById('ccPax').value = '';
+  document.getElementById('ccObs').value = '';
+  document.getElementById('ccProm').textContent = '';
+  document.getElementById('ccError').textContent = '';
+  document.getElementById('ccBorrarBtn').style.display = 'none';
+  document.getElementById('modalCierreCaja').classList.add('show');
+};
+window.abrirEditarCierreCaja = function(id) {
+  if (!puedeEditarCierres()) return;
+  const c = CC_LISTA.find(x => x.id === id);
+  if (!c) return;
+  CC_EDIT = id;
+  document.getElementById('ccModalTitulo').textContent = 'Editar cierre';
+  document.getElementById('ccLocal').innerHTML = '<option value="' + esc(c.local) + '">' + esc(LOCAL_LABELS[c.local] || c.local) + '</option>';
+  document.getElementById('ccLocal').disabled = true;
+  document.getElementById('ccFecha').value = c.fecha ? String(c.fecha).slice(0, 10) : hoyStr();
+  document.getElementById('ccTurno').innerHTML = CIERRE_CAJA_TURNOS.map(t => '<option value="' + t[0] + '"' + (t[0] === c.turno ? ' selected' : '') + '>' + t[1] + '</option>').join('');
+  document.getElementById('ccVentas').value = c.ventas_total != null ? c.ventas_total : '';
+  document.getElementById('ccPax').value = c.pax != null ? c.pax : '';
+  document.getElementById('ccObs').value = c.observaciones || '';
+  ccCalcProm();
+  document.getElementById('ccError').textContent = '';
+  document.getElementById('ccBorrarBtn').style.display = (isMaster() || isAdmin()) ? '' : 'none';
+  document.getElementById('modalCierreCaja').classList.add('show');
+};
+window.closeCierreCaja = function() { document.getElementById('modalCierreCaja').classList.remove('show'); };
+window.ccCalcProm = function() {
+  const v = parseFloat(document.getElementById('ccVentas').value);
+  const p = parseInt(document.getElementById('ccPax').value, 10);
+  const el = document.getElementById('ccProm');
+  if (!isNaN(v) && !isNaN(p) && p > 0) el.textContent = 'Promedio por pax: $' + formatNumber(v / p);
+  else el.textContent = '';
+};
+window.guardarCierreCaja = async function() {
+  const err = document.getElementById('ccError'); err.textContent = '';
+  const local = document.getElementById('ccLocal').value;
+  const fecha = document.getElementById('ccFecha').value;
+  const turno = document.getElementById('ccTurno').value;
+  const ventas = parseFloat(document.getElementById('ccVentas').value);
+  const pax = parseInt(document.getElementById('ccPax').value, 10);
+  if (!local) { err.textContent = 'Eleg\u00ed un local.'; return; }
+  if (!fecha) { err.textContent = 'Eleg\u00ed la fecha.'; return; }
+  if (isNaN(ventas) || ventas < 0) { err.textContent = 'Carg\u00e1 las ventas totales.'; return; }
+  if (isNaN(pax) || pax < 0) { err.textContent = 'Carg\u00e1 la cantidad de pax.'; return; }
+  const payload = { local: local, fecha: fecha, turno: turno, ventas_total: ventas, pax: pax, observaciones: document.getElementById('ccObs').value.trim() || null };
+  const btn = document.getElementById('ccGuardarBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
+  try {
+    if (CC_EDIT) {
+      await api('cierres_caja?id=eq.' + CC_EDIT, { method: 'PATCH', body: JSON.stringify(payload) });
+    } else {
+      const dup = await api('cierres_caja?local=eq.' + encodeURIComponent(local) + '&fecha=eq.' + fecha + '&turno=eq.' + turno + '&select=id') || [];
+      if (dup.length) { err.textContent = 'Ya hay un cierre para ese local, fecha y turno. Si hay que corregirlo, ped\u00edselo a un Admin.'; btn.disabled = false; btn.textContent = t; return; }
+      payload.creado_por = currentUser ? currentUser.id : null;
+      await api('cierres_caja', { method: 'POST', body: JSON.stringify(payload) });
+    }
+    closeCierreCaja();
+    await cargarCierres();
+    toast('\u2713 Cierre guardado', 'success');
+  } catch (e) { err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e); }
+  finally { btn.disabled = false; btn.textContent = t; }
+};
+window.borrarCierreCaja = async function() {
+  if (!CC_EDIT || !(isMaster() || isAdmin())) return;
+  const ok = await showConfirm({ title: 'Eliminar cierre', msg: 'Se va a eliminar este cierre de caja. \u00bfSeguro?', danger: true, okLabel: 'Eliminar' });
+  if (!ok) return;
+  try {
+    await api('cierres_caja?id=eq.' + CC_EDIT, { method: 'DELETE' });
+    closeCierreCaja();
+    await cargarCierres();
+    toast('Cierre eliminado', 'success');
+  } catch (e) { toast('No se pudo eliminar', 'error'); }
 };
 
 

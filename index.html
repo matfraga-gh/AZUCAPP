@@ -695,6 +695,37 @@
 <!-- ============================================
      MODAL: ARTÍCULO DE STOCK (Admin)
 ============================================ -->
+<!-- ============================================
+     MODAL: CIERRE DE CAJA
+============================================ -->
+<div class="modal-overlay" id="modalCierreCaja">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title" id="ccModalTitulo">Nuevo cierre</h2>
+      <button class="modal-close" onclick="closeCierreCaja()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <label class="field"><span class="field-label">Local</span><select id="ccLocal"></select></label>
+      <div class="cierre-row2">
+        <label class="field"><span class="field-label">Fecha</span><input type="date" id="ccFecha"></label>
+        <label class="field"><span class="field-label">Turno</span><select id="ccTurno"></select></label>
+      </div>
+      <div class="cierre-row2">
+        <label class="field"><span class="field-label">Ventas totales ($)</span><input type="number" step="any" min="0" id="ccVentas" oninput="ccCalcProm()"></label>
+        <label class="field"><span class="field-label">Pax (cubiertos)</span><input type="number" min="0" id="ccPax" oninput="ccCalcProm()"></label>
+      </div>
+      <div class="cc-prom" id="ccProm"></div>
+      <label class="field"><span class="field-label">Observaciones</span><textarea id="ccObs" rows="2" placeholder="Opcional"></textarea></label>
+      <div class="login-error" id="ccError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost ped-danger" id="ccBorrarBtn" style="display:none;" onclick="borrarCierreCaja()">Eliminar</button>
+      <button class="btn-ghost" onclick="closeCierreCaja()">Cancelar</button>
+      <button class="btn-primary" id="ccGuardarBtn" onclick="guardarCierreCaja()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalStockArticulo">
   <div class="modal-card">
     <div class="modal-header">
@@ -1536,6 +1567,25 @@
 <!-- ============================================
      VISTA: MIS DATOS
 ============================================ -->
+<!-- ============================================
+     VISTA: MIS CIERRES
+============================================ -->
+<div id="vMisCierres" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Mis Cierres</div>
+        <div class="module-subtitle">Cierre de caja por local y turno</div>
+      </div>
+    </div>
+    <label class="field"><span class="field-label">Local</span>
+      <select id="ccLocalFiltro" onchange="onFiltroCierres()"></select></label>
+    <button class="btn-primary" id="ccNuevoBtn" style="width:100%;margin:12px 0 14px;" onclick="abrirNuevoCierreCaja()"><i class="ti ti-plus"></i> Nuevo cierre</button>
+    <div id="cierresLista"><div class="loading">Cargando...</div></div>
+  </div>
+</div>
+
 <!-- ============================================
      VISTA: MI STOCK
 ============================================ -->
