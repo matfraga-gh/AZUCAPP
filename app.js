@@ -6131,7 +6131,8 @@ function puedeGestionarPedidos() {
   return isMaster() || isAdmin() || (currentUser && currentUser.editor_pedidos === true);
 }
 function pedLocalesPermitidos() {
-  const activos = getLocalesActivos();
+  const tv = getSlugTransversal();
+  const activos = getLocalesActivos().filter(l => l !== tv);
   if (isMaster() || isAdmin()) return activos;
   const mios = (currentUser && currentUser.locales_asignados) || [];
   return activos.filter(l => mios.indexOf(l) !== -1);
@@ -6334,6 +6335,7 @@ function renderEditorPedido() {
   if (editable) html += '<button class="btn-ghost" style="width:100%;margin-top:8px;" onclick="agregarItemPedido()"><i class="ti ti-plus"></i> Agregar insumo</button>';
   html += '</div>';
 
+  if (recepcion) html += '<div class="ped-recep-hint">“Guardar sin cerrar” guarda lo que recibiste y deja el pedido abierto para seguir cargando más tarde. “Cerrar pedido (recibido)” lo da por recibido y finalizado (ya no se edita).</div>';
   html += '<div class="ped-actions">';
   if (editable) {
     html += '<button class="btn-ghost" onclick="guardarPedido(false)">Guardar borrador</button>';
