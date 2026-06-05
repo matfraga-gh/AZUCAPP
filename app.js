@@ -4825,6 +4825,24 @@ async function cargarSubfamiliasUnicas() {
   return cargarOpcionesUnicas();
 }
 
+function actualizarDatalistsInsumos() {
+  const norm = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const subF = norm(INSUMOS_FILTRO_SUBFAMILIA);
+  const provF = norm(INSUMOS_FILTRO_PROVEEDOR);
+  // Proveedores que tienen insumos en la subfamilia elegida
+  const provs = [...new Set(INSUMOS_DB
+    .filter(i => !subF || norm(i.subfamilia).includes(subF))
+    .map(i => i.proveedor).filter(Boolean))].sort();
+  // Subfamilias que tiene el proveedor elegido
+  const subs = [...new Set(INSUMOS_DB
+    .filter(i => !provF || norm(i.proveedor).includes(provF))
+    .map(i => i.subfamilia).filter(Boolean))].sort();
+  const dlProv = document.getElementById('insumoProveedorList');
+  if (dlProv) dlProv.innerHTML = provs.map(p => `<option value="${esc(p)}">`).join('');
+  const dlSub = document.getElementById('insumoSubfamiliaList');
+  if (dlSub) dlSub.innerHTML = subs.map(s => `<option value="${esc(s)}">`).join('');
+}
+
 function insumosFiltrados() {
   const txt = INSUMOS_FILTRO_TEXTO.toLowerCase().trim();
   // Normalizamos para tolerancia a tildes y mayúsculas
@@ -5030,6 +5048,7 @@ function onFiltroInsumo() {
     INSUMOS_FILTRO_SUBFAMILIA = document.getElementById('insumoSubfamilia').value;
     INSUMOS_FILTRO_PROVEEDOR  = document.getElementById('insumoProveedor').value;
     INSUMOS_FILTRO_ESTADO     = document.getElementById('insumoEstado').value;
+    actualizarDatalistsInsumos();
     INSUMOS_PAGE = 0;
     renderInsumosLista();
   }, 200);
@@ -5045,6 +5064,7 @@ window.limpiarFiltrosInsumos = function() {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  actualizarDatalistsInsumos();
   INSUMOS_PAGE = 0;
   renderInsumosLista();
 };
@@ -6255,7 +6275,7 @@ function renderItemPedido(it, i, editable, recepcion, completado) {
       '</div>';
   }
   if (recepcion || completado) {
-    const recep = ['completo', 'parcial', 'faltante'];
+    const recep = [['correcto', 'Recibido correcto'], ['observacion', 'Recibido con observación']];
     const er = it.estado_recepcion || '';
     const recibido = it.cantidad_recibida != null ? it.cantidad_recibida : '';
     const dis = completado ? ' disabled' : '';
@@ -6265,7 +6285,7 @@ function renderItemPedido(it, i, editable, recepcion, completado) {
       '<div class="ped-item-row">' +
         '<input class="ped-recibido" type="number" step="any" min="0" placeholder="Recibido" value="' + recibido + '"' + dis + '>' +
         '<select class="ped-recep-estado"' + dis + '><option value="">\u2014 estado \u2014</option>' +
-          recep.map(r => '<option value="' + r + '"' + (er === r ? ' selected' : '') + '>' + r + '</option>').join('') + '</select></div>' +
+          recep.map(r => '<option value="' + r[0] + '"' + (er === r[0] ? ' selected' : '') + '>' + r[1] + '</option>').join('') + '</select></div>' +
       '<input class="ped-recep-coment" type="text" placeholder="Comentario recepci\u00f3n (opc.)" value="' + esc(it.comentario_recepcion || '') + '"' + dis + '>' +
       '</div>';
   }
@@ -6327,7 +6347,7 @@ function renderEditorPedido() {
       html += '<div class="ped-info" style="width:100%"><span>Estado</span><strong>Esperando confirmaci\u00f3n de un Admin</strong></div>';
     }
   } else if (recepcion) {
-    html += '<button class="btn-ghost" onclick="guardarRecepcion(false)">Guardar recepci\u00f3n</button>';
+    html += '<button class="btn-ghost" onclick="guardarRecepcion(false)">Guardar sin cerrar</button>';
     html += '<button class="btn-primary" onclick="guardarRecepcion(true)">Cerrar pedido (recibido)</button>';
   }
   html += '</div>';
