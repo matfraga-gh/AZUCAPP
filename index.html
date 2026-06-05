@@ -111,6 +111,8 @@
 
     <div class="dash-grid" id="dashGrid"></div>
 
+    <button class="dash-logout" onclick="doLogout()"><i class="ti ti-logout"></i> Cerrar sesión</button>
+
   </div>
 </div>
 
@@ -690,6 +692,35 @@
 <!-- ============================================
      MODAL: EDITAR / NUEVA PLANTILLA
 ============================================ -->
+<!-- ============================================
+     MODAL: ARTÍCULO DE STOCK (Admin)
+============================================ -->
+<div class="modal-overlay" id="modalStockArticulo">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title" id="stockArtTitulo">Nuevo artículo</h2>
+      <button class="modal-close" onclick="closeStockArticulo()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <label class="field"><span class="field-label">Nombre</span>
+        <input type="text" id="saNombre" placeholder="Ej: Copa Riedel Degustazione"></label>
+      <label class="field"><span class="field-label">Unidad (opcional)</span>
+        <input type="text" id="saUnidad" placeholder="Ej: unidad, copa, botella"></label>
+      <p class="field-label" style="margin-bottom:6px;">Locales donde se controla</p>
+      <div class="locales-grid" id="saLocalesGrid"></div>
+      <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:12px;cursor:pointer;">
+        <input type="checkbox" id="saActivo" checked style="width:auto;">
+        <span class="field-label" style="margin:0;">Artículo activo</span>
+      </label>
+      <div class="login-error" id="saError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeStockArticulo()">Cancelar</button>
+      <button class="btn-primary" id="saGuardarBtn" onclick="guardarStockArticulo()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalPlantilla">
   <div class="modal-card">
     <div class="modal-header">
@@ -1505,6 +1536,27 @@
 <!-- ============================================
      VISTA: MIS DATOS
 ============================================ -->
+<!-- ============================================
+     VISTA: MI STOCK
+============================================ -->
+<div id="vMiStock" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Mi Stock</div>
+        <div class="module-subtitle">Control de stock por local</div>
+      </div>
+    </div>
+    <div id="stockTabs" class="stock-tabs" style="display:none;">
+      <button class="stock-tab active" data-tab="cargar" onclick="stockCambiarTab('cargar')">Cargar</button>
+      <button class="stock-tab" data-tab="articulos" onclick="stockCambiarTab('articulos')">Artículos</button>
+      <button class="stock-tab" data-tab="reportes" onclick="stockCambiarTab('reportes')">Reportes</button>
+    </div>
+    <div id="stockBody"></div>
+  </div>
+</div>
+
 <!-- ============================================
      VISTA: MIS PEDIDOS
 ============================================ -->

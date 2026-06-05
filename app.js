@@ -459,6 +459,15 @@ const MODULES = [
     action: () => openMisPedidos()
   },
   {
+    id: 'stock',
+    icon: 'ti-clipboard-check',
+    color: '#1D9E75',
+    title: 'Mi Stock',
+    desc: 'Control de stock por local',
+    visible: () => puedeGestionarStock(),
+    action: () => openMiStock()
+  },
+  {
     id: 'insumos',
     icon: 'ti-package',
     color: '#EF9F27',
@@ -3696,7 +3705,8 @@ const PERMISOS_DEF = [
   { key: 'editor_biblioteca', label: 'Biblioteca',    icon: 'ti-books',          tipo: 'editor' },
   { key: 'editor_recetas',    label: 'Recetas',       icon: 'ti-chef-hat',       tipo: 'editor' },
   { key: 'editor_pedidos',    label: 'Pedidos',       icon: 'ti-shopping-cart',  tipo: 'editor' },
-  { key: 'editor_insumos',    label: 'Insumos / Compras', icon: 'ti-package',    tipo: 'editor' }
+  { key: 'editor_insumos',    label: 'Insumos / Compras', icon: 'ti-package',    tipo: 'editor' },
+  { key: 'editor_stock',      label: 'Stock',         icon: 'ti-clipboard-check', tipo: 'editor' }
 ];
 
 async function openAdminEditores() {
@@ -6399,6 +6409,257 @@ window.eliminarPersona = async function(empId, userId) {
     try { openPersonal(); } catch (_) {}
   }
 };
+
+
+// ============================================
+// MI STOCK (stock_articulos + stock_conteos)
+// ============================================
+function puedeGestionarStock() {
+  return isMaster() || isAdmin() || (currentUser && currentUser.editor_stock === true);
+}
+function stockLocalesPermitidos() {
+  const activos = getLocalesActivos();
+  if (isMaster() || isAdmin()) return activos;
+  const mios = (currentUser && currentUser.locales_asignados) || [];
+  return activos.filter(l => mios.indexOf(l) !== -1);
+}
+let STOCK_TAB = 'cargar', STOCK_LOCAL = '';
+let STOCK_ARTICULOS = [], STOCK_CONTEOS_LOCAL = {}, STOCK_ART_EDIT = null;
+
+async function openMiStock() {
+  if (!puedeGestionarStock()) { showDashboard(); return; }
+  showView('vMiStock');
+  const esAdmin = isMaster() || isAdmin();
+  document.getElementById('stockTabs').style.display = esAdmin ? 'flex' : 'none';
+  STOCK_TAB = 'cargar';
+  document.querySelectorAll('#stockTabs .stock-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === 'cargar'));
+  const locs = stockLocalesPermitidos();
+  STOCK_LOCAL = locs.length ? locs[0] : '';
+  await cargarStockArticulos();
+  stockRender();
+}
+async function cargarStockArticulos() {
+  try { STOCK_ARTICULOS = await api('stock_articulos?select=*&order=nombre.asc') || []; }
+  catch (e) { STOCK_ARTICULOS = []; console.warn('stock articulos:', e); }
+}
+async function cargarConteosLocal(local) {
+  STOCK_CONTEOS_LOCAL = {};
+  try {
+    const rows = await api('stock_conteos?local=eq.' + encodeURIComponent(local) + '&select=*&order=fecha.desc') || [];
+    rows.forEach(r => {
+      if (!STOCK_CONTEOS_LOCAL[r.articulo_id]) STOCK_CONTEOS_LOCAL[r.articulo_id] = [];
+      STOCK_CONTEOS_LOCAL[r.articulo_id].push(r);
+    });
+  } catch (e) { console.warn('conteos:', e); }
+}
+window.stockCambiarTab = function(tab) {
+  STOCK_TAB = tab;
+  document.querySelectorAll('#stockTabs .stock-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  stockRender();
+};
+window.stockOnChangeLocal = function() {
+  STOCK_LOCAL = document.getElementById('stockLocalSel').value;
+  if (STOCK_TAB === 'reportes' && (isMaster() || isAdmin())) stockRenderReportes();
+  else stockRenderCargar();
+};
+function stockRender() {
+  const tab = (isMaster() || isAdmin()) ? STOCK_TAB : 'cargar';
+  if (tab === 'articulos') stockRenderArticulos();
+  else if (tab === 'reportes') stockRenderReportes();
+  else stockRenderCargar();
+}
+
+// ---- CARGAR (editor y admin) ----
+async function stockRenderCargar() {
+  const body = document.getElementById('stockBody');
+  const locs = stockLocalesPermitidos();
+  if (!locs.length) { body.innerHTML = '<div class="empty-list">No ten\u00e9s locales asignados.</div>'; return; }
+  if (locs.indexOf(STOCK_LOCAL) === -1) STOCK_LOCAL = locs[0];
+  body.innerHTML = '<label class="field"><span class="field-label">Local</span><select id="stockLocalSel" onchange="stockOnChangeLocal()">' +
+    locs.map(l => '<option value="' + esc(l) + '"' + (l === STOCK_LOCAL ? ' selected' : '') + '>' + esc(LOCAL_LABELS[l] || l) + '</option>').join('') +
+    '</select></label><div id="stockCargarLista"><div class="loading">Cargando...</div></div>';
+  await cargarConteosLocal(STOCK_LOCAL);
+  stockRenderCargarLista();
+}
+function stockRenderCargarLista() {
+  const cont = document.getElementById('stockCargarLista');
+  if (!cont) return;
+  const arts = STOCK_ARTICULOS.filter(a => a.activo && (a.locales || []).indexOf(STOCK_LOCAL) !== -1);
+  if (!arts.length) { cont.innerHTML = '<div class="empty-list">No hay art\u00edculos asignados a este local todav\u00eda.</div>'; return; }
+  cont.innerHTML = arts.map(a => {
+    const hist = STOCK_CONTEOS_LOCAL[a.id] || [];
+    const ult = hist.length ? hist[0] : null;
+    const ultTxt = ult ? (fmtCant(ult.cantidad) + (a.unidad ? ' ' + esc(a.unidad) : '') + ' \u00b7 ' + pedFecha(ult.fecha)) : 'Sin registros previos';
+    return '<div class="stock-art" data-art="' + a.id + '" data-ult="' + (ult ? ult.cantidad : '') + '">' +
+      '<div class="stock-art-head"><span class="stock-art-nom">' + esc(a.nombre) + '</span></div>' +
+      '<div class="stock-art-ult">\u00daltimo: ' + ultTxt + '</div>' +
+      '<div class="stock-art-row">' +
+        '<input class="stock-art-input" type="number" step="any" min="0" placeholder="Stock actual' + (a.unidad ? ' (' + esc(a.unidad) + ')' : '') + '" oninput="stockCalcDiff(this)">' +
+        '<span class="stock-art-diff"></span></div>' +
+      '<input class="stock-art-coment" type="text" placeholder="Comentario (opcional)">' +
+      '</div>';
+  }).join('') +
+    '<button class="btn-primary" style="width:100%;margin-top:8px;" onclick="guardarStockConteos()"><i class="ti ti-device-floppy"></i> Guardar stock</button>';
+}
+window.stockCalcDiff = function(input) {
+  const block = input.closest('.stock-art');
+  const diffEl = block.querySelector('.stock-art-diff');
+  const ult = parseFloat(block.dataset.ult);
+  const val = parseFloat(input.value);
+  if (isNaN(val) || isNaN(ult)) { diffEl.textContent = ''; diffEl.className = 'stock-art-diff'; return; }
+  if (ult === 0) { diffEl.textContent = ''; diffEl.className = 'stock-art-diff'; return; }
+  const pct = ((val - ult) / ult) * 100;
+  diffEl.textContent = (pct > 0 ? '+' : '') + pct.toFixed(1) + '%';
+  diffEl.className = 'stock-art-diff ' + (pct < 0 ? 'baja' : (pct > 0 ? 'sube' : ''));
+};
+window.guardarStockConteos = async function() {
+  const blocks = document.querySelectorAll('#stockCargarLista .stock-art');
+  const payload = [];
+  blocks.forEach(b => {
+    const val = b.querySelector('.stock-art-input').value;
+    if (val === '' || isNaN(parseFloat(val))) return;
+    payload.push({
+      articulo_id: parseInt(b.dataset.art, 10),
+      local: STOCK_LOCAL,
+      cantidad: parseFloat(val),
+      comentario: b.querySelector('.stock-art-coment').value.trim() || null,
+      editor_id: currentUser ? currentUser.id : null
+    });
+  });
+  if (!payload.length) { toast('Carg\u00e1 al menos un stock', 'warning'); return; }
+  try {
+    await api('stock_conteos', { method: 'POST', body: JSON.stringify(payload) });
+    toast('\u2713 Stock guardado', 'success');
+    await cargarConteosLocal(STOCK_LOCAL);
+    stockRenderCargarLista();
+  } catch (e) { toast('No se pudo guardar: ' + ((e && e.message) || e), 'error'); }
+};
+
+// ---- ARTÍCULOS (admin) ----
+function stockRenderArticulos() {
+  const body = document.getElementById('stockBody');
+  let html = '<button class="btn-primary" style="width:100%;margin-bottom:14px;" onclick="abrirNuevoStockArticulo()"><i class="ti ti-plus"></i> Nuevo art\u00edculo</button>';
+  if (!STOCK_ARTICULOS.length) { body.innerHTML = html + '<div class="empty-list">Todav\u00eda no hay art\u00edculos. Cre\u00e1 el primero.</div>'; return; }
+  html += STOCK_ARTICULOS.map(a => {
+    const locs = (a.locales || []).map(l => LOCAL_LABELS[l] || l).join(', ') || 'Sin locales asignados';
+    const inact = a.activo ? '' : ' <span style="color:var(--c-muted);font-weight:400;font-size:11px;">(inactivo)</span>';
+    return '<div class="ped-card" onclick="abrirEditarStockArticulo(' + a.id + ')"' + (a.activo ? '' : ' style="opacity:.55;"') + '>' +
+      '<div class="ped-card-top"><span class="ped-local">' + esc(a.nombre) + inact + '</span>' +
+      (a.unidad ? '<span style="font-size:11px;color:var(--c-muted);">' + esc(a.unidad) + '</span>' : '') + '</div>' +
+      '<div class="ped-card-sub">' + esc(locs) + '</div></div>';
+  }).join('');
+  body.innerHTML = html;
+}
+window.abrirNuevoStockArticulo = function() {
+  STOCK_ART_EDIT = null;
+  document.getElementById('stockArtTitulo').textContent = 'Nuevo art\u00edculo';
+  document.getElementById('saNombre').value = '';
+  document.getElementById('saUnidad').value = '';
+  document.getElementById('saActivo').checked = true;
+  stockLlenarLocalesGrid([]);
+  document.getElementById('saError').textContent = '';
+  document.getElementById('modalStockArticulo').classList.add('show');
+};
+window.abrirEditarStockArticulo = function(id) {
+  const a = STOCK_ARTICULOS.find(x => x.id === id);
+  if (!a) return;
+  STOCK_ART_EDIT = id;
+  document.getElementById('stockArtTitulo').textContent = 'Editar art\u00edculo';
+  document.getElementById('saNombre').value = a.nombre || '';
+  document.getElementById('saUnidad').value = a.unidad || '';
+  document.getElementById('saActivo').checked = !!a.activo;
+  stockLlenarLocalesGrid(a.locales || []);
+  document.getElementById('saError').textContent = '';
+  document.getElementById('modalStockArticulo').classList.add('show');
+};
+function stockLlenarLocalesGrid(sel) {
+  document.getElementById('saLocalesGrid').innerHTML = getLocalesActivos().map(loc => {
+    const on = sel.indexOf(loc) !== -1;
+    return '<label class="local-check' + (on ? ' activo' : '') + '" data-local="' + esc(loc) + '"><input type="checkbox" ' + (on ? 'checked' : '') + '>' + esc(LOCAL_LABELS[loc] || loc) + '</label>';
+  }).join('');
+  document.querySelectorAll('#saLocalesGrid .local-check').forEach(el => {
+    el.addEventListener('click', (e) => { e.preventDefault(); el.classList.toggle('activo'); el.querySelector('input').checked = el.classList.contains('activo'); });
+  });
+}
+window.closeStockArticulo = function() { document.getElementById('modalStockArticulo').classList.remove('show'); };
+window.guardarStockArticulo = async function() {
+  const err = document.getElementById('saError'); err.textContent = '';
+  const nombre = document.getElementById('saNombre').value.trim();
+  if (!nombre) { err.textContent = 'Pon\u00e9 un nombre.'; return; }
+  const locales = Array.from(document.querySelectorAll('#saLocalesGrid .local-check.activo')).map(el => el.dataset.local);
+  const payload = {
+    nombre: nombre,
+    unidad: document.getElementById('saUnidad').value.trim() || null,
+    locales: locales,
+    activo: document.getElementById('saActivo').checked
+  };
+  const btn = document.getElementById('saGuardarBtn');
+  btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
+  try {
+    if (STOCK_ART_EDIT) {
+      await api('stock_articulos?id=eq.' + STOCK_ART_EDIT, { method: 'PATCH', body: JSON.stringify(payload) });
+    } else {
+      payload.creado_por = currentUser ? currentUser.id : null;
+      await api('stock_articulos', { method: 'POST', body: JSON.stringify(payload) });
+    }
+    closeStockArticulo();
+    await cargarStockArticulos();
+    stockRender();
+    toast('\u2713 Art\u00edculo guardado', 'success');
+  } catch (e) { err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e); }
+  finally { btn.disabled = false; btn.textContent = t; }
+};
+
+// ---- REPORTES (admin) ----
+async function stockRenderReportes() {
+  const body = document.getElementById('stockBody');
+  const locs = stockLocalesPermitidos();
+  if (!locs.length) { body.innerHTML = '<div class="empty-list">No hay locales.</div>'; return; }
+  if (locs.indexOf(STOCK_LOCAL) === -1) STOCK_LOCAL = locs[0];
+  body.innerHTML = '<div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;">' +
+    '<label class="field" style="flex:1;"><span class="field-label">Local</span><select id="stockLocalSel" onchange="stockOnChangeLocal()">' +
+    locs.map(l => '<option value="' + esc(l) + '"' + (l === STOCK_LOCAL ? ' selected' : '') + '>' + esc(LOCAL_LABELS[l] || l) + '</option>').join('') +
+    '</select></label>' +
+    '<button class="btn-ghost" onclick="stockDescargarReporte()"><i class="ti ti-download"></i> Excel</button></div>' +
+    '<div id="stockReporteLista"><div class="loading">Cargando...</div></div>';
+  await cargarConteosLocal(STOCK_LOCAL);
+  stockRenderReporteLista();
+}
+function stockRenderReporteLista() {
+  const cont = document.getElementById('stockReporteLista');
+  if (!cont) return;
+  const arts = STOCK_ARTICULOS.filter(a => (a.locales || []).indexOf(STOCK_LOCAL) !== -1);
+  if (!arts.length) { cont.innerHTML = '<div class="empty-list">No hay art\u00edculos asignados a este local.</div>'; return; }
+  cont.innerHTML = arts.map(a => {
+    const hist = STOCK_CONTEOS_LOCAL[a.id] || [];
+    const ult = hist.length ? hist[0] : null;
+    const prev = hist.length > 1 ? hist[1] : null;
+    let diff = '';
+    if (ult && prev && parseFloat(prev.cantidad) !== 0) {
+      const pct = ((ult.cantidad - prev.cantidad) / prev.cantidad) * 100;
+      diff = '<span class="stock-art-diff ' + (pct < 0 ? 'baja' : (pct > 0 ? 'sube' : '')) + '">' + (pct > 0 ? '+' : '') + pct.toFixed(1) + '%</span>';
+    }
+    const inact = a.activo ? '' : ' (inactivo)';
+    return '<div class="stock-rep"><div class="stock-rep-top"><span class="stock-art-nom">' + esc(a.nombre) + esc(inact) + '</span>' + diff + '</div>' +
+      '<div class="stock-rep-sub">' + (ult ? (fmtCant(ult.cantidad) + (a.unidad ? ' ' + esc(a.unidad) : '') + ' \u00b7 ' + pedFecha(ult.fecha)) : 'Sin registros') + '</div></div>';
+  }).join('');
+}
+window.stockDescargarReporte = function() {
+  const arts = STOCK_ARTICULOS.filter(a => (a.locales || []).indexOf(STOCK_LOCAL) !== -1);
+  const filas = arts.map(a => {
+    const hist = STOCK_CONTEOS_LOCAL[a.id] || [];
+    const ult = hist.length ? hist[0] : null;
+    return {
+      'Art\u00edculo': a.nombre,
+      'Unidad': a.unidad || '',
+      '\u00daltimo stock': ult ? ult.cantidad : '',
+      'Fecha': ult ? pedFecha(ult.fecha) : '',
+      'Activo': a.activo ? 'S\u00ed' : 'No'
+    };
+  });
+  exportarAExcel('stock_' + STOCK_LOCAL + '_' + hoyStr(), [{ nombre: 'Stock', filas: filas }]);
+};
+
 
 init();
 
