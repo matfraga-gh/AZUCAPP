@@ -139,7 +139,7 @@
     <div class="kpi-grid" id="propGestKpis"></div>
 
     <!-- Exportar liquidación -->
-    <div style="display:flex; justify-content:flex-end; margin-bottom:14px;">
+    <div id="propExportWrap" style="display:flex; justify-content:flex-end; margin-bottom:14px;">
       <button class="btn-ghost" onclick="abrirLiquidacion()"><i class="ti ti-file-spreadsheet"></i> Exportar liquidación</button>
     </div>
 
@@ -544,7 +544,7 @@
         <div class="module-title">Insumos</div>
         <div class="module-subtitle" id="insumosCount">Cargando...</div>
       </div>
-      <button class="btn-config-propinas" onclick="openMenuGestion()" title="Gestionar subfamilias y proveedores">
+      <button class="btn-config-propinas" id="insumoGearBtn" onclick="openMenuGestion()" title="Gestionar subfamilias y proveedores">
         <i class="ti ti-settings"></i>
       </button>
     </div>
@@ -580,7 +580,7 @@
       <span id="insumosCountInline" style="font-size:13px; color:var(--c-sand); font-weight:600;">—</span>
       <div style="display:flex; gap:8px;">
         <button class="btn-ghost" onclick="limpiarFiltrosInsumos()"><i class="ti ti-filter-off"></i> Limpiar</button>
-        <button class="btn-ghost" onclick="exportarInsumosExcel()"><i class="ti ti-file-spreadsheet"></i> Exportar Excel</button>
+        <button class="btn-ghost" id="insumoExportBtn" onclick="exportarInsumosExcel()"><i class="ti ti-file-spreadsheet"></i> Exportar Excel</button>
       </div>
     </div>
 
@@ -966,6 +966,25 @@
 <!-- ============================================
      MODAL: DETALLE DE INCIDENCIA
 ============================================ -->
+<div class="modal-overlay" id="modalResolverInc">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title" id="giResTitulo">Incidencia</h2>
+      <button class="modal-close" onclick="closeResolverInc()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div id="giResInfo"></div>
+      <label class="field" style="margin-top:12px;"><span class="field-label">Comentario de respuesta (opcional)</span>
+        <textarea id="giResComent" rows="3" placeholder="Ej: dale, avisá con más tiempo la próxima"></textarea></label>
+      <div class="login-error" id="giResError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost ped-danger" onclick="rechazarIncidencia()">✗ Rechazar</button>
+      <button class="btn-primary" onclick="aceptarIncidencia()">✓ Aceptar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalIncDetalle">
   <div class="modal-card">
     <div class="modal-header">
@@ -1647,6 +1666,29 @@
       </div>
     </div>
     <div id="pedEditorBody"></div>
+  </div>
+</div>
+
+<!-- ============================================
+     VISTA: GESTIÓN DE INCIDENCIAS
+============================================ -->
+<div id="vGestionIncidencias" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Gestión de Incidencias</div>
+        <div class="module-subtitle">Reportes del equipo para aceptar o rechazar</div>
+      </div>
+    </div>
+    <label class="field"><span class="field-label">Estado</span>
+      <select id="giEstadoFiltro" onchange="onFiltroIncidencias()">
+        <option value="pendiente">Pendientes</option>
+        <option value="aprobado">Aceptadas</option>
+        <option value="rechazado">Rechazadas</option>
+        <option value="">Todas</option>
+      </select></label>
+    <div id="incidenciasLista" style="margin-top:14px;"><div class="loading">Cargando...</div></div>
   </div>
 </div>
 

@@ -43,6 +43,9 @@ async function cargarLocalesDesdeBase() {
     LOCALES_DB = data || [];
     LOCAL_LABELS = {};
     LOCALES_DB.forEach(l => { LOCAL_LABELS[l.slug] = l.nombre; });
+    // El "transversal" es solo el filtro "ver todos": se muestra como TODOS
+    const _tv = LOCALES_DB.find(x => /transversal/i.test(x.nombre || '') || /transversal/i.test(x.slug || ''));
+    if (_tv) LOCAL_LABELS[_tv.slug] = 'TODOS';
   } catch (e) {
     console.error('Error al cargar locales:', e);
     // Fallback de emergencia para que la app no se rompa si falla la query
@@ -56,6 +59,9 @@ async function cargarLocalesDesdeBase() {
     ];
     LOCAL_LABELS = {};
     LOCALES_DB.forEach(l => { LOCAL_LABELS[l.slug] = l.nombre; });
+    // El "transversal" es solo el filtro "ver todos": se muestra como TODOS
+    const _tv = LOCALES_DB.find(x => /transversal/i.test(x.nombre || '') || /transversal/i.test(x.slug || ''));
+    if (_tv) LOCAL_LABELS[_tv.slug] = 'TODOS';
   }
 }
 
@@ -493,6 +499,15 @@ const MODULES = [
     desc: 'Armá la semana del equipo',
     visible: () => puedeGestionarRosters(),
     action: () => openGestionRosters()
+  },
+  {
+    id: 'incidencias',
+    icon: 'ti-alert-triangle',
+    color: '#C4622D',
+    title: 'Gestión de Incidencias',
+    desc: 'Aceptar o rechazar reportes del equipo',
+    visible: () => puedeGestionarRosters(),
+    action: () => openGestionIncidencias()
   },
   {
     id: 'admin',
@@ -1141,6 +1156,7 @@ window.verIncidencia = async function(id) {
         <div class="det-label">Descripción</div>
         <div class="det-value">${esc(inc.descripcion || '—')}</div>
       </div>
+      ${inc.respuesta ? `<div class="det-line"><div class="det-label">Respuesta</div><div class="det-value">${esc(inc.respuesta)}</div></div>` : ''}
     `;
     document.getElementById('modalIncDetalle').classList.add('show');
   } catch (e) {
@@ -1195,6 +1211,10 @@ async function openMiPropina() {
     cont.innerHTML = '<div class="loading" style="color:var(--c-error)">Error al cargar propinas</div>';
     return;
   }
+
+  // No existen cierres "transversales": ese local es solo un filtro de vista
+  const _tvSlug = getSlugTransversal();
+  if (_tvSlug) asigs = asigs.filter(a => !a.cierre || a.cierre.local !== _tvSlug);
 
   const pendientes = asigs.filter(a => a.cierre && !a.cierre.pagado && a.monto > 0);
 
@@ -1397,6 +1417,9 @@ function renderPropGestHeader() {
     btn.onclick = openConfigPropinas;
     headerBlock.appendChild(btn);
   }
+
+  const _pexp = document.getElementById('propExportWrap');
+  if (_pexp) _pexp.style.display = puedeAdminPropinas() ? '' : 'none';
 
   subtitle.textContent = puedeAdminPropinas()
     ? 'Cierres registrados · podés editarlos y marcar como pagados'
@@ -4022,7 +4045,7 @@ const BIB_ICONOS_CAT = [
 
 // ¿Puede el usuario administrar la biblioteca?
 function puedeAdminBib() {
-  return isMaster() || isAdmin() || currentUser.editor_biblioteca === true;
+  return isMaster() || isAdmin();
 }
 
 // ¿Puede gestionar categorías y borrar? (solo Admin/Master)
@@ -4743,6 +4766,10 @@ async function openAdminInsumos() {
 
   const _nb = document.getElementById('insumoNuevoBtn');
   if (_nb) _nb.style.display = puedeEditarInsumos() ? '' : 'none';
+  const _gb = document.getElementById('insumoGearBtn');
+  if (_gb) _gb.style.display = puedeEditarInsumos() ? '' : 'none';
+  const _xb = document.getElementById('insumoExportBtn');
+  if (_xb) _xb.style.display = puedeEditarInsumos() ? '' : 'none';
 
   // Reset filtros si es primera vez
   document.getElementById('insumoBuscar').value = INSUMOS_FILTRO_TEXTO;
@@ -5643,7 +5670,7 @@ async function openGestionRosters() {
   if (currentEmpleado && currentEmpleado.local && locs.indexOf(currentEmpleado.local) !== -1) def = currentEmpleado.local;
   sel.value = def;
   ROST_LOCAL = def;
-  ROST_LUNES = getLunes(hoyStr());
+  ROST_LUNES = addDays(getLunes(hoyStr()), 7);  // por defecto la semana siguiente (la que hay que editar)
   await cargarPlantillasRoster();
   await cargarEmpleadosRoster();
   await cargarRosterSemana();
@@ -5832,6 +5859,31 @@ async function asegurarSemanaRoster() {
   return ROST_SEMANA;
 }
 
+async function chequearConflictoMultilocal(empId, dias) {
+  try {
+    if (!dias || !dias.length) return;
+    const turnos = await api('roster_turnos?empleado_id=eq.' + empId +
+      '&dia=in.(' + dias.join(',') + ')&es_off=eq.false&select=dia,hora_entrada,semana_id') || [];
+    if (!turnos.length) return;
+    const semIds = Array.from(new Set(turnos.map(t => t.semana_id).filter(Boolean)));
+    if (!semIds.length) return;
+    const sems = await api('roster_semanas?id=in.(' + semIds.join(',') + ')&select=id,local') || [];
+    const locOf = {}; sems.forEach(s => { locOf[s.id] = s.local; });
+    const conf = turnos.filter(t => locOf[t.semana_id] && locOf[t.semana_id] !== ROST_LOCAL);
+    if (!conf.length) return;
+    conf.sort((a, b) => String(a.dia).localeCompare(String(b.dia)));
+    const lineas = conf.map(t => {
+      const loc = LOCAL_LABELS[locOf[t.semana_id]] || locOf[t.semana_id];
+      const h = t.hora_entrada ? (' a las ' + String(t.hora_entrada).slice(0, 5)) : '';
+      return '\u2022 ' + fmtFechaCorta(t.dia) + ': ' + loc + h;
+    }).join('\n');
+    await showAlert({
+      title: '\u26a0\ufe0f Ya tiene turno en otro local',
+      msg: 'Esta persona, adem\u00e1s de ac\u00e1, ya tiene turno asignado en:\n\n' + lineas + '\n\nSi entra en dos locales el mismo d\u00eda en horarios distintos est\u00e1 bien; solo revis\u00e1 que no se superpongan.',
+      type: 'warning'
+    });
+  } catch (e) { console.warn('conflicto multilocal:', e); }
+}
 window.guardarTurnosEmp = async function() {
   const err = document.getElementById('rostError');
   err.textContent = '';
@@ -5844,6 +5896,7 @@ window.guardarTurnosEmp = async function() {
     const empT = ROST_TURNOS[empId] || {};
     const blocks = document.querySelectorAll('#rostDias .rost-dia');
     const aInsertar = [];
+    const diasTrabaja = [];
     for (const block of blocks) {
       const dia = block.dataset.dia;
       const est = block.dataset.est || '';
@@ -5867,6 +5920,7 @@ window.guardarTurnosEmp = async function() {
         es_flex: est === 'flex',
         comentario: coment
       };
+      if (est !== 'off') diasTrabaja.push(dia);
       if (existente) {
         const upd = await api('roster_turnos?id=eq.' + existente.id, { method: 'PATCH', body: JSON.stringify(payload) });
         empT[dia] = (Array.isArray(upd) && upd.length) ? upd[0] : Object.assign({}, existente, payload);
@@ -5879,6 +5933,7 @@ window.guardarTurnosEmp = async function() {
       (Array.isArray(inserted) ? inserted : [inserted]).forEach(t => { if (t && t.dia) empT[t.dia] = t; });
     }
     ROST_TURNOS[empId] = empT;
+    await chequearConflictoMultilocal(empId, diasTrabaja);
     closeEditarTurnosModal();
     renderRosterLista();
     toast('\u2713 Turnos guardados', 'success');
@@ -6084,6 +6139,7 @@ async function openMisPedidos() {
   await cargarCatalogosPedidos();
   await cargarPedidos();
 }
+window.openMisPedidos = openMisPedidos;
 async function cargarCatalogosPedidos() {
   try {
     if (!PED_INSUMOS.length) PED_INSUMOS = await api('ingredientes?activo=eq.true&select=id,nombre,unidad,costo,cantidad_por_presentacion&order=nombre.asc') || [];
@@ -6109,6 +6165,15 @@ async function cargarPedidos() {
     }
     if (PED_ESTADO_FILTRO) q += '&estado=eq.' + PED_ESTADO_FILTRO;
     PED_LISTA = await api(q) || [];
+    const _ids = PED_LISTA.map(p => p.id);
+    if (_ids.length) {
+      try {
+        const _its = await api('requerimiento_items?requerimiento_id=in.(' + _ids.join(',') + ')&select=requerimiento_id,ingrediente_id,cantidad_pedida,unidad,orden&order=orden.asc') || [];
+        const _by = {};
+        _its.forEach(it => { (_by[it.requerimiento_id] = _by[it.requerimiento_id] || []).push(it); });
+        PED_LISTA.forEach(p => { p._items = _by[p.id] || []; });
+      } catch (e) { PED_LISTA.forEach(p => { p._items = []; }); }
+    }
     renderPedidos();
   } catch (e) {
     lista.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los pedidos.<br><span style="font-size:11px;opacity:.7">' + esc(String((e && e.message) || e)) + '</span></div>';
@@ -6123,10 +6188,17 @@ function renderPedidos() {
     if (p.fecha_deseada) partes.push('Para ' + pedFecha(p.fecha_deseada));
     if (p.fecha_comprometida) partes.push('Entrega ' + pedFecha(p.fecha_comprometida));
     const sub = partes.length ? partes.join(' \u00b7 ') : ('Creado ' + pedFecha(p.fecha_creacion));
+    const its = p._items || [];
+    let itemsHtml = '';
+    if (its.length) {
+      const names = its.slice(0, 5).map(it => esc(pedInsumoNombre(it.ingrediente_id)));
+      const extra = its.length > 5 ? (' +' + (its.length - 5) + ' m\u00e1s') : '';
+      itemsHtml = '<div class="ped-card-items">' + names.join(' \u00b7 ') + extra + '</div>';
+    }
     return '<div class="ped-card" onclick="abrirPedido(' + p.id + ')">' +
       '<div class="ped-card-top"><span class="ped-local">' + esc(LOCAL_LABELS[p.local] || p.local) + '</span>' +
       '<span class="ped-estado" style="background:' + est.color + '22;color:' + est.color + '">' + esc(est.label) + '</span></div>' +
-      '<div class="ped-card-sub">' + esc(sub) + '</div></div>';
+      '<div class="ped-card-sub">' + esc(sub) + '</div>' + itemsHtml + '</div>';
   }).join('');
 }
 
@@ -6830,6 +6902,107 @@ window.borrarCierreCaja = async function() {
     toast('Cierre eliminado', 'success');
   } catch (e) { toast('No se pudo eliminar', 'error'); }
 };
+
+
+
+// ============================================
+// GESTIÓN DE INCIDENCIAS (editor_rosters / admin)
+// ============================================
+let GI_ESTADO = 'pendiente', GI_LISTA = [], GI_EDIT = null;
+const GI_ESTADOS = {
+  pendiente: { label: '\u23f3 Pendiente', cls: 'pendiente' },
+  aprobado:  { label: '\u2713 Aceptada', cls: 'aprobado' },
+  rechazado: { label: '\u2717 Rechazada', cls: 'rechazado' }
+};
+function incLocalesPermitidos() {
+  if (isMaster() || isAdmin()) return null; // null = ve todos
+  const mios = (currentUser && currentUser.locales_asignados) || [];
+  return getLocalesActivos().filter(l => mios.indexOf(l) !== -1);
+}
+function incEmpNombre(emp) {
+  if (!emp) return 'Colaborador';
+  const ap = emp.apellido || '';
+  const pn = emp.nombre_p || emp.nombre || '';
+  return ((ap ? ap + ', ' : '') + pn).trim() || 'Colaborador';
+}
+async function openGestionIncidencias() {
+  if (!puedeGestionarRosters()) { showDashboard(); return; }
+  showView('vGestionIncidencias');
+  document.getElementById('giEstadoFiltro').value = GI_ESTADO;
+  await cargarIncidencias();
+}
+window.onFiltroIncidencias = function() {
+  GI_ESTADO = document.getElementById('giEstadoFiltro').value;
+  cargarIncidencias();
+};
+async function cargarIncidencias() {
+  const lista = document.getElementById('incidenciasLista');
+  lista.innerHTML = '<div class="loading">Cargando...</div>';
+  try {
+    let q = 'incidencias?select=*&order=fecha.desc,id.desc&limit=300';
+    if (GI_ESTADO) q += '&estado=eq.' + GI_ESTADO;
+    let data = await api(q) || [];
+    const _eids = Array.from(new Set(data.map(i => i.empleado_id).filter(Boolean)));
+    let _emap = {};
+    if (_eids.length) {
+      const _emps = await api('empleados?id=in.(' + _eids.join(',') + ')&select=id,nombre,nombre_p,apellido,local') || [];
+      _emps.forEach(e => { _emap[e.id] = e; });
+    }
+    data.forEach(i => { i.empleado = _emap[i.empleado_id] || null; });
+    const permit = incLocalesPermitidos();
+    if (permit) data = data.filter(i => i.empleado && permit.indexOf(i.empleado.local) !== -1);
+    GI_LISTA = data;
+    renderIncidencias();
+  } catch (e) {
+    lista.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar las incidencias.<br><span style="font-size:11px;opacity:.7">' + esc(String((e && e.message) || e)) + '</span></div>';
+  }
+}
+function renderIncidencias() {
+  const lista = document.getElementById('incidenciasLista');
+  if (!GI_LISTA.length) { lista.innerHTML = '<div class="empty-list">No hay incidencias con ese criterio.</div>'; return; }
+  lista.innerHTML = GI_LISTA.map(i => {
+    const est = GI_ESTADOS[i.estado] || GI_ESTADOS.pendiente;
+    const tipo = TIPOS_INCIDENCIA[i.tipo] || i.tipo || '';
+    const loc = i.empleado ? (LOCAL_LABELS[i.empleado.local] || i.empleado.local || '') : '';
+    const resp = i.respuesta ? '<div class="inc-resp"><strong>Respuesta:</strong> ' + esc(i.respuesta) + '</div>' : '';
+    const acciones = (i.estado === 'pendiente')
+      ? '<div class="inc-acciones"><button class="btn-ghost inc-ok" onclick="abrirResolverIncidencia(' + i.id + ')"><i class="ti ti-message-reply"></i> Responder</button></div>'
+      : '';
+    return '<div class="ped-card" style="cursor:default">' +
+      '<div class="ped-card-top"><span class="ped-local">' + esc(incEmpNombre(i.empleado)) + '</span>' +
+      '<span class="det-badge ' + est.cls + '">' + est.label + '</span></div>' +
+      '<div class="ped-card-sub">' + esc(tipo) + ' \u00b7 ' + fmtFechaCorta(i.fecha) + (loc ? (' \u00b7 ' + esc(loc)) : '') + '</div>' +
+      '<div class="inc-desc">' + esc(i.descripcion || '') + '</div>' +
+      resp + acciones + '</div>';
+  }).join('');
+}
+window.abrirResolverIncidencia = function(id) {
+  const i = GI_LISTA.find(x => x.id === id);
+  if (!i) return;
+  GI_EDIT = id;
+  document.getElementById('giResTitulo').textContent = TIPOS_INCIDENCIA[i.tipo] || 'Incidencia';
+  document.getElementById('giResInfo').innerHTML =
+    '<div class="ped-card-sub">' + esc(incEmpNombre(i.empleado)) + ' \u00b7 ' + fmtFechaCorta(i.fecha) + '</div>' +
+    '<div class="inc-desc">' + esc(i.descripcion || '') + '</div>';
+  document.getElementById('giResComent').value = i.respuesta || '';
+  document.getElementById('giResError').textContent = '';
+  document.getElementById('modalResolverInc').classList.add('show');
+};
+window.closeResolverInc = function() { document.getElementById('modalResolverInc').classList.remove('show'); };
+async function resolverIncidencia(estado) {
+  if (!GI_EDIT) return;
+  const coment = document.getElementById('giResComent').value.trim() || null;
+  const err = document.getElementById('giResError'); err.textContent = '';
+  const payload = { estado: estado, respuesta: coment, revisado_por: currentUser ? currentUser.id : null, revisado_en: new Date().toISOString() };
+  try {
+    await api('incidencias?id=eq.' + GI_EDIT, { method: 'PATCH', body: JSON.stringify(payload) });
+    closeResolverInc();
+    await cargarIncidencias();
+    toast(estado === 'aprobado' ? '\u2713 Incidencia aceptada' : 'Incidencia rechazada', estado === 'aprobado' ? 'success' : 'warning');
+  } catch (e) { err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e); }
+}
+window.aceptarIncidencia = function() { resolverIncidencia('aprobado'); };
+window.rechazarIncidencia = function() { resolverIncidencia('rechazado'); };
 
 
 init();

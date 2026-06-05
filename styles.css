@@ -3368,3 +3368,17 @@ select option {
 
 .cc-venta { font-weight:700; color:var(--c-rust); }
 .cc-prom { font-size:13px; color:var(--c-muted); margin:2px 0 10px; text-align:right; }
+
+/* Item 6: input de hora del roster legible en mobile (evita blanco sobre blanco) */
+.rost-hora { color-scheme: dark; color: #F5F0E8; }
+.rost-hora::selection { background: #C4622D; color: #1C1A17; }
+/* Items 3/4: vista previa de artículos en tarjeta de pedido */
+.ped-card-items { font-size: 12px; color: var(--c-muted); margin-top: 6px; line-height: 1.45; }
+
+/* Item 11: tarjetas de incidencias */
+.inc-desc { font-size: 14px; margin-top: 8px; line-height: 1.45; }
+.inc-resp { font-size: 13px; color: var(--c-muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(245,240,232,.08); }
+.inc-acciones { display: flex; justify-content: flex-end; margin-top: 10px; }
+.inc-acciones .inc-ok { color: var(--c-rust); }
+/* Item 7: alerta de conflicto en varias líneas */
+#confirmMsg { white-space: pre-line; }
