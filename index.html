@@ -1587,6 +1587,31 @@
      VISTA: MIS DATOS
 ============================================ -->
 <!-- ============================================
+     VISTA: HISTORIAL DE CAMBIOS
+============================================ -->
+<div id="vHistorial" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="openAdministracion()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Historial</div>
+        <div class="module-subtitle">Auditoría de cambios</div>
+      </div>
+    </div>
+    <label class="field"><span class="field-label">Módulo</span>
+      <select id="histModuloFiltro" onchange="onFiltroHistorial()">
+        <option value="">Todos los módulos</option>
+        <option value="Rosters">Rosters</option>
+        <option value="Cierres">Cierres de caja</option>
+        <option value="Propinas">Propinas</option>
+        <option value="Recetas">Recetas</option>
+      </select>
+    </label>
+    <div id="histLista"><div class="loading">Cargando...</div></div>
+  </div>
+</div>
+
+<!-- ============================================
      VISTA: MIS ESTADÍSTICAS
 ============================================ -->
 <div id="vMisEstadisticas" class="view">

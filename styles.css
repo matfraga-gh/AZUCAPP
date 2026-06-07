@@ -3401,3 +3401,15 @@ select option {
 .est-tabla-fila { display:grid; grid-template-columns:2fr 1.5fr 1fr 1.5fr; padding:10px 14px; font-size:13px; border-bottom:1px solid var(--c-cream-border); }
 .est-tabla-fila:last-child { border-bottom:none; }
 .est-tabla-fila span:not(:first-child) { font-weight:600; }
+
+
+/* ============================================
+   HISTORIAL DE CAMBIOS
+============================================ */
+.hist-card { background:var(--c-cream-soft); border:1px solid var(--c-cream-border); border-radius:14px; padding:12px 14px; margin-bottom:10px; }
+.hist-card-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; gap:8px; }
+.hist-badge { font-size:11px; font-weight:600; padding:2px 8px; border-radius:20px; white-space:nowrap; }
+.hist-fecha { font-size:11px; color:var(--c-muted); white-space:nowrap; }
+.hist-accion { font-size:14px; font-weight:600; margin-bottom:3px; }
+.hist-detalle { font-size:12px; color:var(--c-muted); margin-bottom:5px; }
+.hist-usuario { font-size:11px; color:var(--c-muted); }

@@ -2025,6 +2025,7 @@ window.generarLiquidacion = async function() {
     ]);
     closeLiquidacion();
     toast('✓ Liquidación generada (' + cierres.length + ' cierres)', 'success');
+    logCambio('Propinas', 'Generó liquidación', desde + ' al ' + hasta + ' · ' + cierres.length + ' cierres');
   } catch (e) {
     err.textContent = 'Error al generar la liquidación. Reintentá.';
   } finally {
@@ -2732,6 +2733,7 @@ window.guardarSubelab = async function() {
     const lbl = esMenu ? 'Menú' : (RECETA_TIPO === 'plato' ? 'Plato' : 'Sub-elaboración');
     const gen = (esMenu || RECETA_TIPO === 'plato') ? 'o' : 'a';
     toast('✓ ' + lbl + ' ' + (esEdicion ? 'actualizad' : 'cread') + gen, 'success');
+    logCambio('Recetas', (esEdicion ? 'Editó ' : 'Creó ') + lbl.toLowerCase(), nombre);
     if (esMenu) { await cargarPasosEnEditor(recetaId); } else { await cargarComponentesEnEditor(recetaId); }
     COSTEO_CARGADO = false;
     cargarRecetas();
@@ -2906,7 +2908,8 @@ const ADMIN_SECTIONS = [
     color: '#B4B2A9',
     title: 'Historial',
     desc: 'Auditoría de cambios',
-    activa: false
+    activa: true,
+    action: () => openHistorial()
   }
 ];
 
@@ -6923,6 +6926,8 @@ window.guardarCierreCaja = async function() {
     closeCierreCaja();
     await cargarCierres();
     toast('\u2713 Cierre guardado', 'success');
+    logCambio('Cierres', CC_EDIT ? 'Editó cierre de caja' : 'Creó cierre de caja',
+      (LOCAL_LABELS[local] || local) + ' · ' + pedFecha(fecha) + ' · ' + ccTurnoLabel(turno) + ' · $' + formatNumber(ventas) + ' / ' + pax + ' pax');
   } catch (e) { err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e); }
   finally { btn.disabled = false; btn.textContent = t; }
 };
@@ -6932,9 +6937,12 @@ window.borrarCierreCaja = async function() {
   if (!ok) return;
   try {
     await api('cierres_caja?id=eq.' + CC_EDIT, { method: 'DELETE' });
+    const _cdel = CC_LISTA.find(function(x) { return x.id === CC_EDIT; }) || {};
     closeCierreCaja();
     await cargarCierres();
     toast('Cierre eliminado', 'success');
+    logCambio('Cierres', 'Eliminó cierre de caja',
+      (LOCAL_LABELS[_cdel.local] || _cdel.local || '') + (_cdel.fecha ? ' · ' + pedFecha(_cdel.fecha) : '') + (_cdel.turno ? ' · ' + ccTurnoLabel(_cdel.turno) : ''), CC_EDIT);
   } catch (e) { toast('No se pudo eliminar', 'error'); }
 };
 
@@ -7171,6 +7179,92 @@ function renderEstadisticas(data) {
     }).join('');
 
   elList.innerHTML = html;
+}
+
+
+// ============================================
+// HISTORIAL DE CAMBIOS (Admin / Master)
+// ============================================
+async function logCambio(modulo, accion, detalle, entidadId) {
+  try {
+    const nombre = currentUser
+      ? (currentUser.nombre || currentUser.usuario || 'Usuario')
+      : 'Sistema';
+    await api('historial_cambios', {
+      method: 'POST',
+      headers: { 'Prefer': 'return=minimal' },
+      body: JSON.stringify({
+        usuario_id:     currentUser ? currentUser.id : null,
+        usuario_nombre: nombre,
+        modulo:         modulo,
+        accion:         accion,
+        entidad_id:     entidadId != null ? String(entidadId) : null,
+        detalle:        detalle || null
+      })
+    });
+  } catch (e) {
+    console.warn('[historial] no se pudo registrar:', e);
+  }
+}
+
+let HIST_MODULO = '';
+const HIST_COLORES = {
+  Rosters:  '#7F77DD',
+  Cierres:  '#C4622D',
+  Propinas: '#EF9F27',
+  Recetas:  '#D85A30'
+};
+
+async function openHistorial() {
+  if (!isMaster() && !isAdmin()) { showDashboard(); return; }
+  showView('vHistorial');
+  await cargarHistorial();
+}
+window.openHistorial = openHistorial;
+
+window.onFiltroHistorial = function() {
+  HIST_MODULO = document.getElementById('histModuloFiltro').value;
+  cargarHistorial();
+};
+
+async function cargarHistorial() {
+  const lista = document.getElementById('histLista');
+  lista.innerHTML = '<div class="loading">Cargando historial...</div>';
+  try {
+    let q = 'historial_cambios?select=*&order=creado_en.desc&limit=300';
+    if (HIST_MODULO) q += '&modulo=eq.' + encodeURIComponent(HIST_MODULO);
+    const data = await api(q) || [];
+    renderHistorial(data);
+  } catch (e) {
+    lista.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar.<br><span style="font-size:11px;opacity:.7">' + esc(String((e && e.message) || e)) + '</span></div>';
+  }
+}
+
+function histFechaHora(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const fecha = fmtFechaCorta(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'));
+  return fecha + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0') + 'h';
+}
+
+function renderHistorial(data) {
+  const lista = document.getElementById('histLista');
+  if (!data.length) {
+    lista.innerHTML = '<div class="empty-list">No hay cambios registrados' + (HIST_MODULO ? ' en este módulo' : '') + '.</div>';
+    return;
+  }
+  lista.innerHTML = data.map(function(h) {
+    const color = HIST_COLORES[h.modulo] || '#B4B2A9';
+    return '<div class="hist-card">' +
+      '<div class="hist-card-top">' +
+        '<span class="hist-badge" style="background:' + color + '22;color:' + color + '">' + esc(h.modulo) + '</span>' +
+        '<span class="hist-fecha">' + histFechaHora(h.creado_en) + '</span>' +
+      '</div>' +
+      '<div class="hist-accion">' + esc(h.accion) + '</div>' +
+      (h.detalle ? '<div class="hist-detalle">' + esc(h.detalle) + '</div>' : '') +
+      '<div class="hist-usuario"><i class="ti ti-user" style="font-size:11px;margin-right:3px"></i>' + esc(h.usuario_nombre || 'Desconocido') + '</div>' +
+    '</div>';
+  }).join('');
 }
 
 init();
