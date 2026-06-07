@@ -483,6 +483,15 @@ const MODULES = [
     action: () => openMisCierres()
   },
   {
+    id: 'estadisticas',
+    icon: 'ti-chart-bar',
+    color: '#2D7FC4',
+    title: 'Mis Estadísticas',
+    desc: 'Ventas, pax y promedio por local',
+    visible: () => isMaster() || isAdmin(),
+    action: () => openMisEstadisticas()
+  },
+  {
     id: 'insumos',
     icon: 'ti-package',
     color: '#EF9F27',
@@ -7026,6 +7035,139 @@ async function resolverIncidencia(estado) {
 window.aceptarIncidencia = function() { resolverIncidencia('aprobado'); };
 window.rechazarIncidencia = function() { resolverIncidencia('rechazado'); };
 
+
+
+// ============================================
+// MIS ESTADÍSTICAS (Master / Admin)
+// ============================================
+let EST_MES = '', EST_LOCAL = '';
+
+function openMisEstadisticas() {
+  if (!isMaster() && !isAdmin()) { showDashboard(); return; }
+  showView('vMisEstadisticas');
+  poblarFiltrosEst();
+  cargarEstadisticas();
+}
+window.openMisEstadisticas = openMisEstadisticas;
+
+function poblarFiltrosEst() {
+  const selMes   = document.getElementById('estMes');
+  const selLocal = document.getElementById('estLocal');
+  const hoy = new Date();
+  if (!EST_MES) {
+    EST_MES = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
+  }
+  const opsMes = [];
+  for (let i = 0; i < 18; i++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    const val = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    const label = MESES_CORTO[d.getMonth()] + ' ' + d.getFullYear();
+    opsMes.push('<option value="' + val + '"' + (val === EST_MES ? ' selected' : '') + '>' + label + '</option>');
+  }
+  selMes.innerHTML = opsMes.join('');
+  const locales = getLocalesActivos().filter(function(l) { return !/transversal/i.test(l); });
+  selLocal.innerHTML = '<option value="">Todos los locales</option>' +
+    locales.map(function(l) {
+      return '<option value="' + esc(l) + '"' + (l === EST_LOCAL ? ' selected' : '') + '>' + esc(localLabel(l)) + '</option>';
+    }).join('');
+}
+
+window.onFiltroEst = function() {
+  EST_MES   = document.getElementById('estMes').value;
+  EST_LOCAL = document.getElementById('estLocal').value;
+  cargarEstadisticas();
+};
+
+async function cargarEstadisticas() {
+  const elRes  = document.getElementById('estResumen');
+  const elList = document.getElementById('estLista');
+  elRes.innerHTML  = '<div class="loading">Cargando estadísticas...</div>';
+  elList.innerHTML = '';
+  try {
+    let q = 'cierres_caja?select=*&order=fecha.desc,id.desc';
+    if (EST_MES) {
+      const parts = EST_MES.split('-');
+      const y = parseInt(parts[0], 10), m = parseInt(parts[1], 10);
+      const lastDay = new Date(y, m, 0).getDate();
+      q += '&fecha=gte.' + EST_MES + '-01&fecha=lte.' + EST_MES + '-' + String(lastDay).padStart(2, '0');
+    }
+    if (EST_LOCAL) {
+      q += '&local=eq.' + encodeURIComponent(EST_LOCAL);
+    }
+    const data = await api(q) || [];
+    renderEstadisticas(data);
+  } catch (e) {
+    elRes.innerHTML  = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los datos.<br><span style="font-size:11px;opacity:.7">' + esc(String((e && e.message) || e)) + '</span></div>';
+    elList.innerHTML = '';
+  }
+}
+
+function renderEstadisticas(data) {
+  const elRes  = document.getElementById('estResumen');
+  const elList = document.getElementById('estLista');
+
+  if (!data.length) {
+    elRes.innerHTML  = '<div class="empty-list">No hay cierres para este período.</div>';
+    elList.innerHTML = '';
+    return;
+  }
+
+  const totalVentas = data.reduce(function(s, c) { return s + (parseFloat(c.ventas_total) || 0); }, 0);
+  const totalPax    = data.reduce(function(s, c) { return s + (parseInt(c.pax, 10) || 0); }, 0);
+  const promGlobal  = totalPax > 0 ? totalVentas / totalPax : null;
+
+  elRes.innerHTML =
+    '<div class="est-cards">' +
+      '<div class="est-card"><div class="est-card-label">Ventas totales</div><div class="est-card-valor">$' + formatNumber(totalVentas) + '</div></div>' +
+      '<div class="est-card"><div class="est-card-label">Pax total</div><div class="est-card-valor">' + formatNumber(totalPax) + '</div></div>' +
+      '<div class="est-card"><div class="est-card-label">Prom. por pax</div><div class="est-card-valor">' + (promGlobal != null ? '$' + formatNumber(promGlobal) : '—') + '</div></div>' +
+      '<div class="est-card"><div class="est-card-label">Turnos</div><div class="est-card-valor">' + data.length + '</div></div>' +
+    '</div>';
+
+  let html = '';
+
+  if (!EST_LOCAL) {
+    const porLocal = {};
+    data.forEach(function(c) {
+      if (!porLocal[c.local]) porLocal[c.local] = { ventas: 0, pax: 0 };
+      porLocal[c.local].ventas += parseFloat(c.ventas_total) || 0;
+      porLocal[c.local].pax    += parseInt(c.pax, 10) || 0;
+    });
+    const locs = Object.keys(porLocal).sort(function(a, b) { return porLocal[b].ventas - porLocal[a].ventas; });
+    html += '<div class="est-section-title">Por local</div>' +
+      '<div class="est-tabla">' +
+        '<div class="est-tabla-head"><span>Local</span><span>Ventas</span><span>Pax</span><span>Prom/pax</span></div>' +
+        locs.map(function(loc) {
+          const r = porLocal[loc];
+          const pr = r.pax > 0 ? r.ventas / r.pax : null;
+          return '<div class="est-tabla-fila">' +
+            '<span>' + esc(localLabel(loc)) + '</span>' +
+            '<span>$' + formatNumber(r.ventas) + '</span>' +
+            '<span>' + formatNumber(r.pax) + '</span>' +
+            '<span>' + (pr != null ? '$' + formatNumber(pr) : '—') + '</span>' +
+          '</div>';
+        }).join('') +
+      '</div>';
+  }
+
+  html += '<div class="est-section-title">Cierres del período</div>' +
+    data.map(function(c) {
+      const prom = (c.pax && c.pax > 0) ? c.ventas_total / c.pax : null;
+      return '<div class="ped-card">' +
+        '<div class="ped-card-top">' +
+          '<span class="ped-local">' + esc(localLabel(c.local)) + '</span>' +
+          '<span class="cc-venta">$' + formatNumber(c.ventas_total || 0) + '</span>' +
+        '</div>' +
+        '<div class="ped-card-sub">' +
+          pedFecha(c.fecha) + ' · ' + esc(ccTurnoLabel(c.turno)) + ' · ' + (c.pax || 0) + ' pax' +
+          (prom != null ? ' · $' + formatNumber(prom) + '/pax' : '') +
+          (c.observaciones ? '<br><span style="font-style:italic;opacity:.7">' + esc(c.observaciones) + '</span>' : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+  elList.innerHTML = html;
+}
 
 init();
 
