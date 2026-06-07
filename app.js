@@ -5969,6 +5969,9 @@ window.guardarTurnosEmp = async function() {
     closeEditarTurnosModal();
     renderRosterLista();
     toast('\u2713 Turnos guardados', 'success');
+    const _rEmp = ROST_EMPLEADOS.find(function(x) { return x.id === empId; }) || {};
+    const _rNom = [_rEmp.apellido, _rEmp.nombre_p].filter(Boolean).join(', ') || ('Emp #' + empId);
+    logCambio('Rosters', 'Guard\u00f3 turnos', _rNom + ' \u00b7 ' + (LOCAL_LABELS[ROST_LOCAL] || ROST_LOCAL) + ' \u00b7 semana ' + fmtFechaCorta(ROST_LUNES), empId);
   } catch (e) {
     err.textContent = 'No se pudo guardar: ' + (e.message || e);
   } finally {
