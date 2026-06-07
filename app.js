@@ -7195,7 +7195,6 @@ async function logCambio(modulo, accion, detalle, entidadId) {
       : 'Sistema';
     await api('historial_cambios', {
       method: 'POST',
-      headers: { 'Prefer': 'return=minimal' },
       body: JSON.stringify({
         usuario_id:     currentUser ? currentUser.id : null,
         usuario_nombre: nombre,
