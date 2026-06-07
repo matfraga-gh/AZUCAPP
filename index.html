@@ -1587,6 +1587,31 @@
      VISTA: MIS DATOS
 ============================================ -->
 <!-- ============================================
+     VISTA: MIS ESTADÍSTICAS
+============================================ -->
+<div id="vMisEstadisticas" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Mis Estadísticas</div>
+        <div class="module-subtitle">Ventas, pax y promedio por local</div>
+      </div>
+    </div>
+    <div class="est-filtros">
+      <label class="field" style="flex:1;min-width:0"><span class="field-label">Mes</span>
+        <select id="estMes" onchange="onFiltroEst()"></select>
+      </label>
+      <label class="field" style="flex:1;min-width:0"><span class="field-label">Local</span>
+        <select id="estLocal" onchange="onFiltroEst()"></select>
+      </label>
+    </div>
+    <div id="estResumen"></div>
+    <div id="estLista"></div>
+  </div>
+</div>
+
+<!-- ============================================
      VISTA: MIS CIERRES
 ============================================ -->
 <div id="vMisCierres" class="view">

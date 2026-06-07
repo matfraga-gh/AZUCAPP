@@ -3385,3 +3385,19 @@ select option {
 
 /* Ayuda de los botones de recepción de pedidos */
 .ped-recep-hint { font-size: 12.5px; color: var(--c-muted); line-height: 1.5; margin: 2px 0 12px; }
+
+
+/* ============================================
+   MIS ESTADÍSTICAS
+============================================ */
+.est-filtros { display:flex; gap:12px; margin-bottom:4px; }
+.est-cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px; }
+.est-card { background:var(--c-cream-soft); border:1px solid var(--c-cream-border); border-radius:14px; padding:14px 16px; }
+.est-card-label { font-size:11px; color:var(--c-muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; }
+.est-card-valor { font-size:22px; font-weight:700; color:var(--c-rust); font-family:'Playfair Display', serif; }
+.est-section-title { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--c-muted); margin:18px 0 10px; }
+.est-tabla { background:var(--c-cream-soft); border:1px solid var(--c-cream-border); border-radius:14px; overflow:hidden; margin-bottom:4px; }
+.est-tabla-head { display:grid; grid-template-columns:2fr 1.5fr 1fr 1.5fr; padding:8px 14px; font-size:11px; font-weight:600; color:var(--c-muted); text-transform:uppercase; letter-spacing:.04em; border-bottom:1px solid var(--c-cream-border); }
+.est-tabla-fila { display:grid; grid-template-columns:2fr 1.5fr 1fr 1.5fr; padding:10px 14px; font-size:13px; border-bottom:1px solid var(--c-cream-border); }
+.est-tabla-fila:last-child { border-bottom:none; }
+.est-tabla-fila span:not(:first-child) { font-weight:600; }
