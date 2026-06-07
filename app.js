@@ -6172,7 +6172,7 @@ async function openMisPedidos() {
 window.openMisPedidos = openMisPedidos;
 async function cargarCatalogosPedidos() {
   try {
-    if (!PED_INSUMOS.length) PED_INSUMOS = await api('ingredientes?activo=eq.true&select=id,nombre,unidad,costo,cantidad_por_presentacion&order=nombre.asc') || [];
+    if (!PED_INSUMOS.length) PED_INSUMOS = await api('ingredientes?activo=eq.true&select=id,nombre,formato,proveedor,unidad,cantidad_por_presentacion&order=nombre.asc') || [];
     if (!PED_UNIDADES.length) PED_UNIDADES = await api('unidades_pedido?activo=eq.true&select=*&order=orden.asc') || [];
   } catch (e) { console.warn('catalogos pedidos:', e); }
 }
@@ -6262,7 +6262,11 @@ function pedInsumoNombre(id) {
 }
 function pedInsumoOptions(sel) {
   return '<option value="">\u2014 Eleg\u00ed un insumo \u2014</option>' +
-    PED_INSUMOS.map(ins => '<option value="' + ins.id + '"' + (ins.id === sel ? ' selected' : '') + '>' + esc(ins.nombre) + '</option>').join('');
+    PED_INSUMOS.map(function(ins) {
+      const extra = [ins.formato, ins.proveedor].filter(Boolean).join(' · ');
+      const label = ins.nombre + (extra ? ' – ' + extra : '');
+      return '<option value="' + ins.id + '"' + (ins.id === sel ? ' selected' : '') + '>' + esc(label) + '</option>';
+    }).join('');
 }
 function pedUnidadOptions(sel) {
   const us = PED_UNIDADES.map(u => u.nombre);
