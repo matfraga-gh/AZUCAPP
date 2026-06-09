@@ -3427,9 +3427,9 @@ select option {
 .ped-ins-search:focus { border-color: var(--c-accent); }
 .ped-ins-opts {
   display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0;
-  background: var(--c-card); border: 1px solid var(--c-border);
+  background: #2E2B27; border: 1px solid #4A4640;
   border-radius: 8px; max-height: 220px; overflow-y: auto;
-  z-index: 200; box-shadow: 0 4px 16px rgba(0,0,0,.35);
+  z-index: 200; box-shadow: 0 6px 20px rgba(0,0,0,.6);
 }
 .ped-ins-opt {
   display: flex; flex-direction: column; gap: 1px;
