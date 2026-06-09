@@ -1678,9 +1678,9 @@ function abrirNuevoCierre() {
 
   const tc = PROP_CONFIG || {};
   document.getElementById('cierreTcHint').textContent =
-    'Cotización actual: USD $' + formatNumber(tc.tc_usd || 0) +
-    ' · EUR $' + formatNumber(tc.tc_eur || 0) +
-    ' · BRL $' + formatNumber(tc.tc_brl || 0);
+    'Cotización actual: USD $' + formatNumber(tc.cambio_usd || 0) +
+    ' · EUR $' + formatNumber(tc.cambio_eur || 0) +
+    ' · BRL $' + formatNumber(tc.cambio_brl || 0);
 
   document.getElementById('cierreBilletes').innerHTML = BILLETES_DENOM.map(d =>
     '<label class="billete-row"><span>$' + formatNumber(d) + '</span>' +
@@ -1724,9 +1724,9 @@ async function abrirEditarCierre(cierreId) {
 
   const tc = PROP_CONFIG || {};
   document.getElementById('cierreTcHint').textContent =
-    'Cotización actual: USD $' + formatNumber(tc.tc_usd || 0) +
-    ' · EUR $' + formatNumber(tc.tc_eur || 0) +
-    ' · BRL $' + formatNumber(tc.tc_brl || 0);
+    'Cotización actual: USD $' + formatNumber(tc.cambio_usd || 0) +
+    ' · EUR $' + formatNumber(tc.cambio_eur || 0) +
+    ' · BRL $' + formatNumber(tc.cambio_brl || 0);
 
   document.getElementById('cierreBilletes').innerHTML = BILLETES_DENOM.map(d =>
     '<label class="billete-row"><span>$' + formatNumber(d) + '</span>' +
@@ -1801,9 +1801,9 @@ function recalcCierre() {
   const tc = PROP_CONFIG || {};
   let cash = 0;
   BILLETES_DENOM.forEach(d => { cash += d * billeteVal(d); });
-  const extranjera = valNumCierre('cierreUsd') * (parseFloat(tc.tc_usd) || 0) +
-                     valNumCierre('cierreEur') * (parseFloat(tc.tc_eur) || 0) +
-                     valNumCierre('cierreBrl') * (parseFloat(tc.tc_brl) || 0);
+  const extranjera = valNumCierre('cierreUsd') * (parseFloat(tc.cambio_usd) || 0) +
+                     valNumCierre('cierreEur') * (parseFloat(tc.cambio_eur) || 0) +
+                     valNumCierre('cierreBrl') * (parseFloat(tc.cambio_brl) || 0);
   const electronico = valNumCierre('cierreTarjeta') + valNumCierre('cierreTransf');
   const total = cash + extranjera + electronico;
   const puntos = CIERRE_COLABS.reduce((s, c) => s + (parseFloat(c.puntos) || 0), 0);
@@ -1823,7 +1823,7 @@ async function guardarCierre() {
   BILLETES_DENOM.forEach(d => { const n = billeteVal(d); billetes['bil_' + d] = n; cash += d * n; });
   const usd = valNumCierre('cierreUsd'), eur = valNumCierre('cierreEur'), brl = valNumCierre('cierreBrl');
   const tarjeta = valNumCierre('cierreTarjeta'), transf = valNumCierre('cierreTransf');
-  const extranjera = usd * (parseFloat(tc.tc_usd) || 0) + eur * (parseFloat(tc.tc_eur) || 0) + brl * (parseFloat(tc.tc_brl) || 0);
+  const extranjera = usd * (parseFloat(tc.cambio_usd) || 0) + eur * (parseFloat(tc.cambio_eur) || 0) + brl * (parseFloat(tc.cambio_brl) || 0);
   const bruto = cash + extranjera + tarjeta + transf;
   const pct = 0;            // propinas: no hay descuento administrativo
   const neto = bruto;       // todo lo recaudado se reparte
@@ -1842,7 +1842,7 @@ async function guardarCierre() {
     fecha: document.getElementById('cierreFecha').value || hoyStr(),
     turno: document.getElementById('cierreTurno').value,
     monto_usd: usd, monto_eur: eur, monto_brl: brl,
-    tc_usd: parseFloat(tc.tc_usd) || 0, tc_eur: parseFloat(tc.tc_eur) || 0, tc_brl: parseFloat(tc.tc_brl) || 0,
+    tc_usd: parseFloat(tc.cambio_usd) || 0, tc_eur: parseFloat(tc.cambio_eur) || 0, tc_brl: parseFloat(tc.cambio_brl) || 0,
     monto_tarjeta: tarjeta, monto_transferencia: transf,
     porcentaje_admin: pct,
     total_bruto: Math.round(bruto), total_neto: Math.round(neto), total_puntos: puntos,
@@ -6266,14 +6266,55 @@ function pedInsumoNombre(id) {
   const ins = PED_INSUMOS.find(x => x.id === id);
   return ins ? ins.nombre : ('Insumo #' + id);
 }
-function pedInsumoOptions(sel) {
-  return '<option value="">\u2014 Eleg\u00ed un insumo \u2014</option>' +
-    PED_INSUMOS.map(function(ins) {
-      const extra = [ins.formato, ins.proveedor].filter(Boolean).join(' · ');
-      const label = ins.nombre + (extra ? ' – ' + extra : '');
-      return '<option value="' + ins.id + '"' + (ins.id === sel ? ' selected' : '') + '>' + esc(label) + '</option>';
-    }).join('');
+function pedInsumoSearchBox(selectedId) {
+  const ins = selectedId ? PED_INSUMOS.find(x => x.id === selectedId) : null;
+  const extra = ins ? [ins.formato, ins.proveedor].filter(Boolean).join(' · ') : '';
+  const label = ins ? ins.nombre + (extra ? ' – ' + extra : '') : '';
+  return '<div class="ped-ins-wrap">' +
+    '<input type="text" class="ped-ins-search" placeholder="Buscar insumo..." value="' + esc(label) + '" ' +
+    'oninput="pedFiltrarInsumos(this)" onfocus="pedFiltrarInsumos(this)" onblur="pedOcultarInsumos(this)" autocomplete="off">' +
+    '<input type="hidden" class="ped-ins-id" value="' + (selectedId || '') + '">' +
+    '<div class="ped-ins-opts"></div>' +
+    '</div>';
 }
+window.pedFiltrarInsumos = function(input) {
+  const wrap = input.closest('.ped-ins-wrap');
+  const opts = wrap.querySelector('.ped-ins-opts');
+  const q = input.value.toLowerCase().trim();
+  const matches = q.length === 0
+    ? PED_INSUMOS.slice(0, 40)
+    : PED_INSUMOS.filter(function(ins) {
+        const txt = (ins.nombre + ' ' + (ins.formato || '') + ' ' + (ins.proveedor || '')).toLowerCase();
+        return txt.indexOf(q) !== -1;
+      }).slice(0, 40);
+  if (!matches.length) {
+    opts.innerHTML = '<div class="ped-ins-no-result">Sin resultados</div>';
+  } else {
+    opts.innerHTML = matches.map(function(ins) {
+      const ex = [ins.formato, ins.proveedor].filter(Boolean).join(' · ');
+      return '<div class="ped-ins-opt" onmousedown="pedElegirInsumo(this,' + ins.id + ')">' +
+        '<span class="ped-ins-opt-nombre">' + esc(ins.nombre) + '</span>' +
+        (ex ? '<span class="ped-ins-opt-extra">' + esc(ex) + '</span>' : '') +
+        '</div>';
+    }).join('');
+  }
+  opts.style.display = 'block';
+};
+window.pedOcultarInsumos = function(input) {
+  setTimeout(function() {
+    const wrap = input.closest('.ped-ins-wrap');
+    if (wrap) wrap.querySelector('.ped-ins-opts').style.display = 'none';
+  }, 200);
+};
+window.pedElegirInsumo = function(btn, insId) {
+  const wrap = btn.closest('.ped-ins-wrap');
+  const hidden = wrap.querySelector('.ped-ins-id');
+  const search = wrap.querySelector('.ped-ins-search');
+  const ins = PED_INSUMOS.find(x => x.id === insId);
+  hidden.value = insId;
+  search.value = ins ? ins.nombre : '';
+  wrap.querySelector('.ped-ins-opts').style.display = 'none';
+};
 function pedUnidadOptions(sel) {
   const us = PED_UNIDADES.map(u => u.nombre);
   if (sel && us.indexOf(sel) === -1) us.unshift(sel);
@@ -6284,7 +6325,7 @@ function pedUnidadOptions(sel) {
 function renderItemPedido(it, i, editable, recepcion, completado) {
   if (editable) {
     return '<div class="ped-item" data-idx="' + i + '">' +
-      '<div class="ped-item-head"><select class="ped-ins">' + pedInsumoOptions(it.ingrediente_id) + '</select>' +
+      '<div class="ped-item-head">' + pedInsumoSearchBox(it.ingrediente_id) +
       '<button class="ped-item-del" onclick="quitarItemPedido(' + i + ')" aria-label="Quitar"><i class="ti ti-trash"></i></button></div>' +
       '<div class="ped-item-row">' +
         '<input class="ped-cant" type="number" step="any" min="0" placeholder="Cantidad" value="' + (it.cantidad_pedida != null ? it.cantidad_pedida : '') + '">' +
@@ -6382,7 +6423,7 @@ function leerItemsDesdeDOM() {
   cont.querySelectorAll('.ped-item').forEach(b => {
     const idx = parseInt(b.dataset.idx, 10);
     if (isNaN(idx) || !PED_ITEMS[idx]) return;
-    const insEl = b.querySelector('.ped-ins');
+    const insEl = b.querySelector('.ped-ins-id');
     if (insEl) {
       PED_ITEMS[idx].ingrediente_id = insEl.value ? parseInt(insEl.value, 10) : null;
       PED_ITEMS[idx].cantidad_pedida = b.querySelector('.ped-cant').value;
@@ -6401,11 +6442,13 @@ function leerHeaderDesdeDOM() {
   if (obsEl) PED_ACTUAL.observaciones_generales = obsEl.value.trim() || null;
 }
 window.agregarItemPedido = function() {
+  leerHeaderDesdeDOM();
   leerItemsDesdeDOM();
   PED_ITEMS.push({ ingrediente_id: null, cantidad_pedida: '', unidad: '', stock_actual: '', comentario_pedido: '' });
   renderEditorPedido();
 };
 window.quitarItemPedido = function(i) {
+  leerHeaderDesdeDOM();
   leerItemsDesdeDOM();
   PED_ITEMS.splice(i, 1);
   renderEditorPedido();

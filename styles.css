@@ -1,4 +1,31 @@
-/* ============================================
+/
+
+/* ---- Buscador de insumos (Pedidos) ---- */
+.ped-ins-wrap { position: relative; flex: 1; min-width: 0; }
+.ped-ins-search {
+  width: 100%; box-sizing: border-box;
+  background: var(--c-bg); color: var(--c-text);
+  border: 1px solid var(--c-border); border-radius: 8px;
+  padding: 8px 12px; font-size: 14px; font-family: inherit;
+  outline: none;
+}
+.ped-ins-search:focus { border-color: var(--c-accent); }
+.ped-ins-opts {
+  display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  background: var(--c-card); border: 1px solid var(--c-border);
+  border-radius: 8px; max-height: 220px; overflow-y: auto;
+  z-index: 200; box-shadow: 0 4px 16px rgba(0,0,0,.35);
+}
+.ped-ins-opt {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 10px 14px; cursor: pointer;
+  border-bottom: 1px solid var(--c-border);
+}
+.ped-ins-opt:last-child { border-bottom: none; }
+.ped-ins-opt:hover, .ped-ins-opt:active { background: rgba(196,98,45,.12); }
+.ped-ins-opt-nombre { font-size: 14px; color: var(--c-text); }
+.ped-ins-opt-extra { font-size: 11px; color: var(--c-text-muted); }
+.ped-ins-no-result { padding: 10px 14px; font-size: 13px; color: var(--c-text-muted); }* ============================================
    AZUCAPP - Estilos
 ============================================ */
 
