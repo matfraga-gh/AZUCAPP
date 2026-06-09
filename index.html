@@ -1922,7 +1922,12 @@
             <option value="ingrediente">Insumo</option>
             <option value="receta">Sub-elaboración</option>
           </select>
-          <select id="compItem" class="mini-select"></select>
+          <div id="compItemWrap" class="ped-ins-wrap" style="flex:1;min-width:0;">
+          <input type="text" id="compItemSearch" class="ped-ins-search" placeholder="Elegí un insumo..." autocomplete="off"
+            onclick="recFiltrarItems(this)" oninput="recFiltrarItems(this)" onblur="recOcultarItems(this)">
+          <input type="hidden" id="compItem">
+          <div id="compItemOpts" class="ped-ins-opts"></div>
+        </div>
           <div class="comp-add-row2">
             <input type="number" min="0" step="any" id="compCantidad" class="mini-select" placeholder="Cantidad">
             <select id="compUnidad" class="mini-select">
