@@ -2539,24 +2539,57 @@ function prepararPickerComponente() {
   const cant = document.getElementById('compCantidad'); if (cant) cant.value = '';
 }
 
+let RECETA_COMP_ITEMS_ACTUAL = [];
 window.poblarItemsComponente = function() {
   const tipo = document.getElementById('compTipo').value;
-  const itemSel = document.getElementById('compItem');
+  const searchEl = document.getElementById('compItemSearch');
+  const hiddenEl = document.getElementById('compItem');
+  const optsEl  = document.getElementById('compItemOpts');
+  if (searchEl) { searchEl.value = ''; searchEl.placeholder = tipo === 'ingrediente' ? 'Elegí un insumo...' : 'Elegí una sub-elaboración...'; }
+  if (hiddenEl) hiddenEl.value = '';
+  if (optsEl)   optsEl.style.display = 'none';
   if (tipo === 'ingrediente') {
-    itemSel.innerHTML = '<option value="">Elegí un insumo...</option>' +
-      RECETAS_INSUMOS_VAL.map(i => '<option value="' + i.id + '" data-unidad="' + esc(i.unidad || '') + '">' + esc(i.nombre) + '</option>').join('');
+    RECETA_COMP_ITEMS_ACTUAL = RECETAS_INSUMOS_VAL.map(i => ({ id: i.id, nombre: i.nombre, unidad: i.unidad || '' }));
   } else {
-    itemSel.innerHTML = '<option value="">Elegí una sub-elaboración...</option>' +
-      RECETAS_ELAB_PICKER.filter(r => r.id !== RECETA_EDITANDO)
-        .map(r => '<option value="' + r.id + '" data-unidad="' + esc(r.unidad_rendimiento || '') + '">' + esc(r.nombre) + '</option>').join('');
+    RECETA_COMP_ITEMS_ACTUAL = RECETAS_ELAB_PICKER
+      .filter(r => r.id !== RECETA_EDITANDO)
+      .map(r => ({ id: r.id, nombre: r.nombre, unidad: r.unidad_rendimiento || '' }));
   }
-  // sincronizar unidad sugerida al cambiar el item
-  itemSel.onchange = function() {
-    const opt = itemSel.options[itemSel.selectedIndex];
-    const u = opt ? opt.getAttribute('data-unidad') : '';
+};
+window.recFiltrarItems = function(input) {
+  const optsEl = document.getElementById('compItemOpts');
+  const q = input.value.toLowerCase().trim();
+  const matches = q.length === 0
+    ? RECETA_COMP_ITEMS_ACTUAL.slice(0, 40)
+    : RECETA_COMP_ITEMS_ACTUAL.filter(function(i) { return i.nombre.toLowerCase().indexOf(q) !== -1; }).slice(0, 40);
+  if (!matches.length) {
+    optsEl.innerHTML = '<div class="ped-ins-no-result">Sin resultados</div>';
+  } else {
+    optsEl.innerHTML = matches.map(function(i) {
+      return '<div class="ped-ins-opt" onmousedown="recElegirItem(' + i.id + ')">' +
+        '<span class="ped-ins-opt-nombre">' + esc(i.nombre) + '</span></div>';
+    }).join('');
+  }
+  optsEl.style.display = 'block';
+};
+window.recOcultarItems = function(input) {
+  setTimeout(function() {
+    const optsEl = document.getElementById('compItemOpts');
+    if (optsEl) optsEl.style.display = 'none';
+  }, 200);
+};
+window.recElegirItem = function(id) {
+  const item = RECETA_COMP_ITEMS_ACTUAL.find(function(i) { return i.id === id; });
+  document.getElementById('compItem').value = id;
+  document.getElementById('compItemSearch').value = item ? item.nombre : '';
+  document.getElementById('compItemOpts').style.display = 'none';
+  if (item && item.unidad) {
     const uSel = document.getElementById('compUnidad');
-    if (u && uSel) uSel.value = u;
-  };
+    if (uSel) {
+      const opts = Array.from(uSel.options).map(function(o) { return o.value; });
+      if (opts.indexOf(item.unidad) !== -1) uSel.value = item.unidad;
+    }
+  }
 };
 
 window.agregarComponente = function() {
@@ -2567,9 +2600,11 @@ window.agregarComponente = function() {
   const unidad = document.getElementById('compUnidad').value;
   if (!refId) { toast('Elegí un insumo o sub-elaboración', 'error'); return; }
   if (cantidad <= 0) { toast('Poné una cantidad', 'error'); return; }
-  const nombre = itemSel.options[itemSel.selectedIndex].text;
+  const _compItem = RECETA_COMP_ITEMS_ACTUAL.find(function(i) { return i.id === refId; });
+  const nombre = _compItem ? _compItem.nombre : ('Item #' + refId);
   RECETA_COMP_EDIT.push({ tipo: tipo, refId: refId, nombre: nombre, cantidad: cantidad, unidad: unidad });
   document.getElementById('compItem').value = '';
+  const _srch = document.getElementById('compItemSearch'); if (_srch) _srch.value = '';
   document.getElementById('compCantidad').value = '';
   renderComponentesEdit();
 };
