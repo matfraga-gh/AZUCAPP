@@ -3197,6 +3197,8 @@ function renderPersonal() {
       }
       if (p.empleado) {
         acciones += '<button class="btn-ghost pc-btn pc-btn-danger" onclick="eliminarPersona(' + p.empleado.id + ', ' + (p.user ? p.user.id : 'null') + ')"><i class="ti ti-trash"></i>Eliminar</button>';
+      } else if (p.user && (!currentUser || p.user.id !== currentUser.id)) {
+        acciones += '<button class="btn-ghost pc-btn pc-btn-danger" onclick="eliminarPersona(null, ' + p.user.id + ')"><i class="ti ti-trash"></i>Eliminar</button>';
       }
     }
 
@@ -6633,7 +6635,7 @@ window.eliminarPedido = async function() {
 // ---- Eliminar persona (Master/Admin): borra ficha + acceso de forma permanente ----
 window.eliminarPersona = async function(empId, userId) {
   if (!isMaster() && !isAdmin()) return;
-  const p = PERSONAS_CACHE.find(x => x.empleado && x.empleado.id === empId);
+  const p = empId ? PERSONAS_CACHE.find(x => x.empleado && x.empleado.id === empId) : (userId ? PERSONAS_CACHE.find(x => x.user && x.user.id === userId) : null);
   const nombre = p ? p.nombreCompleto : 'esta persona';
   const ok = await showConfirm({
     title: 'Eliminar persona',
@@ -6643,8 +6645,8 @@ window.eliminarPersona = async function(empId, userId) {
   if (!ok) return;
   try {
     if (userId) await api('roster_usuarios?id=eq.' + userId, { method: 'DELETE' });
-    await api('empleados?id=eq.' + empId, { method: 'DELETE' });
-    ADMIN_EMPLEADOS_CACHE = (ADMIN_EMPLEADOS_CACHE || []).filter(e => e.id !== empId);
+    if (empId) await api('empleados?id=eq.' + empId, { method: 'DELETE' });
+    if (empId) ADMIN_EMPLEADOS_CACHE = (ADMIN_EMPLEADOS_CACHE || []).filter(e => e.id !== empId);
     if (userId) ADMIN_USUARIOS_CACHE = (ADMIN_USUARIOS_CACHE || []).filter(u => u.id !== userId);
     construirPersonas();
     renderPersonal();
