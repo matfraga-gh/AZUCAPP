@@ -3675,7 +3675,6 @@ window.guardarUsuario = async function() {
       const localPrimario = localesSeleccionados[0] || null;
       const empResp = await api('empleados', {
         method: 'POST',
-        headers: { 'Prefer': 'return=representation' },
         body: JSON.stringify({
           nombre_p: nombreP,
           apellido: apellido,
