@@ -873,7 +873,15 @@
         <small class="field-hint" id="userPerfilHint">El perfil define qué puede hacer la persona.</small>
       </label>
 
-      <label class="field">
+      <!-- Al CREAR: selector de locales (auto-crea empleado) -->
+      <div class="field" id="userLocalesField">
+        <span class="field-label">Local(es) asignado(s)</span>
+        <div id="userLocalesGrid" class="locales-grid-inline"></div>
+        <small class="field-hint">Se crea automáticamente la ficha del colaborador con estos locales.</small>
+      </div>
+
+      <!-- Al EDITAR: vincular a empleado existente -->
+      <label class="field" id="userEmpleadoField" style="display:none;">
         <span class="field-label">Vincular a colaborador</span>
         <select id="userEmpleado">
           <option value="">Sin vincular (no tiene turnos)</option>

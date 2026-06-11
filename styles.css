@@ -3441,3 +3441,31 @@ select option {
 .ped-ins-opt-nombre { font-size: 14px; color: var(--c-text); }
 .ped-ins-opt-extra { font-size: 11px; color: var(--c-text-muted); }
 .ped-ins-no-result { padding: 10px 14px; font-size: 13px; color: var(--c-text-muted); }
+
+/* ---- Locales grid inline (Nuevo usuario modal) ---- */
+.locales-grid-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.locales-grid-inline .local-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--c-text);
+  user-select: none;
+  transition: background .15s, border-color .15s;
+}
+.locales-grid-inline .local-check input { display: none; }
+.locales-grid-inline .local-check.activo {
+  background: rgba(196,98,45,.18);
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+  font-weight: 600;
+}

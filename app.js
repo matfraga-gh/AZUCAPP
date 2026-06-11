@@ -3536,20 +3536,26 @@ window.abrirCrearUsuario = function() {
   document.getElementById('userUsuario').value = '';
   document.getElementById('userPassword').value = '';
   document.getElementById('userPerfil').value = 'usuario';
-  document.getElementById('userEmpleado').innerHTML = '<option value="">Sin vincular (no tiene turnos)</option>' +
-    ADMIN_EMPLEADOS_CACHE.map(e => {
-      const lbl = `${e.nombre || ''} ${e.apellido || ''}`.trim() + (e.local ? ' · ' + (LOCAL_LABELS[e.local] || e.local) : '');
-      return `<option value="${e.id}">${esc(lbl)}</option>`;
-    }).join('');
-  document.getElementById('userEmpleado').value = '';
+  // Mostrar selector de locales, ocultar vincular empleado
+  document.getElementById('userLocalesField').style.display = '';
+  document.getElementById('userEmpleadoField').style.display = 'none';
+  // Renderizar checkboxes de locales
+  document.getElementById('userLocalesGrid').innerHTML = getLocalesActivos().map(loc =>
+    `<label class="local-check" data-local="${loc}"><input type="checkbox">${esc(LOCAL_LABELS[loc] || loc)}</label>`
+  ).join('');
+  document.querySelectorAll('#userLocalesGrid .local-check').forEach(el => {
+    el.addEventListener('click', e => {
+      e.preventDefault();
+      el.classList.toggle('activo');
+      el.querySelector('input').checked = el.classList.contains('activo');
+    });
+  });
   document.getElementById('userPasswordField').style.display = '';
   document.getElementById('userFormError').textContent = '';
-
   // Si no es Master, no puede crear Masters
   const optMaster = document.getElementById('optMaster');
   optMaster.disabled = !isMaster();
   optMaster.textContent = isMaster() ? 'Master (máximo nivel)' : 'Master (solo Master puede crear Masters)';
-
   document.getElementById('modalUserForm').classList.add('show');
 };
 
@@ -3557,6 +3563,9 @@ window.abrirEditarUsuario = function(id) {
   const u = ADMIN_USUARIOS_CACHE.find(x => x.id === id);
   if (!u) return;
   EDITANDO_USER_ID = id;
+  // Mostrar vincular empleado, ocultar locales
+  document.getElementById('userLocalesField').style.display = 'none';
+  document.getElementById('userEmpleadoField').style.display = '';
   document.getElementById('userFormTitle').textContent = 'Editar usuario';
   document.getElementById('userNombre').value = u.nombre || '';
   document.getElementById('userUsuario').value = u.usuario || '';
@@ -3615,7 +3624,7 @@ window.guardarUsuario = async function() {
     btn.textContent = 'Guardando...';
 
     if (EDITANDO_USER_ID) {
-      // Editando: verificar conflictos de username SOLO si cambió
+      // ── EDITAR usuario existente ──────────────────────────────────────────
       const original = ADMIN_USUARIOS_CACHE.find(u => u.id === EDITANDO_USER_ID);
       if (usuario !== (original.usuario || '').toLowerCase()) {
         const existentes = await api(`roster_usuarios?usuario=eq.${encodeURIComponent(usuario)}&select=id`);
@@ -3636,7 +3645,7 @@ window.guardarUsuario = async function() {
 
       toast('✓ Usuario actualizado', 'success');
     } else {
-      // Creando: requiere password
+      // ── CREAR nuevo usuario + empleado ────────────────────────────────────
       if (!password || password.length < 6) {
         errBox.textContent = 'La contraseña debe tener al menos 6 caracteres';
         btn.disabled = false;
@@ -3644,14 +3653,41 @@ window.guardarUsuario = async function() {
         return;
       }
 
-      // Verificar que no exista
+      // Verificar que el usuario no exista
       const existentes = await api(`roster_usuarios?usuario=eq.${encodeURIComponent(usuario)}&select=id`);
       if (existentes && existentes.length) {
         throw new Error('Ese usuario ya existe');
       }
 
+      // Leer locales seleccionados
+      const localesSeleccionados = Array.from(
+        document.querySelectorAll('#userLocalesGrid .local-check.activo')
+      ).map(el => el.dataset.local);
+
+      // Separar nombre y apellido (primer token = nombre, resto = apellido)
+      const partes = nombre.split(' ');
+      const nombreP = partes[0] || nombre;
+      const apellido = partes.slice(1).join(' ') || '';
+
+      // Crear empleado
+      const localPrimario = localesSeleccionados[0] || null;
+      const empResp = await api('empleados', {
+        method: 'POST',
+        headers: { 'Prefer': 'return=representation' },
+        body: JSON.stringify({
+          nombre_p: nombreP,
+          apellido: apellido,
+          nombre: nombre,
+          local: localPrimario,
+          activo: true
+        })
+      });
+      const nuevoEmpleadoId = empResp && empResp[0] ? empResp[0].id : null;
+      if (!nuevoEmpleadoId) throw new Error('No se pudo crear la ficha del colaborador');
+
       const passHash = await sha256(password);
 
+      // Crear usuario vinculado al empleado
       await api('roster_usuarios', {
         method: 'POST',
         body: JSON.stringify({
@@ -3659,13 +3695,14 @@ window.guardarUsuario = async function() {
           nombre,
           perfil,
           password_hash: passHash,
-          empleado_id: empleadoId ? parseInt(empleadoId) : null,
+          empleado_id: nuevoEmpleadoId,
+          locales_asignados: localesSeleccionados.length ? localesSeleccionados : null,
           debe_cambiar_password: true,
           activo: true
         })
       });
 
-      toast('✓ Usuario creado', 'success');
+      toast('✓ Usuario y ficha creados', 'success');
     }
 
     closeUserFormModal();
