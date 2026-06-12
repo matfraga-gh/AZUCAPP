@@ -2621,6 +2621,9 @@ function convertirCantidad(cant, fromU, toU) {
   if (f === t) return cant;
   const peso = { kg: 1000, kilo: 1000, kilogramo: 1000, g: 1, gr: 1, gramo: 1, gramos: 1 };
   const vol = { l: 1000, lt: 1000, litro: 1000, litros: 1000, ml: 1, cc: 1 };
+  // Unidades discretas (piezas): se consideran equivalentes entre sí
+  const unid = new Set(['u', 'un', 'und', 'unid', 'unidad', 'unidades', 'ud', 'uds', 'pza', 'pieza', 'piezas']);
+  if (unid.has(f) && unid.has(t)) return cant;
   if (peso[f] != null && peso[t] != null) return cant * peso[f] / peso[t];
   if (vol[f] != null && vol[t] != null) return cant * vol[f] / vol[t];
   return null; // unidades no convertibles entre sí
@@ -2667,20 +2670,47 @@ function renderComponentesEdit() {
         costoLinea = '<span class="comp-costo">' + unit + ' · <span class="comp-duda">revisar unidad</span></span>';
       }
     }
-    return '<div class="comp-row">' +
+    return '<div class="comp-row" onclick="editarComponente(' + idx + ')" style="cursor:pointer;" title="Clic para editar">' +
       '<div class="comp-info">' +
         '<span class="comp-nombre">' + esc(c.nombre) + (c.tipo === 'receta' ? ' <span class="comp-tag">sub-elab</span>' : '') + '</span>' +
         '<span class="comp-cant">' + fmtCant(c.cantidad) + ' ' + esc(c.unidad) + '</span>' +
         costoLinea +
       '</div>' +
-      '<button type="button" class="comp-del" onclick="quitarComponente(' + idx + ')" aria-label="Quitar"><i class="ti ti-trash"></i></button>' +
+      '<button type="button" class="comp-del" onclick="event.stopPropagation(); quitarComponente(' + idx + ')" aria-label="Quitar"><i class="ti ti-trash"></i></button>' +
     '</div>';
   }).join('');
-  const totalLinea = '<div class="comp-total">Costo estimado: <strong>$' + formatNumber(Math.round(total)) + '</strong>' +
+  const rend = parseFloat((document.getElementById('subelabRendimiento') || {}).value) || 0;
+  const porUnidad = (rend > 0 && !hayDuda) ? ' · <span class="comp-unit-cost">$' + formatNumber(Math.round(total / rend)) + ' por unidad</span>' : '';
+  const totalLinea = '<div class="comp-total">Costo estimado: <strong>$' + formatNumber(Math.round(total)) + '</strong>' + porUnidad +
     (hayDuda ? ' <span class="comp-duda">(faltan unidades por convertir)</span>' : '') +
     '<div class="comp-total-hint">Se calcula a partir de los componentes, convirtiendo unidades automáticamente.</div></div>';
   cont.innerHTML = filas + totalLinea;
 }
+
+window.editarComponente = function(idx) {
+  const c = RECETA_COMP_EDIT[idx];
+  if (!c) return;
+  // Cargar tipo
+  const tipoEl = document.getElementById('compTipo');
+  if (tipoEl) { tipoEl.value = c.tipo === 'ingrediente' ? 'ingrediente' : 'receta'; }
+  poblarItemsComponente();
+  // Cargar insumo/sub-elab en el buscador
+  const hiddenEl = document.getElementById('compItem');
+  const searchEl = document.getElementById('compItemSearch');
+  if (hiddenEl) hiddenEl.value = c.refId;
+  if (searchEl) searchEl.value = c.nombre;
+  // Cargar cantidad y unidad
+  const cantEl = document.getElementById('compCantidad');
+  const unidEl = document.getElementById('compUnidad');
+  if (cantEl) cantEl.value = c.cantidad;
+  if (unidEl) unidEl.value = c.unidad;
+  // Quitar de la lista y re-renderizar
+  RECETA_COMP_EDIT.splice(idx, 1);
+  renderComponentesEdit();
+  // Scroll al formulario
+  const form = document.getElementById('compCantidad');
+  if (form) form.focus();
+};
 
 window.guardarSubelab = async function() {
   const err = document.getElementById('subelabError'); err.textContent = '';
