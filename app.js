@@ -2270,7 +2270,7 @@ async function cargarRecetas() {
       RECETAS_INSUMOS_VAL = await api('ingredientes?validado=eq.true&activo=eq.true&select=id,nombre,unidad,costo,cantidad_por_presentacion&order=nombre.asc') || [];
     }
     if (!RECETAS_ELAB_PICKER.length) {
-      RECETAS_ELAB_PICKER = await api('recetas?tipo=eq.elaboracion&activo=eq.true&select=id,nombre,unidad_rendimiento,rendimiento&order=nombre.asc') || [];
+      RECETAS_ELAB_PICKER = await api('recetas?tipo=eq.elaboracion&activo=eq.true&select=id,nombre,unidad_rendimiento,rendimiento,local&order=nombre.asc') || [];
     }
     if (!RECETAS_PLATOS_PICKER.length) {
       RECETAS_PLATOS_PICKER = await api('recetas?tipo=eq.plato&activo=eq.true&select=id,nombre&order=nombre.asc') || [];
@@ -2363,7 +2363,7 @@ function renderRecetas() {
         '<span><i class="ti ti-coin"></i> $' + formatNumber(Math.round(costo)) + (rend > 0 ? (' · $' + formatNumber(Math.round(costoUnit)) + '/' + esc(unidad)) : '') + '</span>' +
       '</div>';
     }
-    return '<div class="receta-card"' + (gestiona ? ' onclick="abrirEditarSubelab(' + r.id + ')" style="cursor:pointer"' : '') + '>' + head + meta + '</div>';
+    return '<div class="receta-card"' + (gestiona ? ' onclick="abrirEditarSubelab(' + JSON.stringify(r.id) + ')" style="cursor:pointer"' : '') + '>' + head + meta + '</div>';
   }).join('');
 }
 
@@ -2484,9 +2484,10 @@ window.abrirNuevaSubelab = function() {
 };
 
 window.abrirEditarSubelab = async function(id) {
+  try {
   if (!puedeGestionarRecetas()) { toast('No tenés permiso', 'error'); return; }
-  const r = RECETAS_DB.find(x => x.id === id);
-  if (!r) return;
+  const r = RECETAS_DB.find(x => String(x.id) === String(id));
+  if (!r) { toast('No se encontró la receta. Recargá la página.', 'error'); return; }
   RECETA_EDITANDO = id;
   RECETA_COMP_EDIT = [];
   MENU_PASOS_EDIT = []; MENU_PASOS_VIEJOS = [];
@@ -2505,6 +2506,7 @@ window.abrirEditarSubelab = async function(id) {
   poblarPlatosPicker();
   document.getElementById('modalSubelab').classList.add('show');
   if (t === 'menu') { cargarPasosEnEditor(id); } else { cargarComponentesEnEditor(id); }
+  } catch(e) { toast('Error al abrir: ' + (e && e.message ? e.message : e), 'error'); console.error('abrirEditarSubelab:', e); }
 };
 
 // Carga (o recarga) los componentes de una receta dentro del editor abierto
@@ -2551,8 +2553,10 @@ window.poblarItemsComponente = function() {
   if (tipo === 'ingrediente') {
     RECETA_COMP_ITEMS_ACTUAL = RECETAS_INSUMOS_VAL.map(i => ({ id: i.id, nombre: i.nombre, unidad: i.unidad || '' }));
   } else {
+    const localReceta = (document.getElementById('subelabLocal') || {}).value || '';
     RECETA_COMP_ITEMS_ACTUAL = RECETAS_ELAB_PICKER
       .filter(r => r.id !== RECETA_EDITANDO)
+      .filter(r => !localReceta || !r.local || r.local === localReceta)
       .map(r => ({ id: r.id, nombre: r.nombre, unidad: r.unidad_rendimiento || '' }));
   }
 };
