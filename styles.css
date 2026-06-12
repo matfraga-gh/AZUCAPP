@@ -1957,6 +1957,31 @@ button {
   color: #E24B4A;
 }
 .bib-btn-delete:hover { background: rgba(226, 75, 74, 0.3); }
+.bib-btn-activar {
+  background: rgba(245, 158, 11, 0.15);
+  color: #F59E0B;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.bib-btn-activar:hover { background: rgba(245, 158, 11, 0.3); }
+.bib-admin-item--inactivo { opacity: 0.6; }
+.bib-badge-inactivo {
+  background: rgba(226, 75, 74, 0.2);
+  color: #E24B4A;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
 .bib-btn-edit i, .bib-btn-delete i { font-size: 16px; }
 
 /* Lista admin de categorías */
