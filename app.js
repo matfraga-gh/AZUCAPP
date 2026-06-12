@@ -1761,6 +1761,11 @@ async function cargarColabsCierre(localSlug) {
       const pts = CIERRE_EDITANDO ? (CIERRE_EDIT_PUNTOS[e.id] != null ? CIERRE_EDIT_PUNTOS[e.id] : 0) : 0;
       return { id: e.id, nombre: nombre, multi: !!e.es_multilocal && e.local !== loc, puntos: pts };
     });
+    // Locales propios primero, multi/eventuales al final (dentro de cada grupo, orden alfabético)
+    CIERRE_COLABS.sort((a, b) => {
+      if (a.multi !== b.multi) return a.multi ? 1 : -1;
+      return a.nombre.localeCompare(b.nombre, 'es');
+    });
     renderColabsCierre();
     recalcCierre();
   } catch (e) {
@@ -3219,6 +3224,9 @@ function renderPersonal() {
     if (p.tieneAcceso && !p.accesoActivo) chips.push('<span class="pc-chip pc-chip-off"><i class="ti ti-user-off"></i>Acceso inactivo</span>');
 
     let acciones = '<button class="btn-ghost pc-btn" onclick="abrirFicha(\'' + p.key + '\')"><i class="ti ti-id"></i>Ver ficha</button>';
+    if ((isMaster() || isAdmin()) && p.empleado) {
+      acciones += '<button class="btn-ghost pc-btn" onclick="abrirEditarFicha(\'' + p.key + '\')"><i class="ti ti-pencil"></i>Editar</button>';
+    }
     if (gestiona) {
       if (p.tieneAcceso) {
         acciones += '<button class="btn-ghost pc-btn" onclick="abrirCambiarPerfil(' + p.user.id + ')"><i class="ti ti-user-cog"></i>Perfil</button>';
@@ -5921,7 +5929,7 @@ window.abrirEditarTurnosEmp = function(empId) {
 
   const dias = diasDeSemana(ROST_LUNES);
   const empT = ROST_TURNOS[empId] || {};
-  const estados = [['trabaja', 'Trabaja'], ['off', 'OFF'], ['flex', 'FLEX'], ['', '—']];
+  const estados = [['trabaja', 'Trabaja'], ['off', 'OFF'], ['flex', 'FLEX'], ['', 'AUSENTE']];
   document.getElementById('rostDias').innerHTML = dias.map((d, i) => {
     const t = empT[d];
     let est = '';
@@ -6157,7 +6165,7 @@ function llenarLocalSelectPlantilla(sel) {
   document.getElementById('plLocal').innerHTML = opts.join('');
 }
 function renderPlantillaDias(p) {
-  const estados = [['trabaja', 'Trabaja'], ['flex', 'FLEX'], ['', '\u2014']];
+  const estados = [['trabaja', 'Trabaja'], ['off', 'OFF'], ['flex', 'FLEX'], ['', 'AUSENTE']];
   document.getElementById('plDias').innerHTML = PL_DIAS.map((k, i) => {
     let est = '', hora = '';
     if (p) {
