@@ -4203,7 +4203,7 @@ async function openMiBiblioteca() {
   try {
     const [cats, conts] = await Promise.all([
       api('biblioteca_categorias?activo=eq.true&order=orden.asc'),
-      api('biblioteca_contenidos?activo=eq.true&order=creado_en.desc')
+      api('biblioteca_contenidos?activo=neq.false&order=creado_en.desc')
     ]);
     BIB_CATEGORIAS = cats || [];
     BIB_CONTENIDOS = conts || [];
@@ -4213,13 +4213,19 @@ async function openMiBiblioteca() {
   }
 
   // Filtrar contenidos por locales del usuario
-  // Usuarios sin locales_asignados (perfil básico) ven todo el contenido activo
   const localesUser = localesUsuarioActual();
   const esEditor = localesUser.length > 0 && !isMaster() && !isAdmin();
+  // Slug del local "transversal" (TODOS)
+  const transversalSlug = (() => {
+    const t = LOCALES_DB.find(x => /transversal/i.test(x.nombre || '') || /transversal/i.test(x.slug || ''));
+    return t ? t.slug : null;
+  })();
   const visibles = BIB_CONTENIDOS.filter(c => {
     if (isMaster() || isAdmin()) return true;
     if (!c.locales || c.locales.length === 0) return true; // sin local = visible para todos
-    if (!esEditor) return true; // usuario básico ve todo
+    // Si contiene 'transversal' (TODOS), es visible para todos
+    if (transversalSlug && c.locales.includes(transversalSlug)) return true;
+    if (!esEditor) return true; // usuario básico (sin locales asignados) ve todo
     return c.locales.some(loc => localesUser.includes(loc));
   });
 
@@ -4532,6 +4538,14 @@ async function guardarContenido() {
   if (!/^https?:\/\//i.test(url)) { toast('El link debe empezar con http:// o https://', 'error'); return; }
   if (!categoria_id) { toast('Elegí una categoría', 'error'); return; }
   if (BIB_LOCALES_SEL.length === 0) { toast('Elegí al menos un local', 'error'); return; }
+  // Si seleccionó "TODOS" (transversal), guardar null = visible para todos los locales
+  const transversalSlugGuardar = (() => {
+    const t = LOCALES_DB.find(x => /transversal/i.test(x.nombre || '') || /transversal/i.test(x.slug || ''));
+    return t ? t.slug : null;
+  })();
+  const localesParaGuardar = (transversalSlugGuardar && BIB_LOCALES_SEL.includes(transversalSlugGuardar))
+    ? null
+    : BIB_LOCALES_SEL;
 
   const btn = document.getElementById('btnGuardarContenido');
   btn.disabled = true;
@@ -4542,7 +4556,7 @@ async function guardarContenido() {
     categoria_id,
     tipo: BIB_TIPO_SEL,
     url,
-    locales: BIB_LOCALES_SEL,
+    locales: localesParaGuardar,
     activo: true,
     actualizado_en: new Date().toISOString()
   };
