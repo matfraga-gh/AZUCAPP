@@ -434,7 +434,7 @@ const MODULES = [
     color: '#5DCAA5',
     title: 'Mi biblioteca',
     desc: 'Capacitación y recursos',
-    visible: () => isMaster() || isAdmin() || (currentUser.locales_asignados && currentUser.locales_asignados.length > 0),
+    visible: () => true, // visible para todos los usuarios
     action: () => openMiBiblioteca()
   },
   {
@@ -4213,7 +4213,7 @@ async function openMiBiblioteca() {
   const localesUser = localesUsuarioActual();
   const visibles = BIB_CONTENIDOS.filter(c => {
     if (isMaster() || isAdmin()) return true;
-    if (!c.locales || c.locales.length === 0) return false;
+    if (!c.locales || c.locales.length === 0) return true; // sin local = visible para todos
     return c.locales.some(loc => localesUser.includes(loc));
   });
 
