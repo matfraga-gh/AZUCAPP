@@ -2617,6 +2617,26 @@ window.poblarItemsComponente = function() {
   if (opts) opts.style.display = 'none';
 };
 
+function recGetOVerlay() {
+  let ov = document.getElementById('recDropOverlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'recDropOverlay';
+    ov.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:199;';
+    ov.addEventListener('click', function() { recCerrarDropdown(); });
+    ov.addEventListener('touchstart', function(e) { e.preventDefault(); recCerrarDropdown(); }, { passive: false });
+    document.body.appendChild(ov);
+  }
+  return ov;
+}
+
+function recCerrarDropdown() {
+  const opts = document.getElementById('compItemOpts');
+  if (opts) opts.style.display = 'none';
+  const ov = document.getElementById('recDropOverlay');
+  if (ov) ov.style.display = 'none';
+}
+
 window.recFiltrarItems = function(input) {
   const q = (input.value || '').toLowerCase().trim();
   const opts = document.getElementById('compItemOpts');
@@ -2629,22 +2649,18 @@ window.recFiltrarItems = function(input) {
   } else {
     opts.innerHTML = filtrados.map(function(i) {
       const call = 'recSeleccionarItem(' + JSON.stringify(String(i.id)) + ',' + JSON.stringify(i.nombre) + ',' + JSON.stringify(i.unidad) + ')';
-      // onmousedown para desktop (previene blur antes de seleccionar)
-      // ontouchstart para mobile (los touch events no disparan mousedown de forma confiable)
-      return '<div class="ped-ins-opt"' +
-        ' onmousedown="event.preventDefault();' + call + '"' +
-        ' ontouchstart="event.preventDefault();' + call + '">' +
-        esc(i.nombre) + '</div>';
+      return '<div class="ped-ins-opt" onclick="' + call + '">' + esc(i.nombre) + '</div>';
     }).join('');
   }
   opts.style.display = 'block';
+  recGetOVerlay().style.display = 'block';
 };
 
 window.recOcultarItems = function() {
-  setTimeout(function() {
-    const opts = document.getElementById('compItemOpts');
-    if (opts) opts.style.display = 'none';
-  }, 200);
+  // blur del input — solo cerramos si no hay overlay activo (desktop)
+  const ov = document.getElementById('recDropOverlay');
+  if (ov && ov.style.display === 'block') return; // mobile lo maneja el overlay
+  setTimeout(recCerrarDropdown, 200);
 };
 
 window.recSeleccionarItem = function(id, nombre, unidad) {
@@ -2654,8 +2670,7 @@ window.recSeleccionarItem = function(id, nombre, unidad) {
   if (hiddenEl) hiddenEl.value = id;
   if (searchEl) searchEl.value = nombre;
   if (unidad && uSel) uSel.value = unidad;
-  const opts = document.getElementById('compItemOpts');
-  if (opts) opts.style.display = 'none';
+  recCerrarDropdown();
 };
 
 window.agregarComponente = function() {
