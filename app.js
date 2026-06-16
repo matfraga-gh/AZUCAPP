@@ -2642,9 +2642,9 @@ window.recFiltrarItems = function(input) {
   if (!filtrados.length) {
     opts.innerHTML = '<div class="ped-ins-no-result">Sin resultados</div>';
   } else {
+    // Usar data-id para evitar conflictos de comillas en onclick
     opts.innerHTML = filtrados.map(function(i) {
-      const call = 'recSeleccionarItem(' + JSON.stringify(String(i.id)) + ',' + JSON.stringify(i.nombre) + ',' + JSON.stringify(i.unidad) + ')';
-      return '<div class="ped-ins-opt" onclick="' + call + '">' + esc(i.nombre) + '</div>';
+      return '<div class="ped-ins-opt" data-rec-id="' + esc(String(i.id)) + '" onclick="recSeleccionarItemById(this)">' + esc(i.nombre) + '</div>';
     }).join('');
   }
   opts.style.display = 'block';
@@ -2653,6 +2653,13 @@ window.recFiltrarItems = function(input) {
 window.recOcultarItems = function() {
   // Timeout largo para que en mobile el onclick de la opción se ejecute antes de cerrar
   setTimeout(recCerrarDropdown, 500);
+};
+
+window.recSeleccionarItemById = function(el) {
+  const id = el.dataset.recId;
+  const item = REC_ITEMS_LISTA.find(function(i) { return String(i.id) === String(id); });
+  if (!item) return;
+  recSeleccionarItem(item.id, item.nombre, item.unidad);
 };
 
 window.recSeleccionarItem = function(id, nombre, unidad) {
