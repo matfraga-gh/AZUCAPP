@@ -2617,25 +2617,20 @@ window.poblarItemsComponente = function() {
   if (opts) opts.style.display = 'none';
 };
 
-function recGetOVerlay() {
-  let ov = document.getElementById('recDropOverlay');
-  if (!ov) {
-    ov = document.createElement('div');
-    ov.id = 'recDropOverlay';
-    ov.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:199;';
-    ov.addEventListener('click', function() { recCerrarDropdown(); });
-    ov.addEventListener('touchstart', function(e) { e.preventDefault(); recCerrarDropdown(); }, { passive: false });
-    document.body.appendChild(ov);
-  }
-  return ov;
-}
-
 function recCerrarDropdown() {
   const opts = document.getElementById('compItemOpts');
   if (opts) opts.style.display = 'none';
-  const ov = document.getElementById('recDropOverlay');
-  if (ov) ov.style.display = 'none';
 }
+
+// Cerrar dropdown al tocar/hacer click fuera del buscador de componentes
+document.addEventListener('click', function(e) {
+  const wrap = document.getElementById('compItemWrap');
+  if (wrap && !wrap.contains(e.target)) recCerrarDropdown();
+});
+document.addEventListener('touchstart', function(e) {
+  const wrap = document.getElementById('compItemWrap');
+  if (wrap && !wrap.contains(e.target)) recCerrarDropdown();
+}, { passive: true });
 
 window.recFiltrarItems = function(input) {
   const q = (input.value || '').toLowerCase().trim();
@@ -2653,14 +2648,11 @@ window.recFiltrarItems = function(input) {
     }).join('');
   }
   opts.style.display = 'block';
-  recGetOVerlay().style.display = 'block';
 };
 
 window.recOcultarItems = function() {
-  // blur del input — solo cerramos si no hay overlay activo (desktop)
-  const ov = document.getElementById('recDropOverlay');
-  if (ov && ov.style.display === 'block') return; // mobile lo maneja el overlay
-  setTimeout(recCerrarDropdown, 200);
+  // Timeout largo para que en mobile el onclick de la opción se ejecute antes de cerrar
+  setTimeout(recCerrarDropdown, 500);
 };
 
 window.recSeleccionarItem = function(id, nombre, unidad) {
