@@ -2627,9 +2627,15 @@ window.recFiltrarItems = function(input) {
   if (!filtrados.length) {
     opts.innerHTML = '<div class="ped-ins-no-result">Sin resultados</div>';
   } else {
-    opts.innerHTML = filtrados.map(i =>
-      '<div class="ped-ins-opt" onmousedown="recSeleccionarItem(' + JSON.stringify(String(i.id)) + ',' + JSON.stringify(i.nombre) + ',' + JSON.stringify(i.unidad) + ')">' + esc(i.nombre) + '</div>'
-    ).join('');
+    opts.innerHTML = filtrados.map(function(i) {
+      const call = 'recSeleccionarItem(' + JSON.stringify(String(i.id)) + ',' + JSON.stringify(i.nombre) + ',' + JSON.stringify(i.unidad) + ')';
+      // onmousedown para desktop (previene blur antes de seleccionar)
+      // ontouchstart para mobile (los touch events no disparan mousedown de forma confiable)
+      return '<div class="ped-ins-opt"' +
+        ' onmousedown="event.preventDefault();' + call + '"' +
+        ' ontouchstart="event.preventDefault();' + call + '">' +
+        esc(i.nombre) + '</div>';
+    }).join('');
   }
   opts.style.display = 'block';
 };
