@@ -2681,14 +2681,13 @@ button {
 @media (max-width: 600px) {
   .prop-tabla-header,
   .prop-tabla-row {
-    grid-template-columns: 1fr 1fr 80px;
-    gap: 6px;
-    font-size: 12px;
+    grid-template-columns: 42px 1fr 62px 30px 72px;
+    gap: 5px;
+    font-size: 11px;
   }
+  /* En mobile: ocultar solo Local (col 3), mostrar Monto (col 4) */
   .prop-tabla-header > span:nth-child(3),
-  .prop-tabla-header > span:nth-child(4),
-  .prop-tabla-row > span:nth-child(3),
-  .prop-tabla-row > span:nth-child(4) {
+  .prop-tabla-row > span:nth-child(3) {
     display: none;
   }
 }

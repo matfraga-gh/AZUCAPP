@@ -2592,37 +2592,82 @@ function prepararPickerComponente() {
   const cant = document.getElementById('compCantidad'); if (cant) cant.value = '';
 }
 
+// Lista global de items disponibles para el picker de componentes
+let REC_ITEMS_LISTA = [];
+
 window.poblarItemsComponente = function() {
   const tipo = document.getElementById('compTipo').value;
-  const itemSel = document.getElementById('compItem');
+  const searchEl = document.getElementById('compItemSearch');
+  const hiddenEl = document.getElementById('compItem');
+  const opts = document.getElementById('compItemOpts');
+
   if (tipo === 'ingrediente') {
-    itemSel.innerHTML = '<option value="">Elegí un insumo...</option>' +
-      RECETAS_INSUMOS_VAL.map(i => '<option value="' + i.id + '" data-unidad="' + esc(i.unidad || '') + '">' + esc(i.nombre) + '</option>').join('');
+    REC_ITEMS_LISTA = RECETAS_INSUMOS_VAL.map(i => ({ id: i.id, nombre: i.nombre, unidad: i.unidad || '' }));
+    if (searchEl) searchEl.placeholder = 'Buscá un insumo...';
   } else {
-    itemSel.innerHTML = '<option value="">Elegí una sub-elaboración...</option>' +
-      RECETAS_ELAB_PICKER.filter(r => r.id !== RECETA_EDITANDO)
-        .map(r => '<option value="' + r.id + '" data-unidad="' + esc(r.unidad_rendimiento || '') + '">' + esc(r.nombre) + '</option>').join('');
+    const localReceta = (document.getElementById('subelabLocal') || {}).value || '';
+    REC_ITEMS_LISTA = RECETAS_ELAB_PICKER
+      .filter(r => String(r.id) !== String(RECETA_EDITANDO))
+      .filter(r => !localReceta || !r.local || r.local === localReceta)
+      .map(r => ({ id: r.id, nombre: r.nombre, unidad: r.unidad_rendimiento || '' }));
+    if (searchEl) searchEl.placeholder = 'Buscá una sub-elaboración...';
   }
-  // sincronizar unidad sugerida al cambiar el item
-  itemSel.onchange = function() {
-    const opt = itemSel.options[itemSel.selectedIndex];
-    const u = opt ? opt.getAttribute('data-unidad') : '';
-    const uSel = document.getElementById('compUnidad');
-    if (u && uSel) uSel.value = u;
-  };
+  if (hiddenEl) hiddenEl.value = '';
+  if (searchEl) searchEl.value = '';
+  if (opts) opts.style.display = 'none';
+};
+
+window.recFiltrarItems = function(input) {
+  const q = (input.value || '').toLowerCase().trim();
+  const opts = document.getElementById('compItemOpts');
+  if (!opts) return;
+  const filtrados = q
+    ? REC_ITEMS_LISTA.filter(i => i.nombre.toLowerCase().includes(q))
+    : REC_ITEMS_LISTA.slice(0, 40);
+  if (!filtrados.length) {
+    opts.innerHTML = '<div class="ped-ins-no-result">Sin resultados</div>';
+  } else {
+    opts.innerHTML = filtrados.map(i =>
+      '<div class="ped-ins-opt" onmousedown="recSeleccionarItem(' + JSON.stringify(String(i.id)) + ',' + JSON.stringify(i.nombre) + ',' + JSON.stringify(i.unidad) + ')">' + esc(i.nombre) + '</div>'
+    ).join('');
+  }
+  opts.style.display = 'block';
+};
+
+window.recOcultarItems = function() {
+  setTimeout(function() {
+    const opts = document.getElementById('compItemOpts');
+    if (opts) opts.style.display = 'none';
+  }, 200);
+};
+
+window.recSeleccionarItem = function(id, nombre, unidad) {
+  const hiddenEl = document.getElementById('compItem');
+  const searchEl = document.getElementById('compItemSearch');
+  const uSel = document.getElementById('compUnidad');
+  if (hiddenEl) hiddenEl.value = id;
+  if (searchEl) searchEl.value = nombre;
+  if (unidad && uSel) uSel.value = unidad;
+  const opts = document.getElementById('compItemOpts');
+  if (opts) opts.style.display = 'none';
 };
 
 window.agregarComponente = function() {
   const tipo = document.getElementById('compTipo').value;
-  const itemSel = document.getElementById('compItem');
-  const refId = parseInt(itemSel.value, 10);
+  const hiddenEl = document.getElementById('compItem');
+  const searchEl = document.getElementById('compItemSearch');
+  const refIdRaw = hiddenEl ? hiddenEl.value : '';
+  const refId = parseInt(refIdRaw, 10);
   const cantidad = parseFloat(document.getElementById('compCantidad').value) || 0;
   const unidad = document.getElementById('compUnidad').value;
   if (!refId) { toast('Elegí un insumo o sub-elaboración', 'error'); return; }
   if (cantidad <= 0) { toast('Poné una cantidad', 'error'); return; }
-  const nombre = itemSel.options[itemSel.selectedIndex].text;
+  // Buscar nombre en la lista global
+  const item = REC_ITEMS_LISTA.find(i => String(i.id) === String(refId));
+  const nombre = item ? item.nombre : (searchEl ? searchEl.value : ('Item #' + refId));
   RECETA_COMP_EDIT.push({ tipo: tipo, refId: refId, nombre: nombre, cantidad: cantidad, unidad: unidad });
-  document.getElementById('compItem').value = '';
+  if (hiddenEl) hiddenEl.value = '';
+  if (searchEl) searchEl.value = '';
   document.getElementById('compCantidad').value = '';
   renderComponentesEdit();
 };
