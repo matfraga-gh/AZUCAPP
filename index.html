@@ -145,20 +145,20 @@
     <!-- KPIs -->
     <div class="kpi-grid" id="propGestKpis"></div>
 
-    <!-- Exportar liquidación -->
-    <div id="propExportWrap" style="display:flex; justify-content:flex-end; margin-bottom:14px;">
-      <button class="btn-ghost" onclick="abrirLiquidacion()"><i class="ti ti-file-spreadsheet"></i> Exportar liquidación</button>
+    <!-- Acciones: Exportar + Nuevo cierre (siempre visibles, antes de la tabla) -->
+    <div style="display:flex; gap:10px; margin-bottom:14px; align-items:center;">
+      <div id="propExportWrap" style="display:none;">
+        <button class="btn-ghost" onclick="abrirLiquidacion()"><i class="ti ti-file-spreadsheet"></i> Exportar liquidación</button>
+      </div>
+      <button class="btn-primary" id="propGestNuevoBtn" onclick="abrirNuevoCierre()" style="margin-left:auto;">
+        <i class="ti ti-plus"></i> Nuevo cierre
+      </button>
     </div>
 
     <!-- Tabla de cierres -->
     <div id="propGestTabla">
       <div class="loading">Cargando cierres...</div>
     </div>
-
-    <!-- Botón de nuevo cierre (placeholder hasta Fase 2) -->
-    <button class="btn-primary-full" id="propGestNuevoBtn" onclick="abrirNuevoCierre()" style="margin-top:14px;">
-      <i class="ti ti-plus"></i> Nuevo cierre
-    </button>
 
   </div>
 </div>

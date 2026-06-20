@@ -111,6 +111,9 @@ async function api(path, options = {}) {
 // HELPERS - Hash y sesión
 // ============================================
 async function sha256(str) {
+  if (!crypto || !crypto.subtle) {
+    throw new Error('Tu navegador no soporta cifrado seguro. Abrí la app desde https:// en Chrome o Safari actualizado.');
+  }
   const buf = new TextEncoder().encode(str);
   const hash = await crypto.subtle.digest('SHA-256', buf);
   return Array.from(new Uint8Array(hash))
@@ -1396,10 +1399,11 @@ async function abrirGestionPropinas() {
     return;
   }
 
-  // Pre-seleccionar el primer local del usuario si no hay selección
+  // Pre-seleccionar el primer local real (no transversal) si no hay selección
   const localesUser = localesPropinasUsuario();
+  const slugTransversal = getSlugTransversal();
   if (!PROP_LOCAL_SEL || !localesUser.includes(PROP_LOCAL_SEL)) {
-    PROP_LOCAL_SEL = localesUser[0] || null;
+    PROP_LOCAL_SEL = localesUser.find(l => l !== slugTransversal) || localesUser[0] || null;
   }
 
   renderPropGestHeader();
@@ -1479,10 +1483,10 @@ function cierresLocalActual() {
 
 // El botón "Nuevo cierre" no aplica en modo "Todos"
 function actualizarBtnNuevoCierre() {
+  // El botón siempre es visible; abrirNuevoCierre() valida la selección de local
   const btn = document.getElementById('propGestNuevoBtn');
   if (!btn) return;
-  const slugTodos = getSlugTransversal();
-  btn.style.display = (slugTodos && PROP_LOCAL_SEL === slugTodos) ? 'none' : '';
+  btn.style.display = '';
 }
 
 function renderPropGestKpis() {
@@ -1546,7 +1550,7 @@ function renderPropGestTabla() {
         <span>Turno</span>
         <span>Local</span>
         <span>Monto</span>
-        <span>Puntos</span>
+        <span>Pts</span>
         <span>Estado</span>
       </div>`;
 
@@ -1572,7 +1576,7 @@ function renderPropGestTabla() {
         <span class="prop-fecha">${fecha}</span>
         <span class="prop-turno">${turnoLabel}</span>
         <span class="prop-local">${esc(localLabel(c.local))}</span>
-        <span class="prop-monto">$${formatNumber(c.total_neto || 0)}</span>
+        <span class="prop-monto">$${formatNumber(Math.round((c.total_bruto || 0) * (1 - (parseFloat(c.porcentaje_admin) || 0) / 100)))}</span>
         <span>${c.total_puntos || 0}</span>
         <span class="prop-estado ${estadoCls}" ${estadoClickable} ${estadoTitle}>${estadoTxt}</span>
       </div>`;
@@ -1678,9 +1682,9 @@ function abrirNuevoCierre() {
 
   const tc = PROP_CONFIG || {};
   document.getElementById('cierreTcHint').textContent =
-    'Cotización actual: USD $' + formatNumber(tc.tc_usd || 0) +
-    ' · EUR $' + formatNumber(tc.tc_eur || 0) +
-    ' · BRL $' + formatNumber(tc.tc_brl || 0);
+    'Cotización actual: USD $' + formatNumber(tc.cambio_usd || 0) +
+    ' · EUR $' + formatNumber(tc.cambio_eur || 0) +
+    ' · BRL $' + formatNumber(tc.cambio_brl || 0);
 
   document.getElementById('cierreBilletes').innerHTML = BILLETES_DENOM.map(d =>
     '<label class="billete-row"><span>$' + formatNumber(d) + '</span>' +
@@ -1705,6 +1709,13 @@ async function abrirEditarCierre(cierreId) {
   const c = (PROP_CIERRES || []).find(x => x.id === cierreId);
   if (!c) { toast('No se encontró el cierre', 'error'); return; }
   if (c.pagado) { toast('No se puede editar un cierre ya pagado', 'error'); return; }
+  // Asegurar que PROP_CONFIG esté cargado (puede no estarlo si se abre desde liquidar)
+  if (!PROP_CONFIG) {
+    try {
+      const data = await api('propinas_config?id=eq.1');
+      PROP_CONFIG = (data && data[0]) ? data[0] : {};
+    } catch(e) { PROP_CONFIG = {}; }
+  }
 
   CIERRE_EDITANDO = cierreId;
   CIERRE_EDIT_PUNTOS = {};
@@ -1724,9 +1735,9 @@ async function abrirEditarCierre(cierreId) {
 
   const tc = PROP_CONFIG || {};
   document.getElementById('cierreTcHint').textContent =
-    'Cotización actual: USD $' + formatNumber(tc.tc_usd || 0) +
-    ' · EUR $' + formatNumber(tc.tc_eur || 0) +
-    ' · BRL $' + formatNumber(tc.tc_brl || 0);
+    'Cotización actual: USD $' + formatNumber(tc.cambio_usd || 0) +
+    ' · EUR $' + formatNumber(tc.cambio_eur || 0) +
+    ' · BRL $' + formatNumber(tc.cambio_brl || 0);
 
   document.getElementById('cierreBilletes').innerHTML = BILLETES_DENOM.map(d =>
     '<label class="billete-row"><span>$' + formatNumber(d) + '</span>' +
@@ -1801,9 +1812,9 @@ function recalcCierre() {
   const tc = PROP_CONFIG || {};
   let cash = 0;
   BILLETES_DENOM.forEach(d => { cash += d * billeteVal(d); });
-  const extranjera = valNumCierre('cierreUsd') * (parseFloat(tc.tc_usd) || 0) +
-                     valNumCierre('cierreEur') * (parseFloat(tc.tc_eur) || 0) +
-                     valNumCierre('cierreBrl') * (parseFloat(tc.tc_brl) || 0);
+  const extranjera = valNumCierre('cierreUsd') * (parseFloat(tc.cambio_usd) || 0) +
+                     valNumCierre('cierreEur') * (parseFloat(tc.cambio_eur) || 0) +
+                     valNumCierre('cierreBrl') * (parseFloat(tc.cambio_brl) || 0);
   const electronico = valNumCierre('cierreTarjeta') + valNumCierre('cierreTransf');
   const total = cash + extranjera + electronico;
   const puntos = CIERRE_COLABS.reduce((s, c) => s + (parseFloat(c.puntos) || 0), 0);
@@ -1829,7 +1840,7 @@ async function guardarCierre() {
   BILLETES_DENOM.forEach(d => { const n = billeteVal(d); billetes['bil_' + d] = n; cash += d * n; });
   const usd = valNumCierre('cierreUsd'), eur = valNumCierre('cierreEur'), brl = valNumCierre('cierreBrl');
   const tarjeta = valNumCierre('cierreTarjeta'), transf = valNumCierre('cierreTransf');
-  const extranjera = usd * (parseFloat(tc.tc_usd) || 0) + eur * (parseFloat(tc.tc_eur) || 0) + brl * (parseFloat(tc.tc_brl) || 0);
+  const extranjera = usd * (parseFloat(tc.cambio_usd) || 0) + eur * (parseFloat(tc.cambio_eur) || 0) + brl * (parseFloat(tc.cambio_brl) || 0);
   const bruto = cash + extranjera + tarjeta + transf;
   const pct = parseFloat((PROP_CONFIG || {}).porcentaje_admin) || 0;
   const montoAdmin = Math.round(bruto * pct / 100);
@@ -1849,7 +1860,7 @@ async function guardarCierre() {
     fecha: document.getElementById('cierreFecha').value || hoyStr(),
     turno: document.getElementById('cierreTurno').value,
     monto_usd: usd, monto_eur: eur, monto_brl: brl,
-    tc_usd: parseFloat(tc.tc_usd) || 0, tc_eur: parseFloat(tc.tc_eur) || 0, tc_brl: parseFloat(tc.tc_brl) || 0,
+    tc_usd: parseFloat(tc.cambio_usd) || 0, tc_eur: parseFloat(tc.cambio_eur) || 0, tc_brl: parseFloat(tc.cambio_brl) || 0,
     monto_tarjeta: tarjeta, monto_transferencia: transf,
     porcentaje_admin: pct,
     total_bruto: Math.round(bruto), total_neto: Math.round(neto), total_puntos: puntos,
@@ -4201,7 +4212,7 @@ async function openMiBiblioteca() {
   try {
     const [cats, conts] = await Promise.all([
       api('biblioteca_categorias?activo=eq.true&order=orden.asc'),
-      api('biblioteca_contenidos?activo=eq.true&order=creado_en.desc')
+      api('biblioteca_contenidos?activo=neq.false&order=creado_en.desc')
     ]);
     BIB_CATEGORIAS = cats || [];
     BIB_CONTENIDOS = conts || [];
@@ -4212,9 +4223,19 @@ async function openMiBiblioteca() {
 
   // Filtrar contenidos por locales del usuario
   const localesUser = localesUsuarioActual();
+  const esEditor = !!(currentUser && currentUser.editor_biblioteca);
+  const transversalSlug = (() => {
+    const t = LOCALES_DB.find(x => /transversal/i.test(x.nombre || '') || /transversal/i.test(x.slug || ''));
+    return t ? t.slug : null;
+  })();
   const visibles = BIB_CONTENIDOS.filter(c => {
     if (isMaster() || isAdmin()) return true;
-    if (!c.locales || c.locales.length === 0) return false;
+    // contenido sin locales = transversal, visible para todos
+    if (!c.locales || c.locales.length === 0) return true;
+    // contenido marcado como transversal
+    if (transversalSlug && c.locales.includes(transversalSlug)) return true;
+    // Si no es editor de biblioteca, ve el contenido de sus locales también
+    if (!esEditor) return c.locales.some(loc => localesUser.includes(loc));
     return c.locales.some(loc => localesUser.includes(loc));
   });
 
@@ -4331,7 +4352,7 @@ async function recargarBibAdmin() {
   try {
     const [cats, conts] = await Promise.all([
       api('biblioteca_categorias?activo=eq.true&order=orden.asc'),
-      api('biblioteca_contenidos?activo=eq.true&order=creado_en.desc')
+      api('biblioteca_contenidos?order=creado_en.desc')
     ]);
     BIB_CATEGORIAS = cats || [];
     BIB_CONTENIDOS = conts || [];
@@ -4379,23 +4400,31 @@ function renderBibAdminLista() {
     const tipo = BIB_TIPOS.find(t => t.key === c.tipo) || BIB_TIPOS[0];
     const cat = BIB_CATEGORIAS.find(k => k.id === c.categoria_id);
     const locTxt = (!c.locales || c.locales.length === 0)
-      ? 'Sin locales'
+      ? 'Todos los locales'
       : (c.locales.length === getLocalesActivos().length
           ? 'Todos los locales'
           : c.locales.length + ' local' + (c.locales.length > 1 ? 'es' : ''));
 
+    const inactivo = c.activo === false;
     const btnDelete = puedeAdminBibCat()
       ? `<button class="bib-btn-delete" onclick="borrarContenido(${c.id})" title="Borrar"><i class="ti ti-trash"></i></button>`
       : '';
+    const btnActivar = (inactivo && puedeAdminBibCat())
+      ? `<button class="bib-btn-activar" onclick="activarContenido(${c.id})" title="Activar"><i class="ti ti-eye"></i></button>`
+      : '';
+    const badgeInactivo = inactivo
+      ? `<span class="bib-badge-inactivo">Inactivo</span>`
+      : '';
 
     html += `
-      <div class="bib-admin-item">
+      <div class="bib-admin-item${inactivo ? ' bib-admin-item--inactivo' : ''}">
         <div class="bib-admin-item-icon ${tipo.cls}"><i class="ti ${tipo.icon}"></i></div>
         <div class="bib-admin-item-info">
-          <div class="bib-admin-item-titulo">${esc(c.titulo)}</div>
+          <div class="bib-admin-item-titulo">${esc(c.titulo)}${badgeInactivo}</div>
           <div class="bib-admin-item-meta">${esc(cat ? cat.nombre : 'Sin categoría')} · ${locTxt}</div>
         </div>
         <div class="bib-admin-item-actions">
+          ${btnActivar}
           <button class="bib-btn-edit" onclick="openModalContenido(${c.id})" title="Editar"><i class="ti ti-edit"></i></button>
           ${btnDelete}
         </div>
@@ -4527,12 +4556,22 @@ async function guardarContenido() {
   btn.disabled = true;
   btn.textContent = 'Guardando...';
 
+  // Si eligieron el local "TODOS" (transversal), guardar locales=null para que aparezca en todos
+  const transversalSlugGuardar = (() => {
+    const t = LOCALES_DB.find(x => /transversal/i.test(x.nombre || '') || /transversal/i.test(x.slug || ''));
+    return t ? t.slug : null;
+  })();
+  const localesParaGuardar = (transversalSlugGuardar && BIB_LOCALES_SEL.includes(transversalSlugGuardar))
+    ? null
+    : BIB_LOCALES_SEL;
+
   const body = {
     titulo,
     categoria_id,
     tipo: BIB_TIPO_SEL,
     url,
-    locales: BIB_LOCALES_SEL,
+    locales: localesParaGuardar,
+    activo: true,
     actualizado_en: new Date().toISOString()
   };
 
@@ -4562,6 +4601,20 @@ async function guardarContenido() {
     btn.textContent = 'Guardar';
   }
 }
+
+async function activarContenido(id) {
+  try {
+    await api(`biblioteca_contenidos?id=eq.${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ activo: true })
+    });
+    toast('Contenido activado');
+    await recargarBibAdmin();
+  } catch (e) {
+    toast('Error al activar', 'error');
+  }
+}
+window.activarContenido = activarContenido;
 
 async function borrarContenido(id) {
   const c = BIB_CONTENIDOS.find(x => x.id === id);
