@@ -4251,7 +4251,11 @@ function renderBibChips(visibles) {
     visibles.some(c => c.categoria_id === cat.id)
   );
 
-  let html = `<button class="bib-chip ${BIB_FILTRO_CAT === null ? 'active' : ''}" onclick="filtrarBibCat(null)">Todas</button>`;
+  // Academia chip siempre al inicio
+  let html = `<button class="bib-chip bib-chip-academia" onclick="openAcademia()">
+    <i class="ti ti-school"></i> Academia
+  </button>`;
+  html += `<button class="bib-chip ${BIB_FILTRO_CAT === null ? 'active' : ''}" onclick="filtrarBibCat(null)">Todas</button>`;
   catsConContenido.forEach(cat => {
     html += `<button class="bib-chip ${BIB_FILTRO_CAT === cat.id ? 'active' : ''}" onclick="filtrarBibCat(${cat.id})">
       <i class="ti ${esc(cat.icono || 'ti-folder')}"></i>${esc(cat.nombre)}
@@ -4336,6 +4340,9 @@ async function openAdminBiblioteca() {
   // Tab de categorías solo visible para Admin/Master
   document.getElementById('bibTabCategorias').style.display =
     puedeAdminBibCat() ? 'inline-flex' : 'none';
+  // Tab Academia siempre visible para Admin/Master
+  document.getElementById('bibTabAcademia').style.display =
+    (isMaster() || isAdmin()) ? 'inline-flex' : 'none';
 
   // Subtítulo según rol
   document.getElementById('adminBibSubtitle').textContent =
@@ -4365,21 +4372,27 @@ async function recargarBibAdmin() {
 }
 
 function switchBibTab(tab) {
-  const tabCont = document.getElementById('bibTabContenidos');
-  const tabCat  = document.getElementById('bibTabCategorias');
-  const panCont = document.getElementById('bibPanelContenidos');
-  const panCat  = document.getElementById('bibPanelCategorias');
+  const tabCont  = document.getElementById('bibTabContenidos');
+  const tabCat   = document.getElementById('bibTabCategorias');
+  const tabAcad  = document.getElementById('bibTabAcademia');
+  const panCont  = document.getElementById('bibPanelContenidos');
+  const panCat   = document.getElementById('bibPanelCategorias');
+  const panAcad  = document.getElementById('bibPanelAcademia');
+
+  // Reset all
+  [tabCont, tabCat, tabAcad].forEach(t => t && t.classList.remove('active'));
+  [panCont, panCat, panAcad].forEach(p => p && (p.style.display = 'none'));
 
   if (tab === 'contenidos') {
     tabCont.classList.add('active');
-    tabCat.classList.remove('active');
     panCont.style.display = 'block';
-    panCat.style.display = 'none';
-  } else {
-    tabCont.classList.remove('active');
+  } else if (tab === 'categorias') {
     tabCat.classList.add('active');
-    panCont.style.display = 'none';
     panCat.style.display = 'block';
+  } else if (tab === 'academia') {
+    tabAcad && tabAcad.classList.add('active');
+    panAcad.style.display = 'block';
+    renderAdminPapersList();
   }
 }
 
@@ -7325,12 +7338,7 @@ function renderEstadisticas(data) {
   html += '<div class="est-section-title">Cierres del período</div>' +
     data.map(function(c) {
       const prom = (c.pax && c.pax > 0) ? c.ventas_total / c.pax : null;
-      return '<div class="ped-card">' +
-        '<div class="ped-card-top">' +
-          '<span class="ped-local">' + esc(localLabel(c.local)) + '</span>' +
-          '<span class="cc-venta">$' + formatNumber(c.ventas_total || 0) + '</span>' +
-        '</div>' +
-        '<div class="ped-card-sub">' +
+      return '<div class="ped-sub">' +
           pedFecha(c.fecha) + ' · ' + esc(ccTurnoLabel(c.turno)) + ' · ' + (c.pax || 0) + ' pax' +
           (prom != null ? ' · $' + formatNumber(prom) + '/pax' : '') +
           (c.observaciones ? '<br><span style="font-style:italic;opacity:.7">' + esc(c.observaciones) + '</span>' : '') +
@@ -7340,6 +7348,591 @@ function renderEstadisticas(data) {
 
   elList.innerHTML = html;
 }
+
+// ================================================================
+//  ACADEMIA AZUCA
+// ================================================================
+
+let ACADEMIA_PAPERS          = [];
+let ACADEMIA_INTENTOS_USER   = [];
+let ACADEMIA_PREGUNTAS_CACHE = {}; // { paperId: [...preguntas] }
+let ACADEMIA_QUIZ_ACTIVO     = null; // { paperId, preguntas, respuestas:{} }
+let ACADEMIA_NIVEL_SEL       = 1;
+let ACADEMIA_PAPER_VIENDO    = null;
+let ACADEMIA_EDIT_PAPER_ID   = null;
+let ACADEMIA_EDIT_PREGUNTAS  = [];
+
+const ACADEMIA_NIVELES = {
+  1: { label: 'Nivel 1 · Iniciante',  color: '#5DCAA5' },
+  2: { label: 'Nivel 2 · Avanzado',   color: '#EF9F27' },
+  3: { label: 'Nivel 3 · Formadores', color: '#7F77DD' }
+};
+
+// ── Vista empleado ────────────────────────────────────────────
+
+async function openAcademia() {
+  showView('vBiblioteca');
+  const cont  = document.getElementById('bibContenido');
+  const chips = document.getElementById('bibChips');
+  chips.innerHTML = '';
+  cont.innerHTML  = '<div class="loading">Cargando Academia...</div>';
+
+  try {
+    const [papers, intentos] = await Promise.all([
+      api('academia_papers?activo=eq.true&order=nivel.asc,unidad.asc'),
+      api('academia_intentos?user_id=eq.' + currentUser.id)
+    ]);
+    ACADEMIA_PAPERS        = papers  || [];
+    ACADEMIA_INTENTOS_USER = intentos || [];
+  } catch (e) {
+    cont.innerHTML = '<div class="loading" style="color:var(--c-error)">Error al cargar Academia</div>';
+    return;
+  }
+  renderAcademiaView();
+}
+window.openAcademia = openAcademia;
+
+function renderAcademiaView() {
+  const chips = document.getElementById('bibChips');
+  const cont  = document.getElementById('bibContenido');
+
+  const niveles = [...new Set(ACADEMIA_PAPERS.map(p => p.nivel))].sort();
+
+  chips.innerHTML =
+    `<button class="bib-chip" onclick="openMiBiblioteca()">
+       <i class="ti ti-arrow-left"></i> Biblioteca
+     </button>` +
+    niveles.map(n =>
+      `<button class="bib-chip ${ACADEMIA_NIVEL_SEL === n ? 'active' : ''}"
+         onclick="selAcadNivel(${n})">${(ACADEMIA_NIVELES[n]||{label:'Nivel '+n}).label}</button>`
+    ).join('');
+
+  const papersNivel = ACADEMIA_PAPERS.filter(p => p.nivel === ACADEMIA_NIVEL_SEL);
+  const nivelInfo   = ACADEMIA_NIVELES[ACADEMIA_NIVEL_SEL] || { label:'Nivel '+ACADEMIA_NIVEL_SEL, color:'#888' };
+
+  if (!papersNivel.length) {
+    cont.innerHTML = '<div class="bib-empty"><i class="ti ti-books"></i><div class="bib-empty-title">Todavía no hay papers para este nivel.</div></div>';
+    return;
+  }
+
+  const mejores = {};
+  ACADEMIA_INTENTOS_USER.forEach(i => {
+    if (!mejores[i.paper_id] || i.puntaje > mejores[i.paper_id].puntaje) mejores[i.paper_id] = i;
+  });
+
+  cont.innerHTML = `
+    <div class="acad-nivel-bar">
+      <span class="acad-nivel-pill" style="background:${nivelInfo.color}22;color:${nivelInfo.color};border:1px solid ${nivelInfo.color}55">
+        ${nivelInfo.label}
+      </span>
+    </div>
+    <div class="acad-grid">
+      ${papersNivel.map(p => {
+        const it  = mejores[p.id];
+        const ok  = it && it.aprobado;
+        const hz  = !!it;
+        return `
+          <div class="acad-card${ok?' acad-card--ok':hz?' acad-card--revisar':''}"
+               onclick="openPaperReader(${p.id})">
+            <div class="acad-card-top">
+              <span class="acad-card-unidad">Unidad ${p.unidad}</span>
+              ${ok ? `<span class="acad-badge acad-badge--ok"><i class="ti ti-check"></i></span>`
+                   : hz ? `<span class="acad-badge acad-badge--revisar"><i class="ti ti-refresh"></i></span>` : ''}
+            </div>
+            <div class="acad-card-titulo">${esc(p.titulo)}</div>
+            ${p.subtitulo ? `<div class="acad-card-sub">${esc(p.subtitulo)}</div>` : ''}
+            <div class="acad-card-footer">
+              ${ok  ? `<span class="acad-pts acad-pts--ok">${it.puntaje}/${it.total_preguntas} pts · Aprobado</span>`
+              : hz  ? `<span class="acad-pts acad-pts--revisar">${it.puntaje}/${it.total_preguntas} pts · A reforzar</span>`
+                    : `<span class="acad-pts acad-pts--pendiente">Pendiente</span>`}
+            </div>
+          </div>`;
+      }).join('')}
+    </div>`;
+}
+
+window.selAcadNivel = function(n) {
+  ACADEMIA_NIVEL_SEL = n;
+  renderAcademiaView();
+};
+
+function renderPaperMd(txt) {
+  const lines = (txt || '').split('\n');
+  let html = '', inUl = false;
+  const flush = () => { if (inUl) { html += '</ul>'; inUl = false; } };
+  for (const l of lines) {
+    if      (l.startsWith('# '))  { flush(); html += `<h2 class="paper-h2">${esc(l.slice(2))}</h2>`; }
+    else if (l.startsWith('## ')) { flush(); html += `<h3 class="paper-h3">${esc(l.slice(3))}</h3>`; }
+    else if (l.startsWith('> '))  { flush(); html += `<div class="paper-callout">${esc(l.slice(2))}</div>`; }
+    else if (l.startsWith('- '))  { if (!inUl) { html += '<ul class="paper-ul">'; inUl = true; } html += `<li>${esc(l.slice(2))}</li>`; }
+    else if (l.trim() === '')     { flush(); }
+    else                          { flush(); html += `<p class="paper-p">${esc(l)}</p>`; }
+  }
+  flush();
+  return html;
+}
+
+async function openPaperReader(paperId) {
+  const paper = ACADEMIA_PAPERS.find(p => p.id === paperId);
+  if (!paper) return;
+  ACADEMIA_PAPER_VIENDO = paper;
+
+  const it = ACADEMIA_INTENTOS_USER
+    .filter(i => i.paper_id === paperId)
+    .sort((a, b) => b.puntaje - a.puntaje)[0] || null;
+
+  document.getElementById('paperReaderMeta').textContent =
+    (ACADEMIA_NIVELES[paper.nivel]||{label:'N'+paper.nivel}).label + ' · Unidad ' + paper.unidad;
+  document.getElementById('paperReaderTitulo').textContent = paper.titulo;
+  document.getElementById('paperReaderBody').innerHTML = renderPaperMd(paper.contenido);
+
+  const btn = document.getElementById('paperReaderBtnQuiz');
+  btn.innerHTML = it
+    ? `<i class="ti ti-refresh"></i> Repetir quiz · mejor nota: ${it.puntaje}/${it.total_preguntas}`
+    : '<i class="ti ti-pencil-check"></i> Hacer el quiz';
+
+  const modal = document.getElementById('modalPaperReader');
+  modal.classList.add('show');
+  modal.querySelector('.paper-reader-scroll').scrollTop = 0;
+}
+window.openPaperReader = openPaperReader;
+
+window.closePaperReader = function() {
+  document.getElementById('modalPaperReader').classList.remove('show');
+};
+
+window.iniciarQuiz = async function() {
+  if (!ACADEMIA_PAPER_VIENDO) return;
+  closePaperReader();
+  await openQuizAcademia(ACADEMIA_PAPER_VIENDO.id);
+};
+
+async function openQuizAcademia(paperId) {
+  if (!ACADEMIA_PREGUNTAS_CACHE[paperId]) {
+    try {
+      const d = await api('academia_preguntas?paper_id=eq.' + paperId + '&order=orden.asc');
+      ACADEMIA_PREGUNTAS_CACHE[paperId] = d || [];
+    } catch (e) { toast('Error al cargar el quiz', 'error'); return; }
+  }
+
+  const pregs = ACADEMIA_PREGUNTAS_CACHE[paperId];
+  if (!pregs.length) { toast('Este paper todavía no tiene quiz cargado', 'error'); return; }
+
+  ACADEMIA_QUIZ_ACTIVO = { paperId, preguntas: pregs, respuestas: {} };
+
+  const paper = ACADEMIA_PAPERS.find(p => p.id === paperId);
+  document.getElementById('quizModalTitulo').textContent = 'Quiz · ' + (paper ? paper.titulo : '');
+  document.getElementById('quizPreguntas').innerHTML = pregs.map((p, i) => `
+    <div class="quiz-preg" id="qpreg_${p.id}">
+      <div class="quiz-preg-num">Pregunta ${i + 1} de ${pregs.length}</div>
+      <div class="quiz-preg-texto">${esc(p.enunciado)}</div>
+      <div class="quiz-opciones">
+        ${['a','b','c','d'].map(op => `
+          <label class="quiz-op" id="qop_${p.id}_${op}">
+            <input type="radio" name="q${p.id}" value="${op}" onchange="selResp(${p.id},'${op}')">
+            <span class="quiz-op-letra">${op.toUpperCase()}</span>
+            <span class="quiz-op-txt">${esc(p['opcion_'+op])}</span>
+          </label>`).join('')}
+      </div>
+    </div>`).join('');
+
+  document.getElementById('quizFormSection').style.display    = '';
+  document.getElementById('quizResultadoSection').style.display = 'none';
+  document.getElementById('btnEnviarQuiz').disabled   = false;
+  document.getElementById('btnEnviarQuiz').textContent = 'Enviar respuestas';
+
+  const modal = document.getElementById('modalQuizAcademia');
+  modal.classList.add('show');
+  modal.querySelector('.quiz-scroll').scrollTop = 0;
+}
+
+window.selResp = function(pregId, op) {
+  if (!ACADEMIA_QUIZ_ACTIVO) return;
+  ACADEMIA_QUIZ_ACTIVO.respuestas[pregId] = op;
+  const preg = document.getElementById('qpreg_' + pregId);
+  if (preg) {
+    preg.querySelectorAll('.quiz-op').forEach(el => el.classList.remove('quiz-op--sel'));
+    const sel = document.getElementById('qop_' + pregId + '_' + op);
+    if (sel) sel.classList.add('quiz-op--sel');
+  }
+};
+
+window.enviarQuiz = async function() {
+  if (!ACADEMIA_QUIZ_ACTIVO) return;
+  const { paperId, preguntas, respuestas } = ACADEMIA_QUIZ_ACTIVO;
+
+  const sinResp = preguntas.filter(p => !respuestas[p.id]);
+  if (sinResp.length) {
+    toast(`Falt${sinResp.length > 1 ? 'an' : 'a'} ${sinResp.length} pregunta${sinResp.length > 1 ? 's' : ''} sin responder`, 'error');
+    const el = document.getElementById('qpreg_' + sinResp[0].id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
+  let correctas = 0;
+  preguntas.forEach(p => { if (respuestas[p.id] === p.respuesta_correcta) correctas++; });
+  const total    = preguntas.length;
+  const pct      = Math.round(correctas / total * 100);
+  const aprobado = pct >= 75;
+
+  const btn = document.getElementById('btnEnviarQuiz');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+
+  try {
+    const rec = {
+      paper_id: paperId,
+      user_id: currentUser.id,
+      empleado_id: currentUser.empleado_id || null,
+      puntaje: correctas,
+      total_preguntas: total,
+      aprobado,
+      local: currentUser.local || null,
+      completado_en: new Date().toISOString()
+    };
+    await api('academia_intentos', { method: 'POST', body: JSON.stringify(rec) });
+    ACADEMIA_INTENTOS_USER.push({ ...rec, id: Date.now() });
+  } catch (e) {
+    toast('Error al guardar el resultado', 'error');
+    btn.disabled = false; btn.textContent = 'Enviar respuestas';
+    return;
+  }
+
+  document.getElementById('quizFormSection').style.display = 'none';
+  const resEl = document.getElementById('quizResultadoSection');
+  resEl.style.display = '';
+  resEl.innerHTML = `
+    <div class="quiz-resultado ${aprobado ? 'quiz-res--ok' : 'quiz-res--revisar'}">
+      <i class="ti ${aprobado ? 'ti-circle-check' : 'ti-refresh'} quiz-res-icon"></i>
+      <div class="quiz-res-score">${correctas}<span>/${total}</span></div>
+      <div class="quiz-res-pct">${pct}%</div>
+      <p class="quiz-res-msg">${aprobado
+        ? 'Buen trabajo. Aprobaste el quiz con éxito.'
+        : 'Te recomendamos releer el paper y volver a intentarlo cuando estés listo.'}</p>
+      <button class="btn-primary" onclick="cerrarQuiz()">
+        <i class="ti ti-arrow-left"></i> Volver a la Academia
+      </button>
+    </div>`;
+};
+
+window.cerrarQuiz = function() {
+  document.getElementById('modalQuizAcademia').classList.remove('show');
+  ACADEMIA_QUIZ_ACTIVO = null;
+  renderAcademiaView();
+};
+
+// ── Admin: lista de papers ────────────────────────────────────
+
+async function openAdminAcademia() {
+  showView('vAdminBiblioteca');
+  try {
+    ACADEMIA_PAPERS = await api('academia_papers?order=nivel.asc,unidad.asc') || [];
+  } catch (e) { toast('Error al cargar papers', 'error'); return; }
+  switchBibTab('academia');
+}
+window.openAdminAcademia = openAdminAcademia;
+
+function renderAdminPapersList() {
+  const cont  = document.getElementById('acadPanelPapers');
+  if (!cont) return;
+  const NCOL  = { 1:'#5DCAA5', 2:'#EF9F27', 3:'#7F77DD' };
+  let html = `<button class="btn-primary-full" style="margin-bottom:14px" onclick="openFormPaper(null)">
+    <i class="ti ti-plus"></i> Nuevo paper
+  </button>`;
+
+  if (!ACADEMIA_PAPERS.length) {
+    html += '<div class="bib-empty"><i class="ti ti-books"></i><div class="bib-empty-title">No hay papers cargados todavía</div></div>';
+  } else {
+    html += '<div class="acad-admin-lista">' +
+      ACADEMIA_PAPERS.map(p => `
+        <div class="acad-admin-item">
+          <span class="acad-nivel-dot" style="background:${NCOL[p.nivel]||'#888'}"></span>
+          <div class="acad-admin-item-info">
+            <div class="acad-admin-item-tit">${esc(p.titulo)}</div>
+            <div class="acad-admin-item-meta">Nivel ${p.nivel} · Unidad ${p.unidad}${!p.activo?' · <em style="opacity:.55">Inactivo</em>':''}</div>
+          </div>
+          <div class="acad-admin-item-actions">
+            <button class="bib-btn-edit"   onclick="openFormPaper(${p.id})" title="Editar"><i class="ti ti-edit"></i></button>
+            <button class="bib-btn-delete" onclick="borrarPaper(${p.id})"   title="Eliminar"><i class="ti ti-trash"></i></button>
+          </div>
+        </div>`).join('') + '</div>';
+  }
+  cont.innerHTML = html;
+}
+
+window.switchAcademiaSubTab = function(tab) {
+  ['papers','progreso'].forEach(t => {
+    document.getElementById('acadSubTab_' + t).classList.toggle('active', t === tab);
+    document.getElementById('acadPanel_'  + t).style.display = t === tab ? '' : 'none';
+  });
+  if (tab === 'progreso') cargarProgresoAcademia();
+};
+
+async function cargarProgresoAcademia() {
+  const cont = document.getElementById('acadPanel_progreso');
+  if (!cont) return;
+  cont.innerHTML = '<div class="loading">Cargando progreso...</div>';
+  try {
+    const [intentos, emps] = await Promise.all([
+      api('academia_intentos?order=completado_en.desc'),
+      api('empleados?activo=eq.true&select=id,nombre,apellido,nombre_p,local&order=apellido.asc')
+    ]);
+    renderProgresoAcademia(intentos || [], emps || []);
+  } catch (e) {
+    cont.innerHTML = '<div class="loading" style="color:var(--c-error)">Error al cargar progreso</div>';
+  }
+}
+
+function renderProgresoAcademia(intentos, emps) {
+  const mejores = {};
+  intentos.forEach(i => {
+    const k = `${i.empleado_id}_${i.paper_id}`;
+    if (!mejores[k] || i.puntaje > mejores[k].puntaje) mejores[k] = i;
+  });
+
+  const papers  = [...ACADEMIA_PAPERS].sort((a,b) => a.nivel-b.nivel || a.unidad-b.unidad);
+  const locales = [...new Set(emps.map(e => e.local).filter(Boolean))].sort();
+  const cont    = document.getElementById('acadPanel_progreso');
+
+  cont.innerHTML = `
+    <div style="margin-bottom:12px">
+      <select id="acadFiltroLocal" class="form-input" style="max-width:220px" onchange="renderTablaProgreso()">
+        <option value="">Todos los locales</option>
+        ${locales.map(l => `<option value="${esc(l)}">${esc(localLabel(l))}</option>`).join('')}
+      </select>
+    </div>
+    <div id="acadTablaProgreso"></div>`;
+
+  window._ACAD_PROG = { mejores, papers, emps };
+  window.renderTablaProgreso();
+}
+
+window.renderTablaProgreso = function() {
+  const { mejores, papers, emps } = window._ACAD_PROG || {};
+  if (!emps) return;
+  const filtro  = (document.getElementById('acadFiltroLocal')||{}).value || '';
+  const empsFil = filtro ? emps.filter(e => e.local === filtro) : emps;
+  const NCOL    = { 1:'#5DCAA5', 2:'#EF9F27', 3:'#7F77DD' };
+
+  if (!papers.length) {
+    document.getElementById('acadTablaProgreso').innerHTML = '<div class="bib-empty">No hay papers cargados</div>';
+    return;
+  }
+  if (!empsFil.length) {
+    document.getElementById('acadTablaProgreso').innerHTML = '<div class="bib-empty">Sin empleados para este filtro</div>';
+    return;
+  }
+
+  document.getElementById('acadTablaProgreso').innerHTML = `
+    <div class="acad-prog-wrap">
+      <table class="acad-prog-tabla">
+        <thead><tr>
+          <th class="acad-prog-th-emp">Empleado</th>
+          ${papers.map(p => `<th title="${esc(p.titulo)}">
+            <div style="color:${NCOL[p.nivel]||'#888'};font-size:9px;font-weight:700">N${p.nivel}</div>
+            <div style="font-size:10px">U${p.unidad}</div>
+          </th>`).join('')}
+        </tr></thead>
+        <tbody>
+          ${empsFil.map(e => {
+            const nom = [e.apellido, e.nombre_p||e.nombre].filter(Boolean).join(', ') || 'Emp#'+e.id;
+            return `<tr>
+              <td class="acad-prog-td-nom">${esc(nom)}</td>
+              ${papers.map(p => {
+                const it = mejores[`${e.id}_${p.id}`];
+                if (!it) return '<td class="acad-prog-td-vacio">—</td>';
+                return `<td class="${it.aprobado?'acad-prog-td-ok':'acad-prog-td-rev'}">${it.puntaje}/${it.total_preguntas}</td>`;
+              }).join('')}
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+};
+
+// ── Form: crear / editar paper ────────────────────────────────
+
+async function openFormPaper(paperId) {
+  ACADEMIA_EDIT_PAPER_ID  = paperId || null;
+  ACADEMIA_EDIT_PREGUNTAS = [];
+
+  document.getElementById('formPaperModalTitulo').textContent = paperId ? 'Editar paper' : 'Nuevo paper';
+
+  if (paperId) {
+    const p = ACADEMIA_PAPERS.find(x => x.id === paperId);
+    if (!p) return;
+    document.getElementById('papTitulo').value    = p.titulo;
+    document.getElementById('papNivel').value     = p.nivel;
+    document.getElementById('papUnidad').value    = p.unidad;
+    document.getElementById('papSubtitulo').value = p.subtitulo || '';
+    document.getElementById('papContenido').value = p.contenido;
+    document.getElementById('papActivo').checked  = p.activo !== false;
+
+    try {
+      let pregs = ACADEMIA_PREGUNTAS_CACHE[paperId];
+      if (!pregs) {
+        pregs = await api('academia_preguntas?paper_id=eq.'+paperId+'&order=orden.asc') || [];
+        ACADEMIA_PREGUNTAS_CACHE[paperId] = pregs;
+      }
+      ACADEMIA_EDIT_PREGUNTAS = pregs.map(q => ({ ...q }));
+    } catch (e) {}
+  } else {
+    ['papTitulo','papSubtitulo','papContenido'].forEach(id => (document.getElementById(id).value = ''));
+    document.getElementById('papNivel').value   = '1';
+    document.getElementById('papUnidad').value  = '1';
+    document.getElementById('papActivo').checked = true;
+  }
+
+  renderPregEditor();
+  document.getElementById('modalFormPaper').classList.add('show');
+  document.getElementById('modalFormPaper').querySelector('.modal-scrollable').scrollTop = 0;
+}
+window.openFormPaper = openFormPaper;
+
+window.closeFormPaper = function() {
+  document.getElementById('modalFormPaper').classList.remove('show');
+};
+
+function renderPregEditor() {
+  const cont = document.getElementById('pregEditor');
+  if (!cont) return;
+  if (!ACADEMIA_EDIT_PREGUNTAS.length) {
+    cont.innerHTML = '<div style="padding:10px 0;font-size:13px;color:var(--c-muted)">Todavía sin preguntas. Agregá la primera.</div>';
+    return;
+  }
+  cont.innerHTML = ACADEMIA_EDIT_PREGUNTAS.map((q, i) => `
+    <div class="preg-ed-item">
+      <div class="preg-ed-hdr">
+        <span class="preg-ed-num">Pregunta ${i+1}</span>
+        <button class="bib-btn-delete" onclick="delPreg(${i})"><i class="ti ti-trash"></i></button>
+      </div>
+      <textarea class="form-input preg-ed-enunciado" placeholder="Enunciado de la pregunta…"
+        oninput="updPreg(${i},'enunciado',this.value)">${esc(q.enunciado||'')}</textarea>
+      ${['a','b','c','d'].map(op => `
+        <div class="preg-ed-op-row">
+          <input type="radio" name="ok_${i}" value="${op}" ${q.respuesta_correcta===op?'checked':''}
+            onchange="updPreg(${i},'respuesta_correcta','${op}')">
+          <span class="preg-ed-letra">${op.toUpperCase()}.</span>
+          <input type="text" class="form-input" value="${esc(q['opcion_'+op]||'')}"
+            placeholder="Opción ${op.toUpperCase()}"
+            oninput="updPreg(${i},'opcion_${op}',this.value)">
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+window.addPreg = function() {
+  ACADEMIA_EDIT_PREGUNTAS.push({
+    orden: ACADEMIA_EDIT_PREGUNTAS.length + 1,
+    enunciado: '', opcion_a: '', opcion_b: '', opcion_c: '', opcion_d: '',
+    respuesta_correcta: 'a'
+  });
+  renderPregEditor();
+  setTimeout(() => {
+    const sc = document.getElementById('modalFormPaper').querySelector('.modal-scrollable');
+    if (sc) sc.scrollTop = sc.scrollHeight;
+  }, 50);
+};
+
+window.delPreg = function(i) {
+  ACADEMIA_EDIT_PREGUNTAS.splice(i, 1);
+  ACADEMIA_EDIT_PREGUNTAS.forEach((q, idx) => (q.orden = idx + 1));
+  renderPregEditor();
+};
+
+window.updPreg = function(i, field, val) {
+  if (ACADEMIA_EDIT_PREGUNTAS[i]) ACADEMIA_EDIT_PREGUNTAS[i][field] = val;
+};
+
+window.guardarPaper = async function() {
+  const titulo    = document.getElementById('papTitulo').value.trim();
+  const nivel     = parseInt(document.getElementById('papNivel').value);
+  const unidad    = parseInt(document.getElementById('papUnidad').value);
+  const subtitulo = document.getElementById('papSubtitulo').value.trim();
+  const contenido = document.getElementById('papContenido').value.trim();
+  const activo    = document.getElementById('papActivo').checked;
+
+  if (!titulo)    { toast('Falta el título', 'error'); return; }
+  if (!contenido) { toast('Falta el contenido', 'error'); return; }
+
+  for (let i = 0; i < ACADEMIA_EDIT_PREGUNTAS.length; i++) {
+    const q = ACADEMIA_EDIT_PREGUNTAS[i];
+    if (!q.enunciado.trim())
+      { toast(`Pregunta ${i+1}: falta el enunciado`, 'error'); return; }
+    if (!q.opcion_a.trim()||!q.opcion_b.trim()||!q.opcion_c.trim()||!q.opcion_d.trim())
+      { toast(`Pregunta ${i+1}: completá todas las opciones`, 'error'); return; }
+  }
+
+  const btn = document.getElementById('btnGuardarPaper');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+
+  try {
+    const body = { titulo, nivel, unidad, contenido, activo, subtitulo: subtitulo || null };
+    let paperId = ACADEMIA_EDIT_PAPER_ID;
+
+    if (paperId) {
+      await api('academia_papers?id=eq.' + paperId, { method:'PATCH', body: JSON.stringify(body) });
+    } else {
+      body.creado_por = currentUser.id;
+      const res  = await api('academia_papers', { method:'POST', body: JSON.stringify(body) });
+      const nuevo = Array.isArray(res) ? res[0] : res;
+      paperId = nuevo.id;
+    }
+
+    await api('academia_preguntas?paper_id=eq.' + paperId, { method:'DELETE' });
+    if (ACADEMIA_EDIT_PREGUNTAS.length) {
+      await api('academia_preguntas', {
+        method: 'POST',
+        body: JSON.stringify(ACADEMIA_EDIT_PREGUNTAS.map((q, i) => ({
+          paper_id: paperId, orden: i+1,
+          enunciado: q.enunciado,
+          opcion_a: q.opcion_a, opcion_b: q.opcion_b, opcion_c: q.opcion_c, opcion_d: q.opcion_d,
+          respuesta_correcta: q.respuesta_correcta
+        })))
+      });
+    }
+    ACADEMIA_PREGUNTAS_CACHE[paperId] = null;
+
+    toast(ACADEMIA_EDIT_PAPER_ID ? 'Paper actualizado' : 'Paper creado');
+    closeFormPaper();
+    ACADEMIA_PAPERS = await api('academia_papers?order=nivel.asc,unidad.asc') || [];
+    renderAdminPapersList();
+  } catch (e) {
+    toast('Error al guardar el paper', 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Guardar paper';
+  }
+};
+
+window.borrarPaper = async function(paperId) {
+  const p = ACADEMIA_PAPERS.find(x => x.id === paperId);
+  if (!p) return;
+  const ok = await showConfirm({
+    title: '¿Eliminar paper?',
+    msg: `Vas a eliminar "${p.titulo}" y todas sus preguntas. No se puede deshacer.`,
+    type: 'danger', danger: true, okLabel: 'Eliminar', cancelLabel: 'Cancelar'
+  });
+  if (!ok) return;
+  try {
+    await api('academia_preguntas?paper_id=eq.' + paperId, { method:'DELETE' });
+    await api('academia_papers?id=eq.' + paperId, { method:'DELETE' });
+    toast('Paper eliminado');
+    ACADEMIA_PAPERS = await api('academia_papers?order=nivel.asc,unidad.asc') || [];
+    renderAdminPapersList();
+  } catch (e) { toast('Error al eliminar', 'error'); }
+};
+
+// ── fin ACADEMIA ──────────────────────────────────────────────
+
+init();
+
+})();
+i('academia_papers?id=eq.' + paperId, { method:'DELETE' });
+    toast('Paper eliminado');
+    ACADEMIA_PAPERS = await api('academia_papers?order=nivel.asc,unidad.asc') || [];
+    renderAdminPapersList();
+  } catch (e) { toast('Error al eliminar', 'error'); }
+};
+
+// ── fin ACADEMIA ──────────────────────────────────────────────
 
 init();
 

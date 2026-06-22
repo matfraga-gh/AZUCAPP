@@ -1065,6 +1065,9 @@
       <button class="bib-tab" id="bibTabCategorias" onclick="switchBibTab('categorias')" style="display:none">
         <i class="ti ti-folders"></i> Categorías
       </button>
+      <button class="bib-tab" id="bibTabAcademia" onclick="switchBibTab('academia')" style="display:none">
+        <i class="ti ti-school"></i> Academia
+      </button>
     </div>
 
     <!-- Tab contenidos -->
@@ -1085,6 +1088,20 @@
       <div id="bibAdminCategorias">
         <div class="loading">Cargando categorías...</div>
       </div>
+    </div>
+
+    <!-- Tab academia -->
+    <div id="bibPanelAcademia" style="display:none">
+      <div class="bib-tabs" style="margin-bottom:14px">
+        <button class="bib-tab active" id="acadSubTab_papers"   onclick="switchAcademiaSubTab('papers')">
+          <i class="ti ti-books"></i> Papers
+        </button>
+        <button class="bib-tab"        id="acadSubTab_progreso" onclick="switchAcademiaSubTab('progreso')">
+          <i class="ti ti-chart-bar"></i> Progreso
+        </button>
+      </div>
+      <div id="acadPanelPapers"></div>
+      <div id="acadPanel_progreso" style="display:none"></div>
     </div>
 
   </div>
@@ -1952,20 +1969,136 @@
         <div class="comp-add">
           <div style="display:flex; gap:8px;">
             <select id="pasoPlato" class="mini-select" style="flex:1; min-width:0;"></select>
-            <button type="button" class="btn-primary comp-add-btn" onclick="agregarPaso()"><i class="ti ti-plus"></i></button>
+            <button type="button" class="btn-primary comp-add-btn" onclick="agregarPaso()"><i<i class="ti ti-plus"></i></button>
           </div>
         </div>
         <div id="pasosLista" style="margin-top:10px;"></div>
       </div>
 
-      <label class="field"><span class="field-label">Procedimiento (opcional)</span>
-        <textarea id="subelabProcedimiento" rows="2"></textarea></label>
-
-      <div class="login-error" id="subelabError"></div>
     </div>
+
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeSubelab()">Cancelar</button>
-      <button class="btn-primary" id="btnGuardarSubelab" onclick="guardarSubelab()">Guardar</button>
+      <button class="btn-primary" onclick="guardarSubelab()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: PAPER READER (Academia)
+============================================ -->
+<div id="modalPaperReader" class="modal-overlay" style="display:none">
+  <div class="modal-card paper-reader-card">
+    <div class="paper-reader-header">
+      <div>
+        <div class="paper-reader-meta" id="paperReaderMeta"></div>
+        <div class="paper-reader-titulo" id="paperReaderTitulo"></div>
+      </div>
+      <button class="modal-close" onclick="closePaperReader()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+    <div class="paper-reader-scroll" id="paperReaderBody"></div>
+    <div class="paper-reader-footer">
+      <button class="btn-primary" id="paperReaderBtnQuiz" onclick="iniciarQuiz()">
+        <i class="ti ti-pencil-check"></i> Hacer el quiz
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: QUIZ (Academia)
+============================================ -->
+<div id="modalQuizAcademia" class="modal-overlay" style="display:none">
+  <div class="modal-card quiz-card">
+    <div class="modal-header">
+      <div class="modal-title" id="quizModalTitulo"></div>
+      <button class="modal-close" onclick="cerrarQuiz()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+    <div class="quiz-scroll">
+      <div id="quizFormSection">
+        <div id="quizPreguntas"></div>
+      </div>
+      <div id="quizResultadoSection" style="display:none"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-primary btn-block" id="btnEnviarQuiz" onclick="enviarQuiz()">
+        Enviar respuestas
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================
+     MODAL: FORM PAPER (Academia Admin)
+============================================ -->
+<div id="modalFormPaper" class="modal-overlay" style="display:none">
+  <div class="modal-card modal-bib">
+    <div class="modal-header">
+      <div class="modal-title" id="formPaperModalTitulo">Nuevo paper</div>
+      <button class="modal-close" onclick="closeFormPaper()" aria-label="Cerrar">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
+
+    <div class="modal-body modal-scrollable">
+      <div class="form-group">
+        <label class="form-label">Título</label>
+        <input type="text" id="papTitulo" class="form-input" placeholder="Ej: La gastronomía no es solo dar de comer" maxlength="120">
+      </div>
+
+      <div style="display:flex;gap:12px">
+        <div class="form-group" style="flex:1">
+          <label class="form-label">Nivel</label>
+          <select id="papNivel" class="form-input">
+            <option value="1">Nivel 1 · Iniciante</option>
+            <option value="2">Nivel 2 · Avanzado</option>
+            <option value="3">Nivel 3 · Formadores</option>
+          </select>
+        </div>
+        <div class="form-group" style="width:90px">
+          <label class="form-label">Unidad</label>
+          <input type="number" id="papUnidad" class="form-input" min="1" value="1">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Subtítulo <span style="opacity:.55;font-weight:400">(opcional)</span></label>
+        <input type="text" id="papSubtitulo" class="form-input" placeholder="Una frase que introduzca el paper">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Contenido del paper</label>
+        <div class="form-hint" style="margin-bottom:6px">
+          Formato: <code># Título</code> · <code>## Subtítulo</code> · <code>- Lista</code> · <code>&gt; Destacado</code>
+        </div>
+        <textarea id="papContenido" class="form-input" rows="12" placeholder="Escribí o pegá el contenido del paper acá..."></textarea>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">
+        <input type="checkbox" id="papActivo" checked>
+        <label for="papActivo" class="form-label" style="margin:0;cursor:pointer">Paper activo (visible para empleados)</label>
+      </div>
+
+      <div class="preg-ed-section">
+        <div class="preg-ed-titulo">
+          <i class="ti ti-list-check"></i> Preguntas del quiz
+        </div>
+        <div id="pregEditor"></div>
+        <button class="btn-ghost" onclick="addPreg()" style="margin-top:10px;width:100%">
+          <i class="ti ti-plus"></i> Agregar pregunta
+        </button>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeFormPaper()">Cancelar</button>
+      <button class="btn-primary" id="btnGuardarPaper" onclick="guardarPaper()">
+        <i class="ti ti-device-floppy"></i> Guardar paper
+      </button>
     </div>
   </div>
 </div>
