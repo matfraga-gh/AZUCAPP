@@ -7925,15 +7925,3 @@ window.borrarPaper = async function(paperId) {
 init();
 
 })();
-i('academia_papers?id=eq.' + paperId, { method:'DELETE' });
-    toast('Paper eliminado');
-    ACADEMIA_PAPERS = await api('academia_papers?order=nivel.asc,unidad.asc') || [];
-    renderAdminPapersList();
-  } catch (e) { toast('Error al eliminar', 'error'); }
-};
-
-// ── fin ACADEMIA ──────────────────────────────────────────────
-
-init();
-
-})();
