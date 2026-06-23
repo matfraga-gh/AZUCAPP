@@ -6050,6 +6050,7 @@ function renderRosterLista() {
         if (t.es_off) { txt = 'OFF'; cls += ' off'; }
         else if (t.es_flex) { txt = t.hora_entrada ? 'F ' + t.hora_entrada.slice(0, 5) : 'FLEX'; cls += ' flex'; }
         else if (t.hora_entrada) { txt = t.hora_entrada.slice(0, 5); cls += ' on'; }
+        else { txt = 'Trabaja'; cls += ' on'; }
       }
       return '<div class="rost-chip-wrap"><span class="rost-dia-lbl">' + cortos[i] + ' ' + Number(d.slice(8, 10)) + '</span><span class="' + cls + '">' + esc(txt) + '</span></div>';
     }).join('');
@@ -7436,14 +7437,16 @@ let ACADEMIA_EDIT_PAPER_ID   = null;
 let ACADEMIA_EDIT_PREGUNTAS  = [];
 
 const ACADEMIA_NIVELES = {
-  1: { label: 'Nivel 1 · Iniciante',  color: '#5DCAA5' },
-  2: { label: 'Nivel 2 · Avanzado',   color: '#EF9F27' },
-  3: { label: 'Nivel 3 · Formadores', color: '#7F77DD' }
+  1: { label: 'Nivel 1 · Iniciante',  color: '#5DCAA5', icon: 'ti-seedling' },
+  2: { label: 'Nivel 2 · Avanzado',   color: '#EF9F27', icon: 'ti-flame'    },
+  3: { label: 'Nivel 3 · Formadores', color: '#7F77DD', icon: 'ti-crown'    }
 };
+let ACADEMIA_VIEW = 'lista'; // 'lista' = selector de nivel, 'nivel' = dentro de un nivel
 
 // ── Vista empleado ────────────────────────────────────────────
 
 async function openAcademia() {
+  ACADEMIA_VIEW = 'lista';
   showView('vBiblioteca');
   const cont  = document.getElementById('bibContenido');
   const chips = document.getElementById('bibChips');
@@ -7465,59 +7468,129 @@ async function openAcademia() {
 }
 window.openAcademia = openAcademia;
 
+function _acadMejores() {
+  const m = {};
+  ACADEMIA_INTENTOS_USER.forEach(i => {
+    if (!m[i.paper_id] || i.puntaje > m[i.paper_id].puntaje) m[i.paper_id] = i;
+  });
+  return m;
+}
+
+function _nivelCompletado(n, mejores) {
+  const papers = ACADEMIA_PAPERS.filter(p => p.nivel === n);
+  if (!papers.length) return false;
+  return papers.every(p => mejores[p.id] && mejores[p.id].aprobado);
+}
+
 function renderAcademiaView() {
+  if (ACADEMIA_VIEW === 'nivel') renderAcademiaNivel();
+  else renderAcademiaLista();
+}
+
+function renderAcademiaLista() {
   const chips = document.getElementById('bibChips');
   const cont  = document.getElementById('bibContenido');
 
-  const niveles = [...new Set(ACADEMIA_PAPERS.map(p => p.nivel))].sort();
+  chips.innerHTML = `<button class="bib-chip" onclick="openMiBiblioteca()">
+    <i class="ti ti-arrow-left"></i> Biblioteca
+  </button>`;
 
-  chips.innerHTML =
-    `<button class="bib-chip" onclick="openMiBiblioteca()">
-       <i class="ti ti-arrow-left"></i> Biblioteca
-     </button>` +
-    niveles.map(n =>
-      `<button class="bib-chip ${ACADEMIA_NIVEL_SEL === n ? 'active' : ''}"
-         onclick="selAcadNivel(${n})">${(ACADEMIA_NIVELES[n]||{label:'Nivel '+n}).label}</button>`
-    ).join('');
+  const mejores = _acadMejores();
+
+  const nivConfig = [
+    { n:1, reqPrev: null },
+    { n:2, reqPrev: 1    },
+    { n:3, reqPrev: 2    }
+  ];
+
+  cont.innerHTML = '<div class="acad-niveles-lista">' +
+    nivConfig.map(({ n, reqPrev }) => {
+      const nc       = ACADEMIA_NIVELES[n] || { label:'Nivel '+n, color:'#888', icon:'ti-book' };
+      const desbloq  = reqPrev === null || _nivelCompletado(reqPrev, mejores);
+      const completado = _nivelCompletado(n, mejores);
+      const papers   = ACADEMIA_PAPERS.filter(p => p.nivel === n);
+      const aprobados = papers.filter(p => mejores[p.id] && mejores[p.id].aprobado).length;
+      const prevLabel = reqPrev ? (ACADEMIA_NIVELES[reqPrev]||{label:'Nivel '+reqPrev}).label : '';
+
+      return `
+        <div class="acad-nivel-card${!desbloq?' acad-nivel-card--locked':completado?' acad-nivel-card--done':''}"
+             ${desbloq ? `onclick="selAcadNivel(${n})"` : ''}>
+          <div class="acad-nivel-icon" style="background:${nc.color}22;color:${!desbloq?'var(--c-muted)':nc.color}">
+            <i class="ti ${!desbloq?'ti-lock':nc.icon}"></i>
+          </div>
+          <div class="acad-nivel-info">
+            <div class="acad-nivel-nombre" style="color:${!desbloq?'var(--c-muted)':'inherit'}">${nc.label}</div>
+            <div class="acad-nivel-estado">
+              ${!desbloq
+                ? `<span class="acad-lock-msg">Completá ${prevLabel} para desbloquear</span>`
+                : papers.length
+                  ? `<span class="acad-progress-txt">${aprobados} de ${papers.length} aprobado${papers.length!==1?'s':''}</span>`
+                  : '<span class="acad-progress-txt">Sin contenido aún</span>'
+              }
+            </div>
+          </div>
+          ${desbloq && completado ? `<div class="acad-nivel-check"><i class="ti ti-circle-check-filled"></i></div>` : ''}
+          ${desbloq && !completado ? `<i class="ti ti-chevron-right acad-nivel-arrow"></i>` : ''}
+        </div>`;
+    }).join('') +
+  '</div>';
+}
+
+function renderAcademiaNivel() {
+  const chips    = document.getElementById('bibChips');
+  const cont     = document.getElementById('bibContenido');
+  const nc       = ACADEMIA_NIVELES[ACADEMIA_NIVEL_SEL] || { label:'Nivel '+ACADEMIA_NIVEL_SEL, color:'#888' };
+
+  chips.innerHTML = `<button class="bib-chip" onclick="volverListaNiveles()">
+    <i class="ti ti-arrow-left"></i> Academia
+  </button>`;
 
   const papersNivel = ACADEMIA_PAPERS.filter(p => p.nivel === ACADEMIA_NIVEL_SEL);
-  const nivelInfo   = ACADEMIA_NIVELES[ACADEMIA_NIVEL_SEL] || { label:'Nivel '+ACADEMIA_NIVEL_SEL, color:'#888' };
 
   if (!papersNivel.length) {
-    cont.innerHTML = '<div class="bib-empty"><i class="ti ti-books"></i><div class="bib-empty-title">Todavía no hay papers para este nivel.</div></div>';
+    cont.innerHTML = '<div class="bib-empty"><i class="ti ti-books"></i><div class="bib-empty-title">Todavía no hay contenido para este nivel.</div></div>';
     return;
   }
 
-  const mejores = {};
-  ACADEMIA_INTENTOS_USER.forEach(i => {
-    if (!mejores[i.paper_id] || i.puntaje > mejores[i.paper_id].puntaje) mejores[i.paper_id] = i;
-  });
+  const mejores = _acadMejores();
+  const unidades = [...new Set(papersNivel.map(p => p.unidad))].sort((a,b) => a-b);
 
   cont.innerHTML = `
-    <div class="acad-nivel-bar">
-      <span class="acad-nivel-pill" style="background:${nivelInfo.color}22;color:${nivelInfo.color};border:1px solid ${nivelInfo.color}55">
-        ${nivelInfo.label}
+    <div class="acad-nivel-header">
+      <span class="acad-nivel-pill" style="background:${nc.color}22;color:${nc.color};border:1px solid ${nc.color}55">
+        <i class="ti ${nc.icon||'ti-book'}"></i> ${nc.label}
       </span>
     </div>
-    <div class="acad-grid">
-      ${papersNivel.map(p => {
-        const it  = mejores[p.id];
-        const ok  = it && it.aprobado;
-        const hz  = !!it;
+    <div class="acad-unidades">
+      ${unidades.map(u => {
+        const uPapers = papersNivel.filter(p => p.unidad === u);
         return `
-          <div class="acad-card${ok?' acad-card--ok':hz?' acad-card--revisar':''}"
-               onclick="openPaperReader(${p.id})">
-            <div class="acad-card-top">
-              <span class="acad-card-unidad">Unidad ${p.unidad}</span>
-              ${ok ? `<span class="acad-badge acad-badge--ok"><i class="ti ti-check"></i></span>`
-                   : hz ? `<span class="acad-badge acad-badge--revisar"><i class="ti ti-refresh"></i></span>` : ''}
-            </div>
-            <div class="acad-card-titulo">${esc(p.titulo)}</div>
-            ${p.subtitulo ? `<div class="acad-card-sub">${esc(p.subtitulo)}</div>` : ''}
-            <div class="acad-card-footer">
-              ${ok  ? `<span class="acad-pts acad-pts--ok">${it.puntaje}/${it.total_preguntas} pts · Aprobado</span>`
-              : hz  ? `<span class="acad-pts acad-pts--revisar">${it.puntaje}/${it.total_preguntas} pts · A reforzar</span>`
-                    : `<span class="acad-pts acad-pts--pendiente">Pendiente</span>`}
+          <div class="acad-unidad-grupo">
+            <div class="acad-unidad-titulo">Unidad ${u}</div>
+            <div class="acad-items">
+              ${uPapers.map(p => {
+                const it = mejores[p.id];
+                const ok = it && it.aprobado;
+                const hz = !!it;
+                return `
+                  <div class="acad-item acad-item--paper${ok?' acad-item--done':''}" onclick="openPaperReader(${p.id})">
+                    <div class="acad-item-icon acad-item-icon--paper"><i class="ti ti-file-text"></i></div>
+                    <div class="acad-item-body">
+                      <div class="acad-item-tipo">Paper</div>
+                      <div class="acad-item-titulo">${esc(p.titulo)}</div>
+                    </div>
+                    <div class="acad-item-arrow">${ok?'<i class="ti ti-check acad-item-check"></i>':'<i class="ti ti-chevron-right"></i>'}</div>
+                  </div>
+                  <div class="acad-item acad-item--quiz${ok?' acad-item--done':hz?' acad-item--revisar':''}" onclick="openQuizAcademia(${p.id})">
+                    <div class="acad-item-icon acad-item-icon--quiz"><i class="ti ti-list-check"></i></div>
+                    <div class="acad-item-body">
+                      <div class="acad-item-tipo">Quiz</div>
+                      <div class="acad-item-titulo">${esc(p.titulo)}</div>
+                      ${hz?`<div class="acad-item-score${ok?' acad-item-score--ok':' acad-item-score--rev'}">${it.puntaje}/${it.total_preguntas} · ${ok?'Aprobado ✓':'A reforzar'}</div>`:''}
+                    </div>
+                    <div class="acad-item-arrow">${ok?'<i class="ti ti-check acad-item-check"></i>':hz?'<i class="ti ti-refresh"></i>':'<i class="ti ti-chevron-right"></i>'}</div>
+                  </div>`;
+              }).join('')}
             </div>
           </div>`;
       }).join('')}
@@ -7526,6 +7599,11 @@ function renderAcademiaView() {
 
 window.selAcadNivel = function(n) {
   ACADEMIA_NIVEL_SEL = n;
+  ACADEMIA_VIEW = 'nivel';
+  renderAcademiaView();
+};
+window.volverListaNiveles = function() {
+  ACADEMIA_VIEW = 'lista';
   renderAcademiaView();
 };
 
