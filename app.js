@@ -7454,12 +7454,16 @@ async function openAcademia() {
   cont.innerHTML  = '<div class="loading">Cargando Academia...</div>';
 
   try {
-    const [papers, intentos] = await Promise.all([
+    const [resPapers, resIntentos] = await Promise.allSettled([
       api('academia_papers?activo=eq.true&order=nivel.asc,unidad.asc'),
       api('academia_intentos?user_id=eq.' + currentUser.id)
     ]);
-    ACADEMIA_PAPERS        = papers  || [];
-    ACADEMIA_INTENTOS_USER = intentos || [];
+    if (resPapers.status === 'rejected') {
+      cont.innerHTML = '<div class="loading" style="color:var(--c-error)">Error al cargar Academia</div>';
+      return;
+    }
+    ACADEMIA_PAPERS        = resPapers.value  || [];
+    ACADEMIA_INTENTOS_USER = resIntentos.status === 'fulfilled' ? (resIntentos.value || []) : [];
   } catch (e) {
     cont.innerHTML = '<div class="loading" style="color:var(--c-error)">Error al cargar Academia</div>';
     return;
