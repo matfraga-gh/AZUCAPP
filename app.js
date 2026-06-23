@@ -697,6 +697,9 @@ function showDashboard() {
     return;
   }
 
+  // Inicializar inputs monetarios (una sola vez)
+  ['ccVentas','cierreTarjeta','cierreTransf','platoPrecio','insCosto'].forEach(initMoneyInput);
+
   const nombre = currentUser.nombre || currentUser.usuario;
   const perfil = currentUser.perfil || 'usuario';
   const roleLabel = {

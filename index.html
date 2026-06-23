@@ -647,7 +647,7 @@
       <div class="form-row-2">
         <div class="form-group">
           <label class="form-label">Costo del envase ($)</label>
-          <input type="number" id="insCosto" class="form-input" step="1" min="0">
+          <input type="text" inputmode="numeric" id="insCosto" class="form-input" placeholder="$ 0">
         </div>
         <div class="form-group">
           <label class="form-label">Costo / unidad base</label>
@@ -718,7 +718,7 @@
         <label class="field"><span class="field-label">Turno</span><select id="ccTurno"></select></label>
       </div>
       <div class="cierre-row2">
-        <label class="field"><span class="field-label">Ventas totales ($)</span><input type="number" step="any" min="0" id="ccVentas" oninput="ccCalcProm()"></label>
+        <label class="field"><span class="field-label">Ventas totales ($)</span><input type="text" inputmode="numeric" id="ccVentas" placeholder="$ 0" oninput="ccCalcProm()"></label>
         <label class="field"><span class="field-label">Pax (cubiertos)</span><input type="number" min="0" id="ccPax" oninput="ccCalcProm()"></label>
       </div>
       <div class="cc-prom" id="ccProm"></div>
@@ -1564,8 +1564,8 @@
       <div class="cierre-section">
         <div class="cierre-section-title"><i class="ti ti-credit-card"></i> Electrónicos</div>
         <div class="cierre-row2">
-          <label class="field"><span class="field-label">Tarjeta</span><input type="number" min="0" step="any" id="cierreTarjeta" placeholder="0" oninput="recalcCierre()"></label>
-          <label class="field"><span class="field-label">Transferencia</span><input type="number" min="0" step="any" id="cierreTransf" placeholder="0" oninput="recalcCierre()"></label>
+          <label class="field"><span class="field-label">Tarjeta</span><input type="text" inputmode="numeric" id="cierreTarjeta" placeholder="$ 0" oninput="recalcCierre()"></label>
+          <label class="field"><span class="field-label">Transferencia</span><input type="text" inputmode="numeric" id="cierreTransf" placeholder="$ 0" oninput="recalcCierre()"></label>
         </div>
       </div>
 
@@ -1937,7 +1937,7 @@
 
       <div id="precioCampo" style="display:none;">
         <label class="field"><span class="field-label">Precio de venta</span>
-          <input type="number" min="0" step="any" id="platoPrecio" placeholder="0"></label>
+          <input type="text" inputmode="numeric" id="platoPrecio" placeholder="$ 0"></label>
       </div>
 
       <div id="componentesSection" class="cierre-section" style="margin-top:6px;">
