@@ -3711,3 +3711,76 @@ select option {
   border-radius: 4px;
   font-size: 11px;
 }
+
+/* ── Academia: lista de niveles ──────────────────────────────── */
+.acad-niveles-lista { display:flex;flex-direction:column;gap:12px;padding:4px 0; }
+
+.acad-nivel-card {
+  display:flex;align-items:center;gap:14px;
+  padding:16px;
+  background:var(--c-card);
+  border:1px solid var(--c-border);
+  border-radius:14px;
+  cursor:pointer;
+  transition:background .15s,border-color .15s;
+}
+.acad-nivel-card:hover { background:rgba(255,255,255,.06); }
+.acad-nivel-card--locked { cursor:default;opacity:.55; }
+.acad-nivel-card--locked:hover { background:var(--c-card); }
+.acad-nivel-card--done { border-color:rgba(93,202,165,.35); }
+
+.acad-nivel-icon {
+  width:44px;height:44px;border-radius:12px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:20px;flex-shrink:0;
+}
+.acad-nivel-info { flex:1;min-width:0; }
+.acad-nivel-nombre { font-size:14px;font-weight:700;margin-bottom:3px; }
+.acad-nivel-estado { }
+.acad-lock-msg     { font-size:12px;color:var(--c-muted); }
+.acad-progress-txt { font-size:12px;color:var(--c-muted); }
+.acad-nivel-check  { font-size:22px;color:#5DCAA5;flex-shrink:0; }
+.acad-nivel-arrow  { font-size:18px;color:var(--c-muted);flex-shrink:0; }
+
+/* ── Academia: dentro de un nivel ───────────────────────────── */
+.acad-nivel-header { margin-bottom:16px; }
+
+.acad-unidades { display:flex;flex-direction:column;gap:20px; }
+.acad-unidad-grupo { }
+.acad-unidad-titulo {
+  font-size:11px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.07em;color:var(--c-muted);
+  margin-bottom:8px;padding-left:2px;
+}
+.acad-items { display:flex;flex-direction:column;gap:8px; }
+
+.acad-item {
+  display:flex;align-items:center;gap:12px;
+  padding:13px 14px;
+  background:var(--c-card);
+  border:1px solid var(--c-border);
+  border-radius:12px;
+  cursor:pointer;
+  transition:background .15s,border-color .15s;
+}
+.acad-item:hover { background:rgba(255,255,255,.06); }
+.acad-item--done  { border-color:rgba(93,202,165,.35); }
+.acad-item--revisar { border-color:rgba(239,159,39,.3); }
+
+.acad-item-icon {
+  width:36px;height:36px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:17px;flex-shrink:0;
+}
+.acad-item-icon--paper { background:rgba(127,119,221,.15);color:#7F77DD; }
+.acad-item-icon--quiz  { background:rgba(239,159,39,.15);color:#EF9F27; }
+
+.acad-item-body   { flex:1;min-width:0; }
+.acad-item-tipo   { font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin-bottom:2px; }
+.acad-item-titulo { font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.acad-item-score  { font-size:11px;font-weight:600;margin-top:2px; }
+.acad-item-score--ok  { color:#5DCAA5; }
+.acad-item-score--rev { color:#EF9F27; }
+
+.acad-item-arrow  { font-size:16px;color:var(--c-muted);flex-shrink:0; }
+.acad-item-check  { color:#5DCAA5 !important; }
