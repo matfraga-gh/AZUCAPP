@@ -1662,9 +1662,36 @@ function billeteVal(d) {
   const el = document.getElementById('bil_' + d);
   return el ? (parseInt(el.value, 10) || 0) : 0;
 }
+function parseMiles(str) {
+  if (str == null || str === '') return 0;
+  return parseFloat(String(str).replace(/[$\s]/g, '').replace(/\./g, '').replace(/,/g, '.')) || 0;
+}
+function setMoneyVal(id, n) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const num = (n != null && n !== '') ? Math.round(parseFloat(n) || 0) : 0;
+  el.value = num ? '$ ' + num.toLocaleString('es-AR') : '';
+}
+function initMoneyInput(id) {
+  const el = document.getElementById(id);
+  if (!el || el._moneyInit) return;
+  el._moneyInit = true;
+  el.addEventListener('focus', function() {
+    const raw = parseMiles(this.value);
+    this.value = raw ? String(Math.round(raw)) : '';
+    setTimeout(() => this.select(), 0);
+  });
+  el.addEventListener('blur', function() {
+    const raw = parseMiles(this.value);
+    this.value = raw ? '$ ' + Math.round(raw).toLocaleString('es-AR') : '';
+  });
+  el.addEventListener('input', function() {
+    this.value = this.value.replace(/[^\d]/g, '');
+  });
+}
 function valNumCierre(id) {
   const el = document.getElementById(id);
-  return el ? (parseFloat(el.value) || 0) : 0;
+  return el ? (parseMiles(el.value) || 0) : 0;
 }
 
 function abrirNuevoCierre() {
@@ -1731,8 +1758,8 @@ async function abrirEditarCierre(cierreId) {
   document.getElementById('cierreUsd').value = c.monto_usd || '';
   document.getElementById('cierreEur').value = c.monto_eur || '';
   document.getElementById('cierreBrl').value = c.monto_brl || '';
-  document.getElementById('cierreTarjeta').value = c.monto_tarjeta || '';
-  document.getElementById('cierreTransf').value = c.monto_transferencia || '';
+  setMoneyVal('cierreTarjeta', c.monto_tarjeta);
+  setMoneyVal('cierreTransf', c.monto_transferencia);
   document.getElementById('cierreComentario').value = c.comentario || '';
   document.getElementById('cierreError').textContent = '';
 
@@ -7109,7 +7136,7 @@ window.abrirEditarCierreCaja = function(id) {
   document.getElementById('ccLocal').disabled = true;
   document.getElementById('ccFecha').value = c.fecha ? String(c.fecha).slice(0, 10) : hoyStr();
   document.getElementById('ccTurno').innerHTML = CIERRE_CAJA_TURNOS.map(t => '<option value="' + t[0] + '"' + (t[0] === c.turno ? ' selected' : '') + '>' + t[1] + '</option>').join('');
-  document.getElementById('ccVentas').value = c.ventas_total != null ? c.ventas_total : '';
+  setMoneyVal('ccVentas', c.ventas_total);
   document.getElementById('ccPax').value = c.pax != null ? c.pax : '';
   document.getElementById('ccObs').value = c.observaciones || '';
   ccCalcProm();
@@ -7119,7 +7146,7 @@ window.abrirEditarCierreCaja = function(id) {
 };
 window.closeCierreCaja = function() { document.getElementById('modalCierreCaja').classList.remove('show'); };
 window.ccCalcProm = function() {
-  const v = parseFloat(document.getElementById('ccVentas').value);
+  const v = parseMiles(document.getElementById('ccVentas').value);
   const p = parseInt(document.getElementById('ccPax').value, 10);
   const el = document.getElementById('ccProm');
   if (!isNaN(v) && !isNaN(p) && p > 0) el.textContent = 'Promedio por pax: $' + formatNumber(v / p);
@@ -7130,7 +7157,7 @@ window.guardarCierreCaja = async function() {
   const local = document.getElementById('ccLocal').value;
   const fecha = document.getElementById('ccFecha').value;
   const turno = document.getElementById('ccTurno').value;
-  const ventas = parseFloat(document.getElementById('ccVentas').value);
+  const ventas = parseMiles(document.getElementById('ccVentas').value);
   const pax = parseInt(document.getElementById('ccPax').value, 10);
   if (!local) { err.textContent = 'Eleg\u00ed un local.'; return; }
   if (!fecha) { err.textContent = 'Eleg\u00ed la fecha.'; return; }
