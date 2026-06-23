@@ -1959,10 +1959,17 @@ window.generarLiquidacion = async function() {
 
   try {
     const localesUser = localesPropinasUsuario();
+
+    // Respetar el filtro activo en pantalla
+    const slugTodos = getSlugTransversal();
+    const localActivo = (PROP_LOCAL_SEL && PROP_LOCAL_SEL !== slugTodos && localesUser.includes(PROP_LOCAL_SEL))
+      ? PROP_LOCAL_SEL : null;
+    const localesFiltro = localActivo ? [localActivo] : localesUser;
+
     let cierres = await api('propinas_cierres?fecha=gte.' + desde + '&fecha=lte.' + hasta + '&order=fecha.asc') || [];
-    cierres = cierres.filter(c => localesUser.includes(c.local));
+    cierres = cierres.filter(c => localesFiltro.includes(c.local));
     if (!cierres.length) {
-      err.textContent = 'No hay cierres en ese período.';
+      err.textContent = 'No hay cierres en ese período' + (localActivo ? ' para ' + localLabel(localActivo) : '') + '.';
       btn.disabled = false; btn.textContent = 'Generar Excel';
       return;
     }
@@ -1990,7 +1997,7 @@ window.generarLiquidacion = async function() {
     });
     const nombreEmp = id => empMap[id] || ('Empleado #' + id);
 
-    // ---- DETALLE por cierre (una fila por colaborador + una fila por Administración) ----
+    // ---- DETALLE por cierre ----
     const detalleColabs = asigs.map(a => {
       const c = cierreMap[a.cierre_id] || {};
       return {
@@ -2003,8 +2010,6 @@ window.generarLiquidacion = async function() {
         'Monto': parseFloat(a.monto) || 0
       };
     });
-
-    // Filas de Administración: una por cada cierre que tenga porcentaje_admin > 0
     const detalleAdmin = cierres
       .filter(c => (parseFloat(c.porcentaje_admin) || 0) > 0)
       .map(c => {
@@ -2020,14 +2025,13 @@ window.generarLiquidacion = async function() {
           'Monto': montoAdminC
         };
       });
-
     const detalle = [...detalleColabs, ...detalleAdmin].sort((x, y) =>
       x.Fecha.localeCompare(y.Fecha) ||
       x.Local.localeCompare(y.Local, 'es') ||
       x.Empleado.localeCompare(y.Empleado, 'es')
     );
 
-    // ---- RESUMEN: una fila por empleado con su total (el desglose por local/cierre está en la otra hoja) ----
+    // ---- RESUMEN POR EMPLEADO ----
     const grupos = {};
     asigs.forEach(a => {
       const c = cierreMap[a.cierre_id] || {};
@@ -2041,7 +2045,6 @@ window.generarLiquidacion = async function() {
       const locLbl = localLabel(c.local) || c.local || '';
       if (locLbl) g.locales[locLbl] = true;
     });
-
     const resumenColabs = Object.keys(grupos).map(id => {
       const g = grupos[id];
       return {
@@ -2056,7 +2059,6 @@ window.generarLiquidacion = async function() {
       };
     }).sort((x, y) => x.Empleado.localeCompare(y.Empleado, 'es'));
 
-    // Fila de Administración en el resumen
     const gruposAdmin = {};
     cierres.forEach(c => {
       const pctC = parseFloat(c.porcentaje_admin) || 0;
@@ -2081,15 +2083,56 @@ window.generarLiquidacion = async function() {
         'Alias': ''
       };
     });
+    const resumenEmp = [...resumenColabs, ...resumenAdmin];
 
-    const resumen = [...resumenColabs, ...resumenAdmin];
+    // ---- RESUMEN POR LOCAL ----
+    const gruposLocal = {};
+    cierres.forEach(c => {
+      const loc = localLabel(c.local) || c.local || '';
+      if (!gruposLocal[loc]) gruposLocal[loc] = { cierres: 0, empleados: new Set(), puntos: 0, pendiente: 0, pagado: 0 };
+      gruposLocal[loc].cierres += 1;
+    });
+    asigs.forEach(a => {
+      const c = cierreMap[a.cierre_id] || {};
+      const loc = localLabel(c.local) || c.local || '';
+      if (!gruposLocal[loc]) return;
+      gruposLocal[loc].empleados.add(a.empleado_id);
+      gruposLocal[loc].puntos += parseFloat(a.puntos) || 0;
+      const m = parseFloat(a.monto) || 0;
+      if (c.pagado) gruposLocal[loc].pagado += m; else gruposLocal[loc].pendiente += m;
+    });
+    cierres.forEach(c => {
+      const pctC = parseFloat(c.porcentaje_admin) || 0;
+      if (!pctC) return;
+      const loc = localLabel(c.local) || c.local || '';
+      if (!gruposLocal[loc]) return;
+      const montoAdminC = Math.round((parseFloat(c.total_bruto) || 0) * pctC / 100);
+      if (c.pagado) gruposLocal[loc].pagado += montoAdminC; else gruposLocal[loc].pendiente += montoAdminC;
+    });
+    const resumenLocal = Object.keys(gruposLocal).sort((a, b) => a.localeCompare(b, 'es')).map(loc => {
+      const g = gruposLocal[loc];
+      return {
+        'Local': loc,
+        'Cierres': g.cierres,
+        'Empleados': g.empleados.size,
+        'Puntos distribuidos': Math.round(g.puntos * 10) / 10,
+        'Pendiente': Math.round(g.pendiente),
+        'Pagado': Math.round(g.pagado),
+        'Total': Math.round(g.pendiente + g.pagado)
+      };
+    });
 
-    exportarAExcel('Liquidacion_propinas_AZUCA_' + desde + '_a_' + hasta + '.xlsx', [
-      { nombre: 'Resumen por empleado', filas: resumen },
-      { nombre: 'Detalle por cierre', filas: detalle }
+    // Nombre con sufijo de local si hay filtro activo
+    const sufLocal = localActivo ? '_' + (localLabel(localActivo) || localActivo).replace(/[\s\/\\]/g, '') : '';
+    const nombreArchivo = 'Liquidacion_propinas_AZUCA_' + desde + '_a_' + hasta + sufLocal + '.xlsx';
+
+    exportarAExcel(nombreArchivo, [
+      { nombre: 'Resumen por empleado', filas: resumenEmp  },
+      { nombre: 'Resumen por local',    filas: resumenLocal },
+      { nombre: 'Detalle por cierre',   filas: detalle      }
     ]);
     closeLiquidacion();
-    toast('✓ Liquidación generada (' + cierres.length + ' cierres)', 'success');
+    toast('\u2713 Liquidación generada (' + cierres.length + ' cierres)', 'success');
   } catch (e) {
     err.textContent = 'Error al generar la liquidación. Reintentá.';
   } finally {
