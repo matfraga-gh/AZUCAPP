@@ -7646,7 +7646,20 @@ async function openPaperReader(paperId) {
   document.getElementById('paperReaderMeta').textContent =
     (ACADEMIA_NIVELES[paper.nivel]||{label:'N'+paper.nivel}).label + ' · Unidad ' + paper.unidad;
   document.getElementById('paperReaderTitulo').textContent = paper.titulo;
-  document.getElementById('paperReaderBody').innerHTML = renderPaperMd(paper.contenido);
+
+  const bodyEl = document.getElementById('paperReaderBody');
+  if (paper.url) {
+    bodyEl.innerHTML = `
+      <div class="paper-pdf-wrap">
+        ${paper.subtitulo ? `<p class="paper-pdf-sub">${esc(paper.subtitulo)}</p>` : ''}
+        <a class="paper-pdf-btn" href="${esc(paper.url)}" target="_blank" rel="noopener noreferrer">
+          <i class="ti ti-file-text"></i> Abrir PDF
+        </a>
+        <p class="paper-pdf-hint">Se abre en una nueva pestaña</p>
+      </div>`;
+  } else {
+    bodyEl.innerHTML = renderPaperMd(paper.contenido);
+  }
 
   const btn = document.getElementById('paperReaderBtnQuiz');
   btn.innerHTML = it
@@ -7926,7 +7939,7 @@ async function openFormPaper(paperId) {
     document.getElementById('papNivel').value     = p.nivel;
     document.getElementById('papUnidad').value    = p.unidad;
     document.getElementById('papSubtitulo').value = p.subtitulo || '';
-    document.getElementById('papContenido').value = p.contenido;
+    document.getElementById('papUrl').value       = p.url || '';
     document.getElementById('papActivo').checked  = p.activo !== false;
 
     try {
@@ -7938,7 +7951,7 @@ async function openFormPaper(paperId) {
       ACADEMIA_EDIT_PREGUNTAS = pregs.map(q => ({ ...q }));
     } catch (e) {}
   } else {
-    ['papTitulo','papSubtitulo','papContenido'].forEach(id => (document.getElementById(id).value = ''));
+    ['papTitulo','papSubtitulo','papUrl'].forEach(id => (document.getElementById(id).value = ''));
     document.getElementById('papNivel').value   = '1';
     document.getElementById('papUnidad').value  = '1';
     document.getElementById('papActivo').checked = true;
@@ -8009,11 +8022,11 @@ window.guardarPaper = async function() {
   const nivel     = parseInt(document.getElementById('papNivel').value);
   const unidad    = parseInt(document.getElementById('papUnidad').value);
   const subtitulo = document.getElementById('papSubtitulo').value.trim();
-  const contenido = document.getElementById('papContenido').value.trim();
+  const url       = document.getElementById('papUrl').value.trim();
   const activo    = document.getElementById('papActivo').checked;
 
-  if (!titulo)    { toast('Falta el título', 'error'); return; }
-  if (!contenido) { toast('Falta el contenido', 'error'); return; }
+  if (!titulo) { toast('Falta el título', 'error'); return; }
+  if (!url)    { toast('Falta el link al PDF', 'error'); return; }
 
   for (let i = 0; i < ACADEMIA_EDIT_PREGUNTAS.length; i++) {
     const q = ACADEMIA_EDIT_PREGUNTAS[i];
@@ -8027,7 +8040,7 @@ window.guardarPaper = async function() {
   btn.disabled = true; btn.textContent = 'Guardando...';
 
   try {
-    const body = { titulo, nivel, unidad, contenido, activo, subtitulo: subtitulo || null };
+    const body = { titulo, nivel, unidad, url, activo, subtitulo: subtitulo || null };
     let paperId = ACADEMIA_EDIT_PAPER_ID;
 
     if (paperId) {

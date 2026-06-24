@@ -3784,3 +3784,41 @@ select option {
 
 .acad-item-arrow  { font-size:16px;color:var(--c-muted);flex-shrink:0; }
 .acad-item-check  { color:#5DCAA5 !important; }
+
+/* ── Paper reader: vista PDF ─────────────────────────────────── */
+.paper-pdf-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 40px 20px;
+  text-align: center;
+  min-height: 200px;
+}
+.paper-pdf-sub {
+  font-size: 14px;
+  color: var(--c-muted);
+  margin: 0;
+  max-width: 340px;
+  line-height: 1.5;
+}
+.paper-pdf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 28px;
+  background: var(--c-accent);
+  color: #fff;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: opacity .15s;
+}
+.paper-pdf-btn:hover { opacity: .88; }
+.paper-pdf-hint {
+  font-size: 12px;
+  color: var(--c-muted);
+  margin: 0;
+}
