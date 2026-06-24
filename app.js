@@ -2642,7 +2642,7 @@ window.abrirEditarSubelab = async function(id) {
   document.getElementById('subelabUnidad').innerHTML = opcionesUnidad(r.unidad_rendimiento || 'kg');
   document.getElementById('subelabProcedimiento').value = r.procedimiento || '';
   document.getElementById('platoCategoria').value = r.categoria || '';
-  document.getElementById('platoPrecio').value = r.precio_venta || '';
+  setMoneyVal('platoPrecio', r.precio_venta || '');
   document.getElementById('subelabError').textContent = '';
   configurarCamposModal();
   prepararPickerComponente();
@@ -2896,7 +2896,7 @@ window.guardarSubelab = async function() {
     receta.categoria = document.getElementById('platoCategoria').value || null;
   }
   if (RECETA_TIPO === 'plato' || esMenu) {
-    receta.precio_venta = parseFloat(document.getElementById('platoPrecio').value) || 0;
+    receta.precio_venta = parseMiles(document.getElementById('platoPrecio').value) || 0;
   }
   if (!RECETA_EDITANDO) { receta.creado_por = currentUser.id; receta.creado_en = ahora; }
 
@@ -5357,7 +5357,7 @@ function openModalInsumo(id) {
   document.getElementById('insFormato').value = ins ? (ins.formato || '') : '';
   document.getElementById('insUnidad').value = ins ? (ins.unidad || 'kg') : 'kg';
   document.getElementById('insCantidad').value = ins ? (ins.cantidad_por_presentacion || '') : '1';
-  document.getElementById('insCosto').value = ins ? (ins.costo || '') : '';
+  setMoneyVal('insCosto', ins ? ins.costo : '');
   document.getElementById('insProveedor').value = ins ? (ins.proveedor || '') : '';
   document.getElementById('insCodigo').value = ins ? (ins.codigo_hiopos || '') : '';
 
@@ -5400,7 +5400,7 @@ function closeModalInsumo() {
 }
 
 function actualizarCostoUnidad() {
-  const costo = parseFloat(document.getElementById('insCosto').value) || 0;
+  const costo = parseMiles(document.getElementById('insCosto').value) || 0;
   const cant = parseFloat(document.getElementById('insCantidad').value) || 0;
   const unidad = document.getElementById('insUnidad').value || '';
   const box = document.getElementById('insCostoUnidad');
@@ -5417,7 +5417,7 @@ async function guardarInsumo(validar) {
   const formato = document.getElementById('insFormato').value.trim();
   const unidad = document.getElementById('insUnidad').value;
   const cantidad = parseFloat(document.getElementById('insCantidad').value);
-  const costo = parseFloat(document.getElementById('insCosto').value);
+  const costo = parseMiles(document.getElementById('insCosto').value);
   const proveedor = document.getElementById('insProveedor').value.trim();
   const codigo = document.getElementById('insCodigo').value.trim();
   const subfamilia = document.getElementById('insSubfamilia').value;
@@ -6740,12 +6740,25 @@ window.guardarRecepcion = async function(cerrar) {
       if (!itemId) continue;
       const rec = b.querySelector('.ped-recibido').value;
       const recibido = (rec !== '') ? (parseFloat(rec) || 0) : null;
-      await api('requerimiento_items?id=eq.' + itemId, { method: 'PATCH', body: JSON.stringify({
+      const estadoEl = b.querySelector('.ped-recep-estado');
+      const estadoVal = estadoEl ? estadoEl.value : '';
+
+      // Al cerrar, todos los items necesitan estado
+      if (cerrar && !estadoVal) {
+        const nombre = b.querySelector('.ped-item-nombre')?.textContent || 'un ítem';
+        toast('Seleccioná el estado de recepción para: ' + nombre, 'error');
+        return;
+      }
+
+      const patch = {
         cantidad_recibida: recibido,
-        estado_recepcion: b.querySelector('.ped-recep-estado').value || null,
         comentario_recepcion: b.querySelector('.ped-recep-coment').value.trim() || null,
         recibido_en: recibido != null ? new Date().toISOString() : null
-      })});
+      };
+      // Solo incluir estado_recepcion si fue seleccionado (evita NOT NULL error)
+      if (estadoVal) patch.estado_recepcion = estadoVal;
+
+      await api('requerimiento_items?id=eq.' + itemId, { method: 'PATCH', body: JSON.stringify(patch)});
     }
     if (cerrar) {
       await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({ estado: 'completado', actualizado_en: new Date().toISOString() })});
