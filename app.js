@@ -241,6 +241,13 @@ function formatNumber(n) {
   const num = Math.round(parseFloat(n) || 0);
   return num.toLocaleString('es-AR');
 }
+function formatMonto(n) {
+  const num = parseFloat(n) || 0;
+  if (num % 1 !== 0) {
+    return num.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  return Math.round(num).toLocaleString('es-AR');
+}
 
 // ============================================
 // TOAST
@@ -1256,7 +1263,7 @@ async function openMiPropina() {
     html += `
       <div class="propina-banner">
         <div class="propina-banner-label">Total pendiente de cobro</div>
-        <div class="propina-banner-monto">$${formatNumber(totalPendiente)}</div>
+        <div class="propina-banner-monto">$${formatMonto(totalPendiente)}</div>
         <div class="propina-banner-sub">${pendientes.length} ${pendientes.length === 1 ? 'cierre pendiente' : 'cierres pendientes'}</div>
       </div>`;
   } else {
@@ -1293,7 +1300,7 @@ async function openMiPropina() {
         <div class="pend-local">
           <div class="pend-local-header">
             <div class="pend-local-name"><i class="ti ti-map-pin"></i> ${esc(LOCAL_LABELS[loc] || loc)}</div>
-            <div class="pend-local-total">$${formatNumber(data.total)}</div>
+            <div class="pend-local-total">$${formatMonto(data.total)}</div>
           </div>
           ${data.dias.map(d => {
             const pts = d.puntos === 1 ? '1 punto' : d.puntos === 0.5 ? '½ punto' : d.puntos + ' pts';
@@ -1303,7 +1310,7 @@ async function openMiPropina() {
                   <span class="pend-dia-fecha">${fmtFechaCorta(d.fecha)}</span>
                   <span class="pend-dia-meta">${turnoIcon[d.turno] || ''} ${turnoLbl[d.turno] || d.turno} · ${pts}</span>
                 </div>
-                <div class="pend-dia-monto">$${formatNumber(d.monto)}</div>
+                <div class="pend-dia-monto">$${formatMonto(d.monto)}</div>
               </div>`;
           }).join('')}
         </div>`;
@@ -1337,7 +1344,7 @@ async function openMiPropina() {
           ${buckets.map((b, i) => `
             <div class="cobrado-mes${i === 0 ? ' actual' : ''}">
               <div class="cobrado-mes-label">${b.lbl}${i === 0 ? ' · Actual' : ''}</div>
-              <div class="cobrado-mes-monto${b.total > 0 ? '' : ' cero'}">$${formatNumber(b.total)}</div>
+              <div class="cobrado-mes-monto${b.total > 0 ? '' : ' cero'}">$${formatMonto(b.total)}</div>
               ${b.cantidad ? `<div class="cobrado-mes-cant">${b.cantidad} ${b.cantidad === 1 ? 'cierre' : 'cierres'}</div>` : ''}
             </div>
           `).join('')}
@@ -1920,7 +1927,7 @@ async function guardarCierre() {
       cierre_id: cierreId,
       empleado_id: c.id,
       puntos: c.puntos,
-      monto: Math.round(neto * c.puntos / puntos)
+      monto: Math.round((neto * c.puntos / puntos) * 100) / 100
     }));
     if (asigs.length) {
       await api('propinas_asignaciones', { method: 'POST', body: JSON.stringify(asigs) });
@@ -2082,9 +2089,9 @@ window.generarLiquidacion = async function() {
         'Locales': Object.keys(g.locales).sort((a, b) => a.localeCompare(b, 'es')).join(', '),
         'Cierres': g.cierres,
         'Puntos': g.puntos,
-        'Pendiente': Math.round(g.pendiente),
-        'Pagado': Math.round(g.pagado),
-        'Total': Math.round(g.pendiente + g.pagado),
+        'Pendiente': Math.round(g.pendiente * 100) / 100,
+        'Pagado': Math.round(g.pagado * 100) / 100,
+        'Total': Math.round((g.pendiente + g.pagado) * 100) / 100,
         'Alias': aliasMap[g.empId] || ''
       };
     }).sort((x, y) => x.Empleado.localeCompare(y.Empleado, 'es'));
@@ -2107,9 +2114,9 @@ window.generarLiquidacion = async function() {
         'Locales': loc,
         'Cierres': g.cierres,
         'Puntos': '-',
-        'Pendiente': Math.round(g.pendiente),
-        'Pagado': Math.round(g.pagado),
-        'Total': Math.round(g.pendiente + g.pagado),
+        'Pendiente': Math.round(g.pendiente * 100) / 100,
+        'Pagado': Math.round(g.pagado * 100) / 100,
+        'Total': Math.round((g.pendiente + g.pagado) * 100) / 100,
         'Alias': ''
       };
     });
@@ -2146,8 +2153,8 @@ window.generarLiquidacion = async function() {
         'Cierres': g.cierres,
         'Empleados': g.empleados.size,
         'Puntos distribuidos': Math.round(g.puntos * 10) / 10,
-        'Pendiente': Math.round(g.pendiente),
-        'Pagado': Math.round(g.pagado),
+        'Pendiente': Math.round(g.pendiente * 100) / 100,
+        'Pagado': Math.round(g.pagado * 100) / 100,
         'Total': Math.round(g.pendiente + g.pagado)
       };
     });
