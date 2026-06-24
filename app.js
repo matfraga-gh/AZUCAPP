@@ -8084,7 +8084,7 @@ window.guardarPaper = async function() {
     ACADEMIA_PAPERS = await api('academia_papers?order=nivel.asc,unidad.asc') || [];
     renderAdminPapersList();
   } catch (e) {
-    toast('Error al guardar el paper', 'error');
+    toast('Error al guardar el paper: ' + ((e && e.message) || e), 'error');
   } finally {
     btn.disabled = false; btn.textContent = 'Guardar paper';
   }
