@@ -1939,7 +1939,7 @@ async function guardarCierre() {
     renderPropGestKpis();
     renderPropGestTabla();
   } catch (e) {
-    err.textContent = 'Error al guardar el cierre. Revisá la conexión y reintentá.';
+    err.textContent = 'Error al guardar el cierre: ' + ((e && e.message) || e);
   } finally {
     btn.disabled = false; btn.textContent = 'Guardar cierre';
   }
