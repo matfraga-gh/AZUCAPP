@@ -3416,7 +3416,22 @@ window.abrirFicha = function(key) {
     fila('Multilocal', p.esMultilocal ? 'Sí' : 'No') +
     fila('Estado de acceso', estado);
   const btnEd = document.getElementById('fichaEditarBtn');
-  if (btnEd) btnEd.style.display = ((isMaster() || isAdmin()) && p.empleado) ? '' : 'none';
+  if (btnEd) {
+    const puedeEditar = isMaster() || isAdmin();
+    if (puedeEditar && p.empleado) {
+      // Tiene ficha de empleado → editar ficha completa
+      btnEd.style.display = '';
+      btnEd.textContent = 'Editar';
+      btnEd.onclick = function() { window.editarDesdeFicha(); };
+    } else if (puedeEditar && p.user && !p.empleado) {
+      // Solo tiene usuario (sin ficha) → editar usuario para poder vincularlo
+      btnEd.style.display = '';
+      btnEd.textContent = 'Editar usuario';
+      btnEd.onclick = function() { closeFichaModal(); abrirEditarUsuario(p.user.id); };
+    } else {
+      btnEd.style.display = 'none';
+    }
+  }
   FICHA_VISTA_KEY = key;
   document.getElementById('modalFicha').classList.add('show');
 };
