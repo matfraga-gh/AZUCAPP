@@ -1182,7 +1182,7 @@ window.verIncidencia = async function(id) {
     `;
     document.getElementById('modalIncDetalle').classList.add('show');
   } catch (e) {
-    toast('Error al cargar la incidencia', 'error');
+    toast('Error al cargar la incidencia: ' + ((e && e.message) || e), 'error');
   }
 };
 
@@ -1651,7 +1651,7 @@ async function togglePagado(cierreId) {
     renderPropGestKpis();
     renderPropGestTabla();
   } catch (e) {
-    toast('Error al actualizar', 'error');
+    toast('Error al actualizar: ' + ((e && e.message) || e), 'error');
   }
 }
 
@@ -2977,7 +2977,7 @@ async function openConfigPropinas() {
       const data = await api('propinas_config?id=eq.1');
       PROP_CONFIG = (data && data[0]) ? data[0] : null;
     } catch (e) {
-      toast('Error al cargar configuración', 'error');
+      toast('Error al cargar configuración: ' + ((e && e.message) || e), 'error');
       return;
     }
   }
@@ -3043,7 +3043,7 @@ async function guardarConfigPropinas() {
     toast('Configuración actualizada');
     closeConfigPropinas();
   } catch (e) {
-    toast('Error al guardar', 'error');
+    toast('Error al guardar: ' + ((e && e.message) || e), 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Guardar configuración';
@@ -3626,7 +3626,7 @@ window.resetearAzuca26 = async function(userId) {
     });
     toast('✓ Contraseña reseteada a azuca26', 'success');
   } catch (e) {
-    toast('Error al resetear la contraseña', 'error');
+    toast('Error al resetear la contraseña: ' + ((e && e.message) || e), 'error');
   }
 };
 
@@ -3939,7 +3939,7 @@ window.toggleActivoUser = async function(id) {
     toast(`✓ Usuario ${u.activo ? 'desactivado' : 'activado'}`, 'success');
     await cargarUsuarios();
   } catch (err) {
-    toast('Error al cambiar estado', 'error');
+    toast('Error al cambiar estado: ' + ((e && e.message) || e), 'error');
   }
 };
 
@@ -4070,7 +4070,7 @@ window.togglePermiso = async function(userId, key, labelEl) {
       body: JSON.stringify({ [key]: nuevoValor })
     });
   } catch (err) {
-    toast('Error al guardar permiso', 'error');
+    toast('Error al guardar permiso: ' + ((e && e.message) || e), 'error');
     // Revertir cambio visual
     user[key] = !nuevoValor;
     labelEl.classList.toggle('activo', !nuevoValor);
@@ -4446,7 +4446,7 @@ async function recargarBibAdmin() {
     BIB_CATEGORIAS = cats || [];
     BIB_CONTENIDOS = conts || [];
   } catch (e) {
-    toast('Error al cargar datos', 'error');
+    toast('Error al cargar datos: ' + ((e && e.message) || e), 'error');
     return;
   }
   renderBibAdminLista();
@@ -4690,7 +4690,7 @@ async function guardarContenido() {
     closeModalContenido();
     await recargarBibAdmin();
   } catch (e) {
-    toast('Error al guardar', 'error');
+    toast('Error al guardar: ' + ((e && e.message) || e), 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Guardar';
@@ -4706,7 +4706,7 @@ async function activarContenido(id) {
     toast('Contenido activado');
     await recargarBibAdmin();
   } catch (e) {
-    toast('Error al activar', 'error');
+    toast('Error al activar: ' + ((e && e.message) || e), 'error');
   }
 }
 window.activarContenido = activarContenido;
@@ -4733,7 +4733,7 @@ async function borrarContenido(id) {
     toast('Contenido borrado');
     await recargarBibAdmin();
   } catch (e) {
-    toast('Error al borrar', 'error');
+    toast('Error al borrar: ' + ((e && e.message) || e), 'error');
   }
 }
 
@@ -4803,7 +4803,7 @@ async function guardarCategoria() {
     closeModalCategoria();
     await recargarBibAdmin();
   } catch (e) {
-    toast('Error al guardar', 'error');
+    toast('Error al guardar: ' + ((e && e.message) || e), 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Guardar';
@@ -4843,7 +4843,7 @@ async function borrarCategoria(id) {
     toast('Categoría borrada');
     await recargarBibAdmin();
   } catch (e) {
-    toast('Error al borrar', 'error');
+    toast('Error al borrar: ' + ((e && e.message) || e), 'error');
   }
 }
 
@@ -4987,7 +4987,7 @@ async function guardarLocal() {
     closeModalLocal();
     await recargarLocalesAdmin();
   } catch (e) {
-    toast('Error al guardar', 'error');
+    toast('Error al guardar: ' + ((e && e.message) || e), 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Guardar';
@@ -5474,7 +5474,7 @@ async function guardarInsumo(validar) {
     await cargarSubfamiliasUnicas();
     renderInsumosLista();
   } catch (e) {
-    toast('Error al guardar', 'error');
+    toast('Error al guardar: ' + ((e && e.message) || e), 'error');
     console.error(e);
   } finally {
     btnVal.disabled = false;
@@ -5523,7 +5523,7 @@ async function borrarInsumo(id) {
     await cargarInsumos();
     renderInsumosLista();
   } catch (e) {
-    toast('Error al borrar', 'error');
+    toast('Error al borrar: ' + ((e && e.message) || e), 'error');
   }
 }
 
@@ -5669,7 +5669,7 @@ async function guardarRenombrarSubfam() {
     renderInsumosLista();
     renderSubfamilias();
   } catch (e) {
-    toast('Error al actualizar', 'error');
+    toast('Error al actualizar: ' + ((e && e.message) || e), 'error');
     console.error(e);
   } finally {
     btn.disabled = false;
@@ -5706,7 +5706,7 @@ async function borrarSubfamilia(nombre) {
     renderInsumosLista();
     renderSubfamilias();
   } catch (e) {
-    toast('Error al borrar', 'error');
+    toast('Error al borrar: ' + ((e && e.message) || e), 'error');
   }
 }
 
@@ -5862,7 +5862,7 @@ async function guardarRenombrarProv() {
     renderInsumosLista();
     renderProveedores();
   } catch (e) {
-    toast('Error al actualizar', 'error');
+    toast('Error al actualizar: ' + ((e && e.message) || e), 'error');
     console.error(e);
   } finally {
     btn.disabled = false;
@@ -5899,7 +5899,7 @@ async function borrarProveedor(nombre) {
     renderInsumosLista();
     renderProveedores();
   } catch (e) {
-    toast('Error al borrar', 'error');
+    toast('Error al borrar: ' + ((e && e.message) || e), 'error');
   }
 }
 
@@ -6249,7 +6249,7 @@ window.guardarNotaSemana = async function() {
     ROST_SEMANA.comentario_general = nota;
     toast('\u2713 Nota guardada', 'success');
   } catch (e) {
-    toast('No se pudo guardar la nota', 'error');
+    toast('No se pudo guardar la nota: ' + ((e && e.message) || e), 'error');
   }
 };
 
@@ -6516,7 +6516,7 @@ window.abrirPedido = async function(id) {
     PED_ITEMS = await api('requerimiento_items?requerimiento_id=eq.' + id + '&select=*&order=orden.asc') || [];
     showView('vPedidoEditor');
     renderEditorPedido();
-  } catch (e) { toast('Error al abrir el pedido', 'error'); }
+  } catch (e) { toast('Error al abrir el pedido: ' + ((e && e.message) || e), 'error'); }
 };
 async function recargarPedidoActual() {
   const r = await api('requerimientos?id=eq.' + PED_ACTUAL.id + '&select=*');
@@ -6731,7 +6731,7 @@ window.devolverPedido = async function() {
     await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({ estado: 'borrador', actualizado_en: new Date().toISOString() })});
     toast('Pedido devuelto a borrador', 'success');
     openMisPedidos();
-  } catch (e) { toast('No se pudo devolver', 'error'); }
+  } catch (e) { toast('No se pudo devolver: ' + ((e && e.message) || e), 'error'); }
 };
 window.guardarRecepcion = async function(cerrar) {
   const cont = document.getElementById('pedItems');
@@ -7723,7 +7723,7 @@ async function openQuizAcademia(paperId) {
     try {
       const d = await api('academia_preguntas?paper_id=eq.' + paperId + '&order=orden.asc');
       ACADEMIA_PREGUNTAS_CACHE[paperId] = d || [];
-    } catch (e) { toast('Error al cargar el quiz', 'error'); return; }
+    } catch (e) { toast('Error al cargar el quiz: ' + ((e && e.message) || e), 'error'); return; }
   }
 
   const pregs = ACADEMIA_PREGUNTAS_CACHE[paperId];
@@ -7803,7 +7803,7 @@ window.enviarQuiz = async function() {
     await api('academia_intentos', { method: 'POST', body: JSON.stringify(rec) });
     ACADEMIA_INTENTOS_USER.push({ ...rec, id: Date.now() });
   } catch (e) {
-    toast('Error al guardar el resultado', 'error');
+    toast('Error al guardar el resultado: ' + ((e && e.message) || e), 'error');
     btn.disabled = false; btn.textContent = 'Enviar respuestas';
     return;
   }
@@ -7837,7 +7837,7 @@ async function openAdminAcademia() {
   showView('vAdminBiblioteca');
   try {
     ACADEMIA_PAPERS = await api('academia_papers?order=nivel.asc,unidad.asc') || [];
-  } catch (e) { toast('Error al cargar papers', 'error'); return; }
+  } catch (e) { toast('Error al cargar papers: ' + ((e && e.message) || e), 'error'); return; }
   switchBibTab('academia');
 }
 window.openAdminAcademia = openAdminAcademia;
@@ -7929,11 +7929,11 @@ window.renderTablaProgreso = function() {
     return;
   }
   if (!empsFil.length) {
-    document.getElementById('acadTablaProgreso').innerHTML = '<div class="bib-empty">Sin empleados para este filtro</div>';
+    const _atp0 = document.getElementById('acadTablaProgreso'); if (_atp0) _atp0.innerHTML = '<div class="bib-empty">Sin empleados para este filtro</div>';
     return;
   }
 
-  document.getElementById('acadTablaProgreso').innerHTML = `
+  const _atpEl = document.getElementById('acadTablaProgreso'); if (_atpEl) _atpEl.innerHTML = `
     <div class="acad-prog-wrap">
       <table class="acad-prog-tabla">
         <thead><tr>
@@ -8128,7 +8128,7 @@ window.borrarPaper = async function(paperId) {
     toast('Paper eliminado');
     ACADEMIA_PAPERS = await api('academia_papers?order=nivel.asc,unidad.asc') || [];
     renderAdminPapersList();
-  } catch (e) { toast('Error al eliminar', 'error'); }
+  } catch (e) { toast('Error al eliminar: ' + ((e && e.message) || e), 'error'); }
 };
 
 // ── fin ACADEMIA ──────────────────────────────────────────────
