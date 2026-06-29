@@ -3469,7 +3469,7 @@ window.crearFichaParaUser = function(userId) {
   document.getElementById('efSector').value = '';
   document.getElementById('efCategoria').value = '';
   document.getElementById('efMultilocal').checked = false;
-  document.getElementById('efMultilocal').disabled = true;
+  document.getElementById('efMultilocal').disabled = false;
 
   const todos = getLocalesActivos();
   document.getElementById('efLocal').innerHTML =
