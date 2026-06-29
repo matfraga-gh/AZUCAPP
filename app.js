@@ -3424,10 +3424,10 @@ window.abrirFicha = function(key) {
       btnEd.textContent = 'Editar';
       btnEd.onclick = function() { window.editarDesdeFicha(); };
     } else if (puedeEditar && p.user && !p.empleado) {
-      // Solo tiene usuario (sin ficha) → editar usuario para poder vincularlo
+      // Solo tiene usuario (sin ficha) → crear ficha con local/multilocal
       btnEd.style.display = '';
-      btnEd.textContent = 'Editar usuario';
-      btnEd.onclick = function() { closeFichaModal(); abrirEditarUsuario(p.user.id); };
+      btnEd.textContent = 'Crear ficha';
+      btnEd.onclick = function() { closeFichaModal(); crearFichaParaUser(p.user.id); };
     } else {
       btnEd.style.display = 'none';
     }
@@ -3452,6 +3452,60 @@ function efRecomputarMultilocal() {
   const slugs = Array.from(grid.querySelectorAll('.local-check.activo')).map(el => el.dataset.local);
   cb.checked = slugs.length >= 2 || slugs.indexOf('TRANSVERSAL') !== -1;
 }
+// ---- Crear ficha de empleado para un usuario sin empleado ----
+let CREAR_FICHA_USER_ID = null;
+window.crearFichaParaUser = function(userId) {
+  if (!isMaster() && !isAdmin()) return;
+  const u = (ADMIN_USUARIOS_CACHE || []).find(x => x.id === userId);
+  if (!u) return;
+  CREAR_FICHA_USER_ID = userId;
+  FICHA_EDIT_KEY = null; // indica modo creación
+
+  // Pre-llenar con nombre del usuario
+  const partes = (u.nombre || '').trim().split(/\s+/);
+  document.getElementById('efPersonaNombre').textContent = u.nombre || u.usuario || '';
+  document.getElementById('efNombre').value = partes.slice(0, partes.length > 1 ? -1 : 1).join(' ');
+  document.getElementById('efApellido').value = partes.length > 1 ? partes[partes.length - 1] : '';
+  document.getElementById('efSector').value = '';
+  document.getElementById('efCategoria').value = '';
+  document.getElementById('efMultilocal').checked = false;
+  document.getElementById('efMultilocal').disabled = true;
+
+  const todos = getLocalesActivos();
+  document.getElementById('efLocal').innerHTML =
+    '<option value="">— Sin local —</option>' +
+    todos.map(loc => '<option value="' + esc(loc) + '">' + esc(LOCAL_LABELS[loc] || loc) + '</option>').join('');
+
+  const setData = (id, vals) => {
+    const dl = document.getElementById(id);
+    if (dl) dl.innerHTML = Array.from(new Set(vals.filter(Boolean))).sort()
+      .map(v => '<option value="' + esc(v) + '"></option>').join('');
+  };
+  setData('efSectorList', (ADMIN_EMPLEADOS_CACHE || []).map(e => e.sector));
+  setData('efCategoriaList', (ADMIN_EMPLEADOS_CACHE || []).map(e => e.categoria));
+
+  const sec = document.getElementById('efLocalesSection');
+  sec.style.display = '';
+  const asignados = u.locales_asignados || [];
+  document.getElementById('efLocalesGrid').innerHTML = todos.map(loc => {
+    const on = asignados.indexOf(loc) !== -1;
+    return '<label class="local-check' + (on ? ' activo' : '') + '" data-local="' + esc(loc) + '">' +
+           '<input type="checkbox" ' + (on ? 'checked' : '') + '>' + esc(LOCAL_LABELS[loc] || loc) + '</label>';
+  }).join('');
+  document.querySelectorAll('#efLocalesGrid .local-check').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      el.classList.toggle('activo');
+      el.querySelector('input').checked = el.classList.contains('activo');
+      efRecomputarMultilocal();
+    });
+  });
+  efRecomputarMultilocal();
+
+  document.getElementById('efError').textContent = '';
+  document.getElementById('modalEditarFicha').classList.add('show');
+};
+
 window.abrirEditarFicha = function(key) {
   if (!isMaster() && !isAdmin()) return;
   const p = PERSONAS_CACHE.find(x => x.key === key);
@@ -3513,9 +3567,44 @@ window.closeEditarFichaModal = function() {
   document.getElementById('modalEditarFicha').classList.remove('show');
 };
 window.guardarEditarFicha = async function() {
-  const p = PERSONAS_CACHE.find(x => x.key === FICHA_EDIT_KEY);
   const err = document.getElementById('efError');
   err.textContent = '';
+
+  // Modo CREAR ficha para usuario sin empleado
+  if (FICHA_EDIT_KEY === null && CREAR_FICHA_USER_ID) {
+    const nombre_p = document.getElementById('efNombre').value.trim();
+    const apellido = document.getElementById('efApellido').value.trim();
+    const sector   = document.getElementById('efSector').value.trim();
+    const categoria= document.getElementById('efCategoria').value.trim();
+    const local    = document.getElementById('efLocal').value || null;
+    const _gridSel = Array.from(document.querySelectorAll('#efLocalesGrid .local-check.activo')).map(el => el.dataset.local);
+    const multilocal = _gridSel.length >= 2 || _gridSel.indexOf('TRANSVERSAL') !== -1;
+    if (!nombre_p && !apellido) { err.textContent = 'Cargá al menos nombre o apellido.'; return; }
+    const btn = document.getElementById('efGuardarBtn');
+    btn.disabled = true; btn.textContent = 'Guardando...';
+    try {
+      const nuevoEmp = { nombre_p: nombre_p || null, nombre: nombre_p || null, apellido: apellido || null,
+        sector: sector || null, categoria: categoria || null, local, es_multilocal: multilocal, activo: true };
+      const res = await api('empleados', { method: 'POST', body: JSON.stringify(nuevoEmp) });
+      const empId = (Array.isArray(res) ? res[0] : res).id;
+      const locs = _gridSel.length ? _gridSel : null;
+      await api('roster_usuarios?id=eq.' + CREAR_FICHA_USER_ID, { method: 'PATCH',
+        body: JSON.stringify({ empleado_id: empId, locales_asignados: locs,
+          nombre: ((apellido || '') + ' ' + (nombre_p || '')).trim() || null }) });
+      toast('✓ Ficha creada y vinculada', 'success');
+      closeEditarFichaModal();
+      CREAR_FICHA_USER_ID = null;
+      await cargarUsuarios();
+    } catch(e) {
+      err.textContent = 'Error al crear la ficha: ' + ((e && e.message) || e);
+    } finally {
+      const btn2 = document.getElementById('efGuardarBtn');
+      btn2.disabled = false; btn2.textContent = 'Guardar';
+    }
+    return;
+  }
+
+  const p = PERSONAS_CACHE.find(x => x.key === FICHA_EDIT_KEY);
   if (!p || !p.empleado) { err.textContent = 'No se encontró la ficha.'; return; }
 
   const nombre_p = document.getElementById('efNombre').value.trim();
