@@ -3369,6 +3369,8 @@ function renderPersonal() {
       }
       if (p.empleado) {
         acciones += '<button class="btn-ghost pc-btn pc-btn-danger" onclick="eliminarPersona(' + p.empleado.id + ', ' + (p.user ? p.user.id : 'null') + ')"><i class="ti ti-trash"></i>Eliminar</button>';
+      } else if (p.user) {
+        acciones += '<button class="btn-ghost pc-btn pc-btn-danger" onclick="eliminarAccesoHuerfano(' + p.user.id + ')"><i class="ti ti-trash"></i>Eliminar acceso</button>';
       }
     }
 
@@ -6771,6 +6773,27 @@ window.guardarRecepcion = async function(cerrar) {
     }
   } catch (e) { toast('No se pudo guardar la recepci\u00f3n: ' + ((e && e.message) || e), 'error'); }
 };
+window.eliminarAccesoHuerfano = async function(userId) {
+  if (!isMaster() && !isAdmin()) return;
+  const u = (ADMIN_USUARIOS_CACHE || []).find(x => x.id === userId);
+  const nombre = u ? (u.username || 'este usuario') : 'este usuario';
+  const ok = await showConfirm({
+    title: 'Eliminar acceso',
+    msg: 'Vas a eliminar el acceso de @' + nombre + ' a la app. No tiene ficha de empleado asociada. ¿Confirmar?',
+    danger: true, okLabel: 'Eliminar', cancelLabel: 'Cancelar'
+  });
+  if (!ok) return;
+  try {
+    await api('roster_usuarios?id=eq.' + userId, { method: 'DELETE' });
+    ADMIN_USUARIOS_CACHE = (ADMIN_USUARIOS_CACHE || []).filter(u => u.id !== userId);
+    construirPersonas();
+    renderPersonal();
+    toast('Acceso eliminado', 'success');
+  } catch (e) {
+    toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error');
+  }
+};
+
 window.eliminarPedido = async function() {
   if (!PED_ACTUAL.id) { openMisPedidos(); return; }
   const ok = await showConfirm({ title: 'Eliminar pedido', msg: 'Se va a eliminar este borrador. \u00bfSeguro?', danger: true, okLabel: 'Eliminar' });
