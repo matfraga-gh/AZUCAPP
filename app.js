@@ -3725,12 +3725,15 @@ window.abrirCrearUsuario = function() {
   document.getElementById('userUsuario').value = '';
   document.getElementById('userPassword').value = '';
   document.getElementById('userPerfil').value = 'usuario';
-  document.getElementById('userEmpleado').innerHTML = '<option value="">Sin vincular (no tiene turnos)</option>' +
+  const _empOptsC = '<option value="">Sin vincular</option>' +
     ADMIN_EMPLEADOS_CACHE.map(e => {
       const lbl = `${e.nombre || ''} ${e.apellido || ''}`.trim() + (e.local ? ' · ' + (LOCAL_LABELS[e.local] || e.local) : '');
       return `<option value="${e.id}">${esc(lbl)}</option>`;
     }).join('');
+  document.getElementById('userEmpleado').innerHTML = _empOptsC;
   document.getElementById('userEmpleado').value = '';
+  document.getElementById('userLocalesField').style.display = 'none';
+  document.getElementById('userEmpleadoField').style.display = '';
   document.getElementById('userPasswordField').style.display = '';
   document.getElementById('userFormError').textContent = '';
 
@@ -3752,12 +3755,15 @@ window.abrirEditarUsuario = function(id) {
   document.getElementById('userPassword').value = '';
   document.getElementById('userPerfil').value = u.perfil || 'usuario';
 
-  document.getElementById('userEmpleado').innerHTML = '<option value="">Sin vincular (no tiene turnos)</option>' +
+  const _empOptsE = '<option value="">Sin vincular</option>' +
     ADMIN_EMPLEADOS_CACHE.map(e => {
       const lbl = `${e.nombre || ''} ${e.apellido || ''}`.trim() + (e.local ? ' · ' + (LOCAL_LABELS[e.local] || e.local) : '');
       return `<option value="${e.id}">${esc(lbl)}</option>`;
     }).join('');
+  document.getElementById('userEmpleado').innerHTML = _empOptsE;
   document.getElementById('userEmpleado').value = u.empleado_id || '';
+  document.getElementById('userLocalesField').style.display = 'none';
+  document.getElementById('userEmpleadoField').style.display = '';
 
   // En edición, ocultar password (se cambia con el botón de reset)
   document.getElementById('userPasswordField').style.display = 'none';
