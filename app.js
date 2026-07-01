@@ -6646,6 +6646,54 @@ async function cargarPedidos() {
     lista.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los pedidos.<br><span style="font-size:11px;opacity:.7">' + esc(String((e && e.message) || e)) + '</span></div>';
   }
 }
+window.exportarPedidosExcel = async function() {
+  try {
+    let q = 'requerimientos?activo=eq.true&estado=eq.confirmado&select=*&order=local.asc,fecha_comprometida.asc';
+    const locs = pedLocalesPermitidos();
+    if (!isMaster() && !isAdmin()) {
+      if (!locs.length) { toast('No tenés locales asignados', 'error'); return; }
+      q += '&local=in.(' + locs.map(encodeURIComponent).join(',') + ')';
+    }
+    const pedidos = await api(q) || [];
+    if (!pedidos.length) { toast('No hay pedidos confirmados para exportar', 'warning'); return; }
+    await cargarCatalogosPedidos();  // asegura PED_INSUMOS para los nombres
+    const ids = pedidos.map(function(p){ return p.id; });
+    let items = [];
+    if (ids.length) {
+      items = await api('requerimiento_items?requerimiento_id=in.(' + ids.join(',') + ')&select=requerimiento_id,ingrediente_id,cantidad_pedida,unidad,stock_actual,comentario_pedido,orden&order=orden.asc') || [];
+    }
+    const porPedido = {};
+    items.forEach(function(it){ (porPedido[it.requerimiento_id] = porPedido[it.requerimiento_id] || []).push(it); });
+    function dstr(x){ return x ? String(x).slice(0, 10) : ''; }
+    function num(x){ return (x != null && x !== '') ? Number(x) : ''; }
+    function fila(p, it){
+      return {
+        'Local': LOCAL_LABELS[p.local] || p.local || '',
+        'Pedido N°': p.id,
+        'Fecha comprometida': dstr(p.fecha_comprometida),
+        'Fecha deseada': dstr(p.fecha_deseada),
+        'Insumo': it ? pedInsumoNombre(it.ingrediente_id) : '',
+        'Cantidad': it ? num(it.cantidad_pedida) : '',
+        'Unidad': it ? (it.unidad || '') : '',
+        'Stock hoy': it ? num(it.stock_actual) : '',
+        'Comentario': it ? (it.comentario_pedido || '') : '',
+        'Fecha pedido': dstr(p.fecha_creacion),
+        'Observaciones': p.observaciones_generales || ''
+      };
+    }
+    const filas = [];
+    pedidos.forEach(function(p){
+      const its = porPedido[p.id] || [];
+      if (!its.length) { filas.push(fila(p, null)); }
+      else { its.forEach(function(it){ filas.push(fila(p, it)); }); }
+    });
+    exportarAExcel('Pedidos_confirmados_AZUCA_' + hoyStr() + '.xlsx', [{ nombre: 'Pedidos confirmados', filas: filas }]);
+    toast('✓ Excel generado (' + pedidos.length + ' pedidos confirmados)', 'success');
+  } catch (e) {
+    toast('No se pudo exportar: ' + ((e && e.message) || e), 'error');
+  }
+};
+
 function renderPedidos() {
   const lista = document.getElementById('pedidosLista');
   if (!PED_LISTA.length) { lista.innerHTML = '<div class="empty-list">No hay pedidos con ese criterio.</div>'; return; }
