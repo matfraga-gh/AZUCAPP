@@ -493,15 +493,6 @@ const MODULES = [
     action: () => openMisCierres()
   },
   {
-    id: 'estadisticas',
-    icon: 'ti-chart-bar',
-    color: '#2D7FC4',
-    title: 'Mis Estadísticas',
-    desc: 'Ventas, pax y promedio por local',
-    visible: () => isMaster() || isAdmin(),
-    action: () => openMisEstadisticas()
-  },
-  {
     id: 'panelventas',
     icon: 'ti-chart-line',
     color: '#2D7FC4',
@@ -7631,6 +7622,13 @@ const IVA_COEF = 1.21;
 let PV_LOCAL = '', PV_MES = '';
 
 function panelLocalesPermitidos() { return pedLocalesPermitidos(); }
+function esLocalAgregado(loc) {
+  if (loc === '__ALL__') return true;
+  return normalizar(loc || '') === 'azuca' || normalizar(localLabel(loc) || '') === 'azuca';
+}
+function panelLocalesReales() {
+  return panelLocalesPermitidos().filter(function(l) { return !esLocalAgregado(l); });
+}
 
 function openPanelVentas() {
   if (!isMaster() && !isAdmin() && !isAuditor()) { showDashboard(); return; }
@@ -7653,13 +7651,18 @@ function poblarFiltrosPanel() {
   }
   selMes.innerHTML = opsMes.join('');
 
-  const locs = panelLocalesPermitidos();
-  if (!PV_LOCAL || locs.indexOf(PV_LOCAL) === -1) PV_LOCAL = locs.length ? locs[0] : '';
-  selLocal.innerHTML = locs.map(function(l) {
+  const reales = panelLocalesReales();
+  const puedeTodos = isMaster() || isAdmin();
+  const validos = (puedeTodos ? ['__ALL__'] : []).concat(reales);
+  if (!PV_LOCAL || validos.indexOf(PV_LOCAL) === -1) PV_LOCAL = validos.length ? validos[0] : '';
+  let optsLoc = '';
+  if (puedeTodos) optsLoc += '<option value="__ALL__"' + (PV_LOCAL === '__ALL__' ? ' selected' : '') + '>Todos los locales</option>';
+  optsLoc += reales.map(function(l) {
     return '<option value="' + esc(l) + '"' + (l === PV_LOCAL ? ' selected' : '') + '>' + esc(localLabel(l)) + '</option>';
   }).join('');
+  selLocal.innerHTML = optsLoc;
   const wrap = document.getElementById('pvLocalWrap');
-  if (wrap) wrap.style.display = locs.length > 1 ? '' : 'none';
+  if (wrap) wrap.style.display = validos.length > 1 ? '' : 'none';
 }
 
 window.onFiltroPanel = function() {
@@ -7679,21 +7682,38 @@ async function cargarPanelVentas() {
   body.innerHTML = '<div class="loading">Cargando...</div>';
   const loc = PV_LOCAL;
   if (!loc) { body.innerHTML = '<div class="empty-list">No tenés un local asignado para ver.</div>'; return; }
+  const agregado = esLocalAgregado(loc);
+  const reales = panelLocalesReales();
+  if (agregado && !reales.length) { body.innerHTML = '<div class="empty-list">No hay locales con ventas para consolidar.</div>'; return; }
+  const locFilter = agregado
+    ? 'local=in.(' + reales.map(encodeURIComponent).join(',') + ')'
+    : 'local=eq.' + encodeURIComponent(loc);
   try {
     const r = _pvRango(PV_MES);
-    const cierres = await api('cierres_caja?local=eq.' + encodeURIComponent(loc) +
+    const cierres = await api('cierres_caja?' + locFilter +
       '&fecha=gte.' + r.desde + '&fecha=lte.' + r.hasta + '&select=*&order=fecha.desc,id.desc') || [];
-    let objetivo = null;
+    let objetivo = null, objetivoHeredado = false;
     try {
-      const objs = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + PV_MES + '&select=*') || [];
-      if (objs.length) objetivo = objs[0];
+      if (agregado) {
+        const allObjs = await api('objetivos_ventas?local=in.(' + reales.map(encodeURIComponent).join(',') + ')&mes=lte.' + PV_MES + '&select=*&order=mes.desc') || [];
+        const seen = {}; let sum = 0, count = 0, anyHer = false;
+        allObjs.forEach(function(o) { if (!seen[o.local]) { seen[o.local] = 1; sum += parseFloat(o.objetivo) || 0; count++; if (o.mes !== PV_MES) anyHer = true; } });
+        if (count) { objetivo = { objetivo: sum, mes: PV_MES }; objetivoHeredado = anyHer; }
+      } else {
+        const objs = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + PV_MES + '&select=*') || [];
+        if (objs.length) { objetivo = objs[0]; }
+        else {
+          const prev = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=lt.' + PV_MES + '&select=*&order=mes.desc&limit=1') || [];
+          if (prev.length) { objetivo = prev[0]; objetivoHeredado = true; }
+        }
+      }
     } catch (e) { /* la tabla puede no existir todavia */ }
     const hoy = new Date();
     const sd = new Date(hoy.getFullYear(), hoy.getMonth() - 5, 1);
     const evolDesde = sd.getFullYear() + '-' + String(sd.getMonth() + 1).padStart(2, '0') + '-01';
-    const evolData = await api('cierres_caja?local=eq.' + encodeURIComponent(loc) +
+    const evolData = await api('cierres_caja?' + locFilter +
       '&fecha=gte.' + evolDesde + '&select=fecha,ventas_total&order=fecha.asc') || [];
-    renderPanelVentas(cierres, objetivo, evolData);
+    renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agregado);
   } catch (e) {
     body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los datos.<br><span style="font-size:11px;opacity:.7">' + esc(String((e && e.message) || e)) + '</span></div>';
   }
@@ -7701,7 +7721,7 @@ async function cargarPanelVentas() {
 
 function _pvMoney(n) { return '$' + formatNumber(n); }
 
-function renderPanelVentas(cierres, objetivo, evolData) {
+function renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agregado) {
   const body = document.getElementById('pvBody');
   const brutoVentas = cierres.reduce(function(s, c) { return s + (parseFloat(c.ventas_total) || 0); }, 0);
   const pax = cierres.reduce(function(s, c) { return s + (parseInt(c.pax, 10) || 0); }, 0);
@@ -7710,6 +7730,7 @@ function renderPanelVentas(cierres, objetivo, evolData) {
   const promNeto = pax > 0 ? netoVentas / pax : null;
 
   let html = '';
+  if (agregado) html += '<div class="cierre-hint" style="margin-bottom:12px">Vista consolidada: suma de todos los locales.</div>';
   html += '<div class="est-cards">' +
     '<div class="est-card"><div class="est-card-label">Ventas (bruto)</div><div class="est-card-valor">' + _pvMoney(brutoVentas) + '</div><div class="pv-sub">Neto ' + _pvMoney(netoVentas) + '</div></div>' +
     '<div class="est-card"><div class="est-card-label">Comensales</div><div class="est-card-valor">' + formatNumber(pax) + '</div></div>' +
@@ -7719,11 +7740,13 @@ function renderPanelVentas(cierres, objetivo, evolData) {
 
   html += '<div class="pv-obj">';
   html += '<div class="pv-obj-head"><span class="est-section-title">Objetivo del mes</span>';
-  if (isMaster() || isAdmin()) {
-    html += '<button class="btn-ghost pv-obj-edit" onclick="abrirObjetivo()"><i class="ti ti-pencil"></i> ' + (objetivo ? 'Editar' : 'Cargar') + '</button>';
+  if ((isMaster() || isAdmin()) && !agregado) {
+    html += '<button class="btn-ghost pv-obj-edit" onclick="abrirObjetivo()"><i class="ti ti-pencil"></i> ' + ((objetivo && !objetivoHeredado) ? 'Editar' : 'Cargar') + '</button>';
   }
   html += '</div>';
   if (objetivo) {
+    if (agregado) html += '<div class="cierre-hint" style="margin-bottom:10px">Suma de los objetivos de cada local' + (objetivoHeredado ? ' (algunos heredados del mes anterior)' : '') + '.</div>';
+    else if (objetivoHeredado) html += '<div class="cierre-hint" style="margin-bottom:10px">Objetivo heredado de ' + esc(objetivo.mes) + ' — se puede editar para este mes.</div>';
     const objNeto = parseFloat(objetivo.objetivo) || 0;
     const objBruto = objNeto * IVA_COEF;
     const pct = objBruto > 0 ? (brutoVentas / objBruto) * 100 : 0;
@@ -7772,7 +7795,7 @@ function renderPanelVentas(cierres, objetivo, evolData) {
       const pr = p > 0 ? v / p : null;
       const obs = c.observaciones ? '<div class="pv-det-obs"><i class="ti ti-message-circle"></i> ' + esc(c.observaciones) + '</div>' : '';
       return '<div class="pv-det-row">' +
-        '<div class="pv-det-top"><span class="pv-det-fecha">' + fmtFechaCorta(String(c.fecha).slice(0, 10)) + ' · ' + esc(ccTurnoLabel(c.turno)) + '</span>' +
+        '<div class="pv-det-top"><span class="pv-det-fecha">' + (agregado ? esc(localLabel(c.local)) + ' · ' : '') + fmtFechaCorta(String(c.fecha).slice(0, 10)) + ' · ' + esc(ccTurnoLabel(c.turno)) + '</span>' +
         '<span class="pv-det-venta">' + _pvMoney(v) + '</span></div>' +
         '<div class="pv-det-sub">' + p + ' comensales' + (pr != null ? ' · ' + _pvMoney(pr) + '/comensal · neto ' + _pvMoney(v / IVA_COEF) : '') + '</div>' +
         obs +
@@ -7793,7 +7816,10 @@ window.abrirObjetivo = function() {
   initMoneyInput('objetivoInput');
   document.getElementById('modalObjetivo').classList.add('show');
   api('objetivos_ventas?local=eq.' + encodeURIComponent(PV_LOCAL) + '&mes=eq.' + PV_MES + '&select=*').then(function(objs) {
-    if (objs && objs.length) setMoneyVal('objetivoInput', parseFloat(objs[0].objetivo) || 0);
+    if (objs && objs.length) { setMoneyVal('objetivoInput', parseFloat(objs[0].objetivo) || 0); return; }
+    return api('objetivos_ventas?local=eq.' + encodeURIComponent(PV_LOCAL) + '&mes=lt.' + PV_MES + '&select=*&order=mes.desc&limit=1').then(function(prev) {
+      if (prev && prev.length) setMoneyVal('objetivoInput', parseFloat(prev[0].objetivo) || 0);
+    });
   }).catch(function() {});
 };
 window.cerrarObjetivo = function() { document.getElementById('modalObjetivo').classList.remove('show'); };
