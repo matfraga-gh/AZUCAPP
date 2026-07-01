@@ -3254,7 +3254,7 @@ let RESET_USER_ID = null;
 // Lista unificada: empleados activos + usuarios sin ficha (ej: matfraga)
 // ============================================
 const AZUCA26_HASH = 'c6a7c00511ff7ca91719d38debce681a27ee1798f905a96801a44c3e75003cbe';
-const PERFIL_LABELS = { master: 'Master', admin: 'Admin', editor: 'Editor', usuario: 'Usuario' };
+const PERFIL_LABELS = { master: 'Master', admin: 'Admin', editor: 'Editor', usuario: 'Usuario', auditor: 'Auditor' };
 
 let PERSONAS_CACHE = [];
 let PERFIL_EDIT_USERID = null;
