@@ -6649,10 +6649,58 @@ function pedUnidadOptions(sel) {
     us.map(u => '<option value="' + esc(u) + '"' + (u === sel ? ' selected' : '') + '>' + esc(u) + '</option>').join('');
 }
 
+// --- Buscador de insumos con texto para cada linea de pedido (Bug: Maira no podia buscar) ---
+function pedInsumoPicker(it, i) {
+  var sel = (it.ingrediente_id != null) ? (PED_INSUMOS.find(function(x){ return x.id === it.ingrediente_id; }) || {}) : {};
+  var nom = sel.nombre || '';
+  return '<div class="ped-ins-wrap">' +
+    '<input type="hidden" class="ped-ins" value="' + (it.ingrediente_id != null ? it.ingrediente_id : '') + '">' +
+    '<input type="text" class="ped-ins-search" placeholder="Buscá un insumo..." value="' + esc(nom) + '" autocomplete="off" ' +
+      'onfocus="pedFiltrarInsumos(this)" oninput="pedFiltrarInsumos(this)" onblur="pedOcultarInsumos(this)">' +
+    '<div class="ped-ins-opts" style="display:none"></div>' +
+  '</div>';
+}
+window.pedFiltrarInsumos = function(input) {
+  var wrap = input.closest('.ped-ins-wrap');
+  if (!wrap) return;
+  var opts = wrap.querySelector('.ped-ins-opts');
+  if (!opts) return;
+  var q = (input.value || '').toLowerCase().trim();
+  var lista = q
+    ? PED_INSUMOS.filter(function(x){ return (x.nombre || '').toLowerCase().indexOf(q) !== -1; })
+    : PED_INSUMOS.slice(0, 40);
+  if (!lista.length) {
+    opts.innerHTML = '<div class="ped-ins-no-result">Sin resultados</div>';
+  } else {
+    opts.innerHTML = lista.map(function(x){
+      return '<div class="ped-ins-opt" data-id="' + x.id + '" data-nombre="' + esc(x.nombre) + '" onclick="pedSelInsumo(this)">' + esc(x.nombre) + '</div>';
+    }).join('');
+  }
+  opts.style.display = 'block';
+};
+window.pedSelInsumo = function(el) {
+  var wrap = el.closest('.ped-ins-wrap');
+  if (!wrap) return;
+  var hid = wrap.querySelector('.ped-ins');
+  var srch = wrap.querySelector('.ped-ins-search');
+  var opts = wrap.querySelector('.ped-ins-opts');
+  if (hid) hid.value = el.dataset.id;
+  if (srch) srch.value = el.dataset.nombre || '';
+  if (opts) opts.style.display = 'none';
+};
+window.pedOcultarInsumos = function(input) {
+  var wrap = input.closest('.ped-ins-wrap');
+  if (!wrap) return;
+  var opts = wrap.querySelector('.ped-ins-opts');
+  setTimeout(function(){ if (opts) opts.style.display = 'none'; }, 400);
+};
+// --- Historial: modulo aun no implementado (activa:false). Stub para evitar ReferenceError. ---
+window.onFiltroHistorial = function() { /* pendiente: implementar carga/filtro de historial */ };
+
 function renderItemPedido(it, i, editable, recepcion, completado) {
   if (editable) {
     return '<div class="ped-item" data-idx="' + i + '">' +
-      '<div class="ped-item-head"><select class="ped-ins">' + pedInsumoOptions(it.ingrediente_id) + '</select>' +
+      '<div class="ped-item-head">' + pedInsumoPicker(it, i) +
       '<button class="ped-item-del" onclick="quitarItemPedido(' + i + ')" aria-label="Quitar"><i class="ti ti-trash"></i></button></div>' +
       '<div class="ped-item-row">' +
         '<input class="ped-cant" type="number" step="any" min="0" placeholder="Cantidad" value="' + (it.cantidad_pedida != null ? it.cantidad_pedida : '') + '">' +
