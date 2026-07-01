@@ -3780,7 +3780,7 @@ window.guardarCambioPerfil = async function() {
     toast('✓ Perfil actualizado', 'success');
     await cargarUsuarios();
   } catch (e) {
-    err.textContent = 'Error al actualizar el perfil';
+    err.textContent = 'Error al actualizar el perfil: ' + ((e && e.message) || e);
   } finally {
     btn.disabled = false; btn.textContent = 'Guardar';
   }
