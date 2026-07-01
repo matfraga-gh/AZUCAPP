@@ -1794,21 +1794,39 @@ async function abrirEditarCierre(cierreId) {
 }
 window.abrirEditarCierre = abrirEditarCierre;
 
+let CIERRE_MULTI = [];  // candidatos multilocales para sumar al reparto de propinas
+function colabDesdeEmp(e, loc) {
+  const ap = e.apellido || '';
+  const pila = e.nombre_p || e.nombre || '';
+  const nombre = (ap && pila) ? (ap + ', ' + pila) : (ap || pila || ('Empleado #' + e.id));
+  const pts = CIERRE_EDITANDO ? (CIERRE_EDIT_PUNTOS[e.id] != null ? CIERRE_EDIT_PUNTOS[e.id] : 0) : 0;
+  return { id: e.id, nombre: nombre, multi: !!e.es_multilocal && e.local !== loc, puntos: pts };
+}
 async function cargarColabsCierre(localSlug) {
   const loc = localSlug || PROP_LOCAL_SEL;
   const cont = document.getElementById('cierreColabs');
   try {
-    const filtro = 'empleados?activo=eq.true' +
-      '&or=(local.eq.' + encodeURIComponent(loc) + ',es_multilocal.eq.true)' +
+    // Solo la gente del local (los multilocales se agregan a mano con el buscador de abajo)
+    const filtro = 'empleados?activo=eq.true&local=eq.' + encodeURIComponent(loc) +
       '&select=id,nombre,apellido,nombre_p,local,es_multilocal&order=apellido.asc';
     const emps = await api(filtro) || [];
-    CIERRE_COLABS = emps.map(e => {
-      const ap = e.apellido || '';
-      const pila = e.nombre_p || e.nombre || '';
-      const nombre = (ap && pila) ? (ap + ', ' + pila) : (ap || pila || ('Empleado #' + e.id));
-      const pts = CIERRE_EDITANDO ? (CIERRE_EDIT_PUNTOS[e.id] != null ? CIERRE_EDIT_PUNTOS[e.id] : 0) : 0;
-      return { id: e.id, nombre: nombre, multi: !!e.es_multilocal && e.local !== loc, puntos: pts };
-    });
+    CIERRE_COLABS = emps.map(function(e){ return colabDesdeEmp(e, loc); });
+
+    // Al editar un cierre viejo: reagregar personas (multilocales u otras) que ya tenian puntos y no son del local
+    if (CIERRE_EDITANDO) {
+      const yaIds = CIERRE_COLABS.map(function(c){ return c.id; });
+      const faltan = Object.keys(CIERRE_EDIT_PUNTOS).map(Number).filter(function(id){ return yaIds.indexOf(id) === -1; });
+      if (faltan.length) {
+        const extra = await api('empleados?id=in.(' + faltan.join(',') + ')&select=id,nombre,apellido,nombre_p,local,es_multilocal') || [];
+        extra.forEach(function(e){ CIERRE_COLABS.push(colabDesdeEmp(e, loc)); });
+      }
+    }
+
+    // Candidatos multilocales para el boton "+ Agregar persona multilocal"
+    try {
+      const multi = await api('empleados?activo=eq.true&es_multilocal=eq.true&select=id,nombre,apellido,nombre_p,local,es_multilocal&order=apellido.asc') || [];
+      CIERRE_MULTI = multi.map(function(e){ return colabDesdeEmp(e, loc); });
+    } catch (e2) { CIERRE_MULTI = []; }
     renderColabsCierre();
     recalcCierre();
   } catch (e) {
@@ -1818,22 +1836,63 @@ async function cargarColabsCierre(localSlug) {
 
 function renderColabsCierre() {
   const cont = document.getElementById('cierreColabs');
+  let html = '';
   if (!CIERRE_COLABS.length) {
-    cont.innerHTML = '<div class="cierre-hint">No hay colaboradores activos en este local.</div>';
-    return;
+    html += '<div class="cierre-hint">No hay personas activas en este local. Podés agregar una persona multilocal abajo.</div>';
+  } else {
+    html += CIERRE_COLABS.map(function(c, idx) {
+      const opts = [['0','0'], ['0.5','½'], ['1','1']];
+      const seg = opts.map(function(o) {
+        return '<button type="button" class="puntos-btn' + (String(c.puntos) === o[0] ? ' active' : '') +
+          '" onclick="setPuntoColab(' + idx + ',' + o[0] + ')">' + o[1] + '</button>';
+      }).join('');
+      return '<div class="colab-row">' +
+        '<span class="colab-nombre">' + esc(c.nombre) + (c.multi ? ' <span class="colab-multi">multi</span>' : '') + '</span>' +
+        '<div class="puntos-seg">' + seg + '</div>' +
+        '</div>';
+    }).join('');
   }
-  cont.innerHTML = CIERRE_COLABS.map((c, idx) => {
-    const opts = [['0','0'], ['0.5','½'], ['1','1']];
-    const seg = opts.map(o =>
-      '<button type="button" class="puntos-btn' + (String(c.puntos) === o[0] ? ' active' : '') +
-      '" onclick="setPuntoColab(' + idx + ',' + o[0] + ')">' + o[1] + '</button>'
-    ).join('');
-    return '<div class="colab-row">' +
-      '<span class="colab-nombre">' + esc(c.nombre) + (c.multi ? ' <span class="colab-multi">multi</span>' : '') + '</span>' +
-      '<div class="puntos-seg">' + seg + '</div>' +
-      '</div>';
-  }).join('');
+  // Buscador para sumar una persona multilocal que no es de este local
+  const yaIds = CIERRE_COLABS.map(function(c){ return c.id; });
+  const disponibles = CIERRE_MULTI.filter(function(m){ return yaIds.indexOf(m.id) === -1; });
+  if (disponibles.length) {
+    html += '<div class="colab-add-wrap ped-ins-wrap">' +
+      '<input type="text" class="ped-ins-search" id="colabAddSearch" placeholder="+ Agregar persona multilocal..." autocomplete="off" ' +
+        'onfocus="filtrarMultiColab(this)" oninput="filtrarMultiColab(this)" onblur="ocultarMultiColab(this)">' +
+      '<div class="ped-ins-opts" id="colabAddOpts" style="display:none"></div>' +
+    '</div>';
+  }
+  cont.innerHTML = html;
 }
+window.filtrarMultiColab = function(input) {
+  const opts = document.getElementById('colabAddOpts');
+  if (!opts) return;
+  const yaIds = CIERRE_COLABS.map(function(c){ return c.id; });
+  const q = (input.value || '').toLowerCase().trim();
+  let lista = CIERRE_MULTI.filter(function(m){ return yaIds.indexOf(m.id) === -1; });
+  if (q) lista = lista.filter(function(m){ return m.nombre.toLowerCase().indexOf(q) !== -1; });
+  lista = lista.slice(0, 40);
+  if (!lista.length) {
+    opts.innerHTML = '<div class="ped-ins-no-result">Sin resultados</div>';
+  } else {
+    opts.innerHTML = lista.map(function(m){
+      return '<div class="ped-ins-opt" data-id="' + m.id + '" onclick="agregarMultiColab(' + m.id + ')">' + esc(m.nombre) + ' <span class="colab-multi">multi</span></div>';
+    }).join('');
+  }
+  opts.style.display = 'block';
+};
+window.ocultarMultiColab = function(input) {
+  const opts = document.getElementById('colabAddOpts');
+  setTimeout(function(){ if (opts) opts.style.display = 'none'; }, 400);
+};
+window.agregarMultiColab = function(id) {
+  const m = CIERRE_MULTI.find(function(x){ return x.id === id; });
+  if (!m) return;
+  if (CIERRE_COLABS.some(function(c){ return c.id === id; })) return;
+  CIERRE_COLABS.push({ id: m.id, nombre: m.nombre, multi: true, puntos: 0 });
+  renderColabsCierre();
+  recalcCierre();
+};
 
 window.setPuntoColab = function(idx, val) {
   if (CIERRE_COLABS[idx]) CIERRE_COLABS[idx].puntos = val;
