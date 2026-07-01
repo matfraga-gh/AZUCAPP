@@ -3822,3 +3822,38 @@ select option {
   color: var(--c-muted);
   margin: 0;
 }
+
+/* ============================================
+   PANEL DE VENTAS (auditores / admin)
+============================================ */
+.pv-sub { font-size:11px; color:var(--c-muted); margin-top:3px; }
+.pv-obj { margin-top:4px; }
+.pv-obj-head { display:flex; align-items:center; justify-content:space-between; }
+.pv-obj-edit { font-size:12px; padding:5px 10px; flex:0 0 auto; }
+.pv-bar-wrap { height:12px; background:var(--c-cream-soft); border:1px solid var(--c-cream-border); border-radius:8px; overflow:hidden; }
+.pv-bar { height:100%; background:var(--c-rust); border-radius:8px 0 0 8px; transition:width .4s ease; }
+.pv-bar.ok { background:var(--c-success); }
+.pv-obj-pct { font-size:12px; color:var(--c-muted); margin:6px 0 12px; text-align:right; }
+.pv-obj .est-tabla-head, .pv-obj .est-tabla-fila { grid-template-columns:1.4fr 1fr 1fr; }
+.pv-obj .est-tabla-head span:not(:first-child), .pv-obj .est-tabla-fila span:not(:first-child) { text-align:right; }
+
+.pv-evol { display:flex; align-items:flex-end; gap:8px; background:var(--c-cream-soft); border:1px solid var(--c-cream-border); border-radius:14px; padding:14px 12px 10px; }
+.pv-evol-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; }
+.pv-evol-val { font-size:10px; color:var(--c-muted); height:12px; }
+.pv-evol-barwrap { width:100%; height:90px; display:flex; align-items:flex-end; justify-content:center; }
+.pv-evol-bar { width:70%; max-width:34px; background:var(--c-cream-border); border-radius:6px 6px 0 0; transition:height .4s ease; }
+.pv-evol-bar.cur { background:var(--c-rust); }
+.pv-evol-label { font-size:11px; color:var(--c-muted); text-transform:capitalize; }
+
+.pv-detalle { display:flex; flex-direction:column; gap:8px; }
+.pv-det-row { background:var(--c-cream-soft); border:1px solid var(--c-cream-border); border-radius:12px; padding:10px 14px; }
+.pv-det-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.pv-det-fecha { font-size:13px; font-weight:600; color:var(--c-cream); }
+.pv-det-venta { font-size:14px; font-weight:700; color:var(--c-rust); white-space:nowrap; }
+.pv-det-sub { font-size:12px; color:var(--c-muted); margin-top:3px; }
+.pv-det-obs { font-size:12px; color:var(--c-cream); margin-top:6px; padding-top:6px; border-top:1px dashed var(--c-cream-border); }
+.pv-det-obs i { color:var(--c-muted); }
+
+/* Auditor: avatar y badge */
+.avatar-auditor { background:#378ADD; }
+.perfil-badge.auditor { background:rgba(55,138,221,0.15); color:#378ADD; }

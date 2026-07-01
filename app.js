@@ -502,6 +502,15 @@ const MODULES = [
     action: () => openMisEstadisticas()
   },
   {
+    id: 'panelventas',
+    icon: 'ti-chart-line',
+    color: '#2D7FC4',
+    title: 'Panel de ventas',
+    desc: 'Evolución, promedio y objetivo del mes',
+    visible: () => isMaster() || isAdmin() || isAuditor(),
+    action: () => openPanelVentas()
+  },
+  {
     id: 'insumos',
     icon: 'ti-package',
     color: '#EF9F27',
@@ -546,6 +555,11 @@ function isMaster() {
 function isAdmin() {
   return currentUser && currentUser.perfil === 'admin';
 }
+
+function isAuditor() {
+  return currentUser && currentUser.perfil === 'auditor';
+}
+window.isAuditor = isAuditor;
 
 // ============================================
 // LÓGICA DE LOGIN
@@ -713,6 +727,7 @@ function showDashboard() {
     master: 'Master',
     admin: 'Admin',
     editor: 'Editor',
+    auditor: 'Auditor',
     usuario: 'Usuario'
   }[perfil] || 'Usuario';
 
@@ -784,6 +799,7 @@ async function openMiPerfil() {
     master: 'Master',
     admin: 'Admin',
     editor: 'Editor',
+    auditor: 'Auditor',
     usuario: 'Usuario'
   }[perfil] || 'Usuario';
 
@@ -839,7 +855,8 @@ window.openMiPerfil = openMiPerfil;
 
 function renderDashboardCards() {
   const grid = document.getElementById('dashGrid');
-  const visibleModules = MODULES.filter(m => m.visible());
+  let visibleModules = MODULES.filter(m => m.visible());
+  if (isAuditor()) visibleModules = MODULES.filter(m => m.id === 'panelventas');
 
   grid.innerHTML = visibleModules.map((m, idx) => {
     const isLastOdd = (idx === visibleModules.length - 1) && (visibleModules.length % 2 === 1);
@@ -7607,6 +7624,200 @@ window.rechazarIncidencia = function() { resolverIncidencia('rechazado'); };
 // ============================================
 // MIS ESTADÍSTICAS (Master / Admin)
 // ============================================
+// ============================================
+// PANEL DE VENTAS (auditores / admin)
+// ============================================
+const IVA_COEF = 1.21;
+let PV_LOCAL = '', PV_MES = '';
+
+function panelLocalesPermitidos() { return pedLocalesPermitidos(); }
+
+function openPanelVentas() {
+  if (!isMaster() && !isAdmin() && !isAuditor()) { showDashboard(); return; }
+  showView('vPanelVentas');
+  poblarFiltrosPanel();
+  cargarPanelVentas();
+}
+window.openPanelVentas = openPanelVentas;
+
+function poblarFiltrosPanel() {
+  const selMes = document.getElementById('pvMes');
+  const selLocal = document.getElementById('pvLocal');
+  const hoy = new Date();
+  if (!PV_MES) PV_MES = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
+  const opsMes = [];
+  for (let i = 0; i < 18; i++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    const val = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    opsMes.push('<option value="' + val + '"' + (val === PV_MES ? ' selected' : '') + '>' + MESES_CORTO[d.getMonth()] + ' ' + d.getFullYear() + '</option>');
+  }
+  selMes.innerHTML = opsMes.join('');
+
+  const locs = panelLocalesPermitidos();
+  if (!PV_LOCAL || locs.indexOf(PV_LOCAL) === -1) PV_LOCAL = locs.length ? locs[0] : '';
+  selLocal.innerHTML = locs.map(function(l) {
+    return '<option value="' + esc(l) + '"' + (l === PV_LOCAL ? ' selected' : '') + '>' + esc(localLabel(l)) + '</option>';
+  }).join('');
+  const wrap = document.getElementById('pvLocalWrap');
+  if (wrap) wrap.style.display = locs.length > 1 ? '' : 'none';
+}
+
+window.onFiltroPanel = function() {
+  PV_MES = document.getElementById('pvMes').value;
+  PV_LOCAL = document.getElementById('pvLocal').value;
+  cargarPanelVentas();
+};
+
+function _pvRango(mes) {
+  const p = mes.split('-'); const y = parseInt(p[0], 10), m = parseInt(p[1], 10);
+  const last = new Date(y, m, 0).getDate();
+  return { desde: mes + '-01', hasta: mes + '-' + String(last).padStart(2, '0') };
+}
+
+async function cargarPanelVentas() {
+  const body = document.getElementById('pvBody');
+  body.innerHTML = '<div class="loading">Cargando...</div>';
+  const loc = PV_LOCAL;
+  if (!loc) { body.innerHTML = '<div class="empty-list">No tenés un local asignado para ver.</div>'; return; }
+  try {
+    const r = _pvRango(PV_MES);
+    const cierres = await api('cierres_caja?local=eq.' + encodeURIComponent(loc) +
+      '&fecha=gte.' + r.desde + '&fecha=lte.' + r.hasta + '&select=*&order=fecha.desc,id.desc') || [];
+    let objetivo = null;
+    try {
+      const objs = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + PV_MES + '&select=*') || [];
+      if (objs.length) objetivo = objs[0];
+    } catch (e) { /* la tabla puede no existir todavia */ }
+    const hoy = new Date();
+    const sd = new Date(hoy.getFullYear(), hoy.getMonth() - 5, 1);
+    const evolDesde = sd.getFullYear() + '-' + String(sd.getMonth() + 1).padStart(2, '0') + '-01';
+    const evolData = await api('cierres_caja?local=eq.' + encodeURIComponent(loc) +
+      '&fecha=gte.' + evolDesde + '&select=fecha,ventas_total&order=fecha.asc') || [];
+    renderPanelVentas(cierres, objetivo, evolData);
+  } catch (e) {
+    body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los datos.<br><span style="font-size:11px;opacity:.7">' + esc(String((e && e.message) || e)) + '</span></div>';
+  }
+}
+
+function _pvMoney(n) { return '$' + formatNumber(n); }
+
+function renderPanelVentas(cierres, objetivo, evolData) {
+  const body = document.getElementById('pvBody');
+  const brutoVentas = cierres.reduce(function(s, c) { return s + (parseFloat(c.ventas_total) || 0); }, 0);
+  const pax = cierres.reduce(function(s, c) { return s + (parseInt(c.pax, 10) || 0); }, 0);
+  const netoVentas = brutoVentas / IVA_COEF;
+  const promBruto = pax > 0 ? brutoVentas / pax : null;
+  const promNeto = pax > 0 ? netoVentas / pax : null;
+
+  let html = '';
+  html += '<div class="est-cards">' +
+    '<div class="est-card"><div class="est-card-label">Ventas (bruto)</div><div class="est-card-valor">' + _pvMoney(brutoVentas) + '</div><div class="pv-sub">Neto ' + _pvMoney(netoVentas) + '</div></div>' +
+    '<div class="est-card"><div class="est-card-label">Comensales</div><div class="est-card-valor">' + formatNumber(pax) + '</div></div>' +
+    '<div class="est-card"><div class="est-card-label">Prom. x comensal</div><div class="est-card-valor">' + (promBruto != null ? _pvMoney(promBruto) : '—') + '</div><div class="pv-sub">' + (promNeto != null ? 'Neto ' + _pvMoney(promNeto) : '') + '</div></div>' +
+    '<div class="est-card"><div class="est-card-label">Turnos cargados</div><div class="est-card-valor">' + cierres.length + '</div></div>' +
+  '</div>';
+
+  html += '<div class="pv-obj">';
+  html += '<div class="pv-obj-head"><span class="est-section-title">Objetivo del mes</span>';
+  if (isMaster() || isAdmin()) {
+    html += '<button class="btn-ghost pv-obj-edit" onclick="abrirObjetivo()"><i class="ti ti-pencil"></i> ' + (objetivo ? 'Editar' : 'Cargar') + '</button>';
+  }
+  html += '</div>';
+  if (objetivo) {
+    const objNeto = parseFloat(objetivo.objetivo) || 0;
+    const objBruto = objNeto * IVA_COEF;
+    const pct = objBruto > 0 ? (brutoVentas / objBruto) * 100 : 0;
+    const pctClamp = Math.max(0, Math.min(100, pct));
+    const cumplido = pct >= 100;
+    html += '<div class="pv-bar-wrap"><div class="pv-bar' + (cumplido ? ' ok' : '') + '" style="width:' + pctClamp.toFixed(1) + '%"></div></div>';
+    html += '<div class="pv-obj-pct">' + pct.toFixed(0) + '% del objetivo</div>';
+    html += '<div class="est-tabla">' +
+      '<div class="est-tabla-head"><span></span><span>Bruto</span><span>Neto</span></div>' +
+      '<div class="est-tabla-fila"><span>Objetivo</span><span>' + _pvMoney(objBruto) + '</span><span>' + _pvMoney(objNeto) + '</span></div>' +
+      '<div class="est-tabla-fila"><span>Vendido</span><span>' + _pvMoney(brutoVentas) + '</span><span>' + _pvMoney(netoVentas) + '</span></div>' +
+      '<div class="est-tabla-fila"><span>' + (cumplido ? 'Excedente' : 'Falta') + '</span><span>' + _pvMoney(Math.abs(objBruto - brutoVentas)) + '</span><span>' + _pvMoney(Math.abs(objNeto - netoVentas)) + '</span></div>' +
+    '</div>';
+  } else {
+    html += '<div class="cierre-hint">Todavía no hay objetivo cargado para este mes.</div>';
+  }
+  html += '</div>';
+
+  const porMes = {};
+  evolData.forEach(function(c) { const k = String(c.fecha).slice(0, 7); porMes[k] = (porMes[k] || 0) + (parseFloat(c.ventas_total) || 0); });
+  const hoy = new Date();
+  const meses = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    meses.push({ k: k, label: MESES_CORTO[d.getMonth()], val: porMes[k] || 0 });
+  }
+  const maxV = Math.max.apply(null, meses.map(function(m) { return m.val; }).concat([1]));
+  html += '<div class="est-section-title">Evolución (últimos 6 meses)</div>';
+  html += '<div class="pv-evol">' + meses.map(function(m) {
+    const h = maxV > 0 ? Math.round((m.val / maxV) * 100) : 0;
+    return '<div class="pv-evol-col">' +
+      '<div class="pv-evol-val">' + (m.val > 0 ? formatNumber(Math.round(m.val / 1000)) + 'k' : '') + '</div>' +
+      '<div class="pv-evol-barwrap"><div class="pv-evol-bar' + (m.k === PV_MES ? ' cur' : '') + '" style="height:' + Math.max(h, 2) + '%"></div></div>' +
+      '<div class="pv-evol-label">' + m.label + '</div>' +
+    '</div>';
+  }).join('') + '</div>';
+
+  html += '<div class="est-section-title">Detalle del mes</div>';
+  if (!cierres.length) {
+    html += '<div class="empty-list">No hay cierres cargados en este mes.</div>';
+  } else {
+    html += '<div class="pv-detalle">' + cierres.map(function(c) {
+      const v = parseFloat(c.ventas_total) || 0;
+      const p = parseInt(c.pax, 10) || 0;
+      const pr = p > 0 ? v / p : null;
+      const obs = c.observaciones ? '<div class="pv-det-obs"><i class="ti ti-message-circle"></i> ' + esc(c.observaciones) + '</div>' : '';
+      return '<div class="pv-det-row">' +
+        '<div class="pv-det-top"><span class="pv-det-fecha">' + fmtFechaCorta(String(c.fecha).slice(0, 10)) + ' · ' + esc(ccTurnoLabel(c.turno)) + '</span>' +
+        '<span class="pv-det-venta">' + _pvMoney(v) + '</span></div>' +
+        '<div class="pv-det-sub">' + p + ' comensales' + (pr != null ? ' · ' + _pvMoney(pr) + '/comensal · neto ' + _pvMoney(v / IVA_COEF) : '') + '</div>' +
+        obs +
+      '</div>';
+    }).join('') + '</div>';
+  }
+  body.innerHTML = html;
+}
+
+// ---- Objetivo del mes (solo admin) ----
+let OBJ_LOCAL = '', OBJ_MES = '';
+window.abrirObjetivo = function() {
+  if (!isMaster() && !isAdmin()) return;
+  OBJ_LOCAL = PV_LOCAL; OBJ_MES = PV_MES;
+  document.getElementById('objetivoError').textContent = '';
+  document.getElementById('objetivoContexto').textContent = localLabel(PV_LOCAL) + ' · ' + PV_MES;
+  document.getElementById('objetivoInput').value = '';
+  initMoneyInput('objetivoInput');
+  document.getElementById('modalObjetivo').classList.add('show');
+  api('objetivos_ventas?local=eq.' + encodeURIComponent(PV_LOCAL) + '&mes=eq.' + PV_MES + '&select=*').then(function(objs) {
+    if (objs && objs.length) setMoneyVal('objetivoInput', parseFloat(objs[0].objetivo) || 0);
+  }).catch(function() {});
+};
+window.cerrarObjetivo = function() { document.getElementById('modalObjetivo').classList.remove('show'); };
+window.guardarObjetivo = async function() {
+  const err = document.getElementById('objetivoError'); err.textContent = '';
+  const val = parseMiles(document.getElementById('objetivoInput').value);
+  if (!val || val <= 0) { err.textContent = 'Ingresá un objetivo válido.'; return; }
+  const btn = document.getElementById('objetivoGuardarBtn');
+  btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
+  try {
+    const ex = await api('objetivos_ventas?local=eq.' + encodeURIComponent(OBJ_LOCAL) + '&mes=eq.' + OBJ_MES + '&select=id') || [];
+    if (ex.length) {
+      await api('objetivos_ventas?id=eq.' + ex[0].id, { method: 'PATCH', body: JSON.stringify({ objetivo: val, creado_por: currentUser.id }) });
+    } else {
+      await api('objetivos_ventas', { method: 'POST', body: JSON.stringify({ local: OBJ_LOCAL, mes: OBJ_MES, objetivo: val, creado_por: currentUser.id, creado_en: new Date().toISOString() }) });
+    }
+    toast('✓ Objetivo guardado', 'success');
+    cerrarObjetivo();
+    cargarPanelVentas();
+  } catch (e) {
+    err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e);
+  } finally { btn.disabled = false; btn.textContent = t; }
+};
+
 let EST_MES = '', EST_LOCAL = '';
 
 function openMisEstadisticas() {

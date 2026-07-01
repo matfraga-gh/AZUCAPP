@@ -868,6 +868,7 @@
           <option value="usuario">Usuario (colaborador común)</option>
           <option value="editor">Editor</option>
           <option value="admin">Admin (gestión completa)</option>
+          <option value="auditor">Auditor (solo panel de ventas)</option>
           <option value="master" id="optMaster">Master (máximo nivel)</option>
         </select>
         <small class="field-hint" id="userPerfilHint">El perfil define qué puede hacer la persona.</small>
@@ -1506,6 +1507,7 @@
           <option value="usuario">Usuario (colaborador común)</option>
           <option value="editor">Editor</option>
           <option value="admin">Admin (gestión completa)</option>
+          <option value="auditor">Auditor (solo panel de ventas)</option>
           <option value="master" id="cpOptMaster">Master (máximo nivel)</option>
         </select>
       </label>
@@ -1665,6 +1667,52 @@
     </div>
     <div id="estResumen"></div>
     <div id="estLista"></div>
+  </div>
+</div>
+
+<!-- ============================================
+     VISTA: PANEL DE VENTAS (auditores / admin)
+============================================ -->
+<div id="vPanelVentas" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Panel de ventas</div>
+        <div class="module-subtitle">Evolución, promedio y objetivo del mes</div>
+      </div>
+    </div>
+    <div class="est-filtros">
+      <label class="field" id="pvLocalWrap" style="flex:1;min-width:0"><span class="field-label">Local</span>
+        <select id="pvLocal" onchange="onFiltroPanel()"></select>
+      </label>
+      <label class="field" style="flex:1;min-width:0"><span class="field-label">Mes</span>
+        <select id="pvMes" onchange="onFiltroPanel()"></select>
+      </label>
+    </div>
+    <div id="pvBody"><div class="loading">Cargando...</div></div>
+  </div>
+</div>
+
+<!-- Modal: cargar/editar objetivo del mes (solo admin) -->
+<div class="modal-overlay" id="modalObjetivo">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Objetivo del mes</h2>
+      <button class="modal-close" onclick="cerrarObjetivo()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <p class="field-hint" id="objetivoContexto">—</p>
+      <label class="field"><span class="field-label">Objetivo NETO del mes (sin IVA)</span>
+        <input type="text" inputmode="numeric" id="objetivoInput" placeholder="$ 0">
+      </label>
+      <p class="field-hint">Se guarda en neto. El bruto se calcula automáticamente (× 1,21).</p>
+      <div class="login-error" id="objetivoError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="cerrarObjetivo()">Cancelar</button>
+      <button class="btn-primary" id="objetivoGuardarBtn" onclick="guardarObjetivo()">Guardar</button>
+    </div>
   </div>
 </div>
 
