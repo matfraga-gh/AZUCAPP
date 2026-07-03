@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-07-02-E | ULTIMA VERSION | panel auditor + 6 KPIs + moneda USD Cobos + timeout API + arrastre objetivo + filtro sector incidencias ===== */
+/* ===== BUILD 2026-07-02-F | ULTIMA | + decimales en montos (USD) + fix duplicado propinas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -1695,8 +1695,8 @@ function parseMiles(str) {
 function setMoneyVal(id, n) {
   const el = document.getElementById(id);
   if (!el) return;
-  const num = (n != null && n !== '') ? Math.round(parseFloat(n) || 0) : 0;
-  el.value = num ? '$ ' + num.toLocaleString('es-AR') : '';
+  const num = (n != null && n !== '') ? (parseFloat(n) || 0) : 0;
+  el.value = num ? '$ ' + num.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : '';
 }
 function initMoneyInput(id) {
   const el = document.getElementById(id);
@@ -1704,15 +1704,18 @@ function initMoneyInput(id) {
   el._moneyInit = true;
   el.addEventListener('focus', function() {
     const raw = parseMiles(this.value);
-    this.value = raw ? String(Math.round(raw)) : '';
+    this.value = raw ? String(raw).replace('.', ',') : '';
     setTimeout(() => this.select(), 0);
   });
   el.addEventListener('blur', function() {
     const raw = parseMiles(this.value);
-    this.value = raw ? '$ ' + Math.round(raw).toLocaleString('es-AR') : '';
+    this.value = raw ? '$ ' + raw.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : '';
   });
   el.addEventListener('input', function() {
-    this.value = this.value.replace(/[^\d]/g, '');
+    let v = this.value.replace(/[^\d,]/g, '');
+    const i = v.indexOf(',');
+    if (i !== -1) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/,/g, '').slice(0, 2);
+    this.value = v;
   });
 }
 function valNumCierre(id) {
@@ -1996,6 +1999,11 @@ async function guardarCierre() {
       // Reemplazo las asignaciones: borro las viejas y cargo las nuevas
       await api('propinas_asignaciones?cierre_id=eq.' + cierreId, { method: 'DELETE' });
     } else {
+      const dup = await api('propinas_cierres?local=eq.' + encodeURIComponent(cierre.local) + '&fecha=eq.' + cierre.fecha + '&turno=eq.' + encodeURIComponent(cierre.turno) + '&select=id') || [];
+      if (dup.length) {
+        err.textContent = 'Ya existe un cierre de propinas para ese local, fecha y turno. Edit\u00e1 el que ya est\u00e1 cargado en vez de crear uno nuevo.';
+        return;
+      }
       const res = await api('propinas_cierres', { method: 'POST', body: JSON.stringify(cierre) });
       const nuevo = Array.isArray(res) ? res[0] : res;
       cierreId = nuevo.id;
@@ -2017,7 +2025,12 @@ async function guardarCierre() {
     renderPropGestKpis();
     renderPropGestTabla();
   } catch (e) {
-    err.textContent = 'Error al guardar el cierre: ' + ((e && e.message) || e);
+    const msg = (e && e.message) || String(e);
+    if (msg.indexOf('23505') !== -1 || /duplicate key/i.test(msg)) {
+      err.textContent = 'Ya existe un cierre de propinas para ese local, fecha y turno. Edit\u00e1 el existente.';
+    } else {
+      err.textContent = 'Error al guardar el cierre: ' + msg;
+    }
   } finally {
     btn.disabled = false; btn.textContent = 'Guardar cierre';
   }
