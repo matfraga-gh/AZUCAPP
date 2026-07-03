@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=20260702d">
 </head>
 <body>
 
@@ -714,6 +714,7 @@
     </div>
     <div class="modal-body">
       <label class="field"><span class="field-label">Local</span><select id="ccLocal"></select></label>
+      <label class="field"><span class="field-label">Moneda</span><select id="ccMoneda" onchange="ccCalcProm()"><option value="ARS">Pesos ($)</option><option value="USD">Dólares (USD)</option></select></label>
       <div class="cierre-row2">
         <label class="field"><span class="field-label">Fecha</span><input type="date" id="ccFecha"></label>
         <label class="field"><span class="field-label">Turno</span><select id="ccTurno"></select></label>
@@ -1820,6 +1821,10 @@
         <option value="rechazado">Rechazadas</option>
         <option value="">Todas</option>
       </select></label>
+    <label class="field"><span class="field-label">Sector</span>
+      <select id="giSectorFiltro" onchange="onFiltroIncidencias()">
+        <option value="">Todos los sectores</option>
+      </select></label>
     <div id="incidenciasLista" style="margin-top:14px;"><div class="loading">Cargando...</div></div>
   </div>
 </div>
@@ -2161,6 +2166,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=20260702d"></script>
 </body>
 </html>
