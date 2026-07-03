@@ -1,3 +1,4 @@
+/* STYLES BUILD 2026-07-02-E | incluye tarjetas .pv-cards del panel | ULTIMA =====*/
 /* ============================================
    AZUCAPP - Estilos
 ============================================ */
@@ -3857,3 +3858,10 @@ select option {
 /* Auditor: avatar y badge */
 .avatar-auditor { background:#378ADD; }
 .perfil-badge.auditor { background:rgba(55,138,221,0.15); color:#378ADD; }
+
+/* Panel de ventas: tarjetas KPI compactas (6 en 2 filas) */
+.pv-cards { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:18px; }
+.pv-card { background:var(--c-cream-soft); border:1px solid var(--c-cream-border); border-radius:12px; padding:10px 12px; }
+.pv-card-label { font-size:10px; color:var(--c-muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:3px; line-height:1.2; }
+.pv-card-valor { font-size:17px; font-weight:700; color:var(--c-rust); font-family:'Playfair Display', serif; line-height:1.15; }
+@media (max-width:420px) { .pv-cards { grid-template-columns:1fr 1fr; } }
