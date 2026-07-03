@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-07-02-D | ULTIMA VERSION | panel auditor + 6 KPIs + moneda USD Cobos + timeout API + arrastre objetivo + filtro sector incidencias (Maira) ===== */
+/* ===== BUILD 2026-07-02-E | ULTIMA VERSION | panel auditor + 6 KPIs + moneda USD Cobos + timeout API + arrastre objetivo + filtro sector incidencias ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
