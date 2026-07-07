@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260702f">
+<link rel="stylesheet" href="styles.css?v=20260702g">
 </head>
 <body>
 
@@ -648,7 +648,7 @@
       <div class="form-row-2">
         <div class="form-group">
           <label class="form-label">Costo del envase ($)</label>
-          <input type="text" inputmode="numeric" id="insCosto" class="form-input" placeholder="$ 0">
+          <input type="text" inputmode="decimal" id="insCosto" class="form-input" placeholder="$ 0">
         </div>
         <div class="form-group">
           <label class="form-label">Costo / unidad base</label>
@@ -720,7 +720,7 @@
         <label class="field"><span class="field-label">Turno</span><select id="ccTurno"></select></label>
       </div>
       <div class="cierre-row2">
-        <label class="field"><span class="field-label">Ventas totales ($)</span><input type="text" inputmode="numeric" id="ccVentas" placeholder="$ 0" oninput="ccCalcProm()"></label>
+        <label class="field"><span class="field-label">Ventas totales ($)</span><input type="text" inputmode="decimal" id="ccVentas" placeholder="$ 0" oninput="ccCalcProm()"></label>
         <label class="field"><span class="field-label">Pax (cubiertos)</span><input type="number" min="0" id="ccPax" oninput="ccCalcProm()"></label>
       </div>
       <div class="cc-prom" id="ccProm"></div>
@@ -1568,8 +1568,8 @@
       <div class="cierre-section">
         <div class="cierre-section-title"><i class="ti ti-credit-card"></i> Electrónicos</div>
         <div class="cierre-row2">
-          <label class="field"><span class="field-label">Tarjeta</span><input type="text" inputmode="numeric" id="cierreTarjeta" placeholder="$ 0" oninput="recalcCierre()"></label>
-          <label class="field"><span class="field-label">Transferencia</span><input type="text" inputmode="numeric" id="cierreTransf" placeholder="$ 0" oninput="recalcCierre()"></label>
+          <label class="field"><span class="field-label">Tarjeta</span><input type="text" inputmode="decimal" id="cierreTarjeta" placeholder="$ 0" oninput="recalcCierre()"></label>
+          <label class="field"><span class="field-label">Transferencia</span><input type="text" inputmode="decimal" id="cierreTransf" placeholder="$ 0" oninput="recalcCierre()"></label>
         </div>
       </div>
 
@@ -1706,7 +1706,7 @@
     <div class="modal-body">
       <p class="field-hint" id="objetivoContexto">—</p>
       <label class="field"><span class="field-label">Objetivo NETO del mes (sin IVA)</span>
-        <input type="text" inputmode="numeric" id="objetivoInput" placeholder="$ 0">
+        <input type="text" inputmode="decimal" id="objetivoInput" placeholder="$ 0">
       </label>
       <p class="field-hint">Se guarda en neto. El bruto se calcula automáticamente (× 1,21).</p>
       <div class="login-error" id="objetivoError"></div>
@@ -1992,7 +1992,7 @@
 
       <div id="precioCampo" style="display:none;">
         <label class="field"><span class="field-label">Precio de venta</span>
-          <input type="text" inputmode="numeric" id="platoPrecio" placeholder="$ 0"></label>
+          <input type="text" inputmode="decimal" id="platoPrecio" placeholder="$ 0"></label>
       </div>
 
       <div id="componentesSection" class="cierre-section" style="margin-top:6px;">
@@ -2166,6 +2166,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260702f"></script>
+<script src="app.js?v=20260702g"></script>
 </body>
 </html>

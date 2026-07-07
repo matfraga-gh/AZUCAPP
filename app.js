@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-07-02-F | ULTIMA | + decimales en montos (USD) + fix duplicado propinas ===== */
+/* ===== BUILD 2026-07-02-G | ULTIMA | decimales en montos (input + teclado iOS decimal) + fix duplicado propinas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
