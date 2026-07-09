@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260702g">
+<link rel="stylesheet" href="styles.css?v=20260702h">
 </head>
 <body>
 
@@ -723,6 +723,8 @@
         <label class="field"><span class="field-label">Ventas totales ($)</span><input type="text" inputmode="decimal" id="ccVentas" placeholder="$ 0" oninput="ccCalcProm()"></label>
         <label class="field"><span class="field-label">Pax (cubiertos)</span><input type="number" min="0" id="ccPax" oninput="ccCalcProm()"></label>
       </div>
+      <label class="field"><span class="field-label">Ventas mostrador ($)</span><input type="text" inputmode="decimal" id="ccMostrador" placeholder="$ 0" oninput="ccCalcProm()"></label>
+      <div class="cierre-hint" style="margin:-4px 0 8px">Incluidas en el total. No cuentan para el objetivo ni el promedio por comensal.</div>
       <div class="cc-prom" id="ccProm"></div>
       <label class="field"><span class="field-label">Observaciones</span><textarea id="ccObs" rows="2" placeholder="Opcional"></textarea></label>
       <div class="login-error" id="ccError"></div>
@@ -2166,6 +2168,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260702g"></script>
+<script src="app.js?v=20260702h"></script>
 </body>
 </html>
