@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-07-02-H | ULTIMA | + ventas mostrador (no computa en objetivo/promedio) ===== */
+/* ===== BUILD 2026-07-02-I | ULTIMA | + auto-actualización (la app se refresca sola con la última versión) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -8730,6 +8730,42 @@ window.borrarPaper = async function(paperId) {
 };
 
 // ── fin ACADEMIA ──────────────────────────────────────────────
+
+// ============================================
+// AUTO-ACTUALIZACIÓN (evita quedar con versión vieja cacheada)
+// ============================================
+function _versionActual() {
+  const s = document.querySelector('script[src*="app.js"]');
+  const m = s && s.src.match(/[?&]v=([^&"']+)/);
+  return m ? m[1] : '';
+}
+async function chequearActualizacion(auto) {
+  try {
+    const vActual = _versionActual();
+    const html = await fetch('index.html?ts=' + Date.now(), { cache: 'no-store' }).then(function(r){ return r.text(); });
+    const m = html.match(/app\.js\?v=([^"'&]+)/);
+    const vUltima = m ? m[1] : '';
+    if (!vActual || !vUltima || vActual === vUltima) return;
+    if (auto) {
+      if (sessionStorage.getItem('azu_upd_' + vUltima)) return;
+      sessionStorage.setItem('azu_upd_' + vUltima, '1');
+      location.replace(location.pathname + '?u=' + Date.now());
+    } else {
+      mostrarBannerActualizar();
+    }
+  } catch (e) { /* sin conexión: ignorar */ }
+}
+function mostrarBannerActualizar() {
+  if (document.getElementById('azuUpdBanner')) return;
+  const b = document.createElement('div');
+  b.id = 'azuUpdBanner'; b.className = 'azu-upd-banner';
+  const t = document.createElement('span'); t.textContent = 'Hay una versión nueva de la app. ';
+  const btn = document.createElement('button'); btn.textContent = 'Actualizar';
+  btn.onclick = function() { location.replace(location.pathname + '?u=' + Date.now()); };
+  b.appendChild(t); b.appendChild(btn); document.body.appendChild(b);
+}
+setTimeout(function() { chequearActualizacion(true); }, 2500);
+setInterval(function() { chequearActualizacion(false); }, 5 * 60 * 1000);
 
 init();
 

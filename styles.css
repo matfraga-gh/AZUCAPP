@@ -1,4 +1,4 @@
-/* STYLES BUILD 2026-07-02-E | incluye tarjetas .pv-cards del panel | ULTIMA =====*/
+/* STYLES BUILD 2026-07-02-I | incluye .pv-cards + banner auto-update | ULTIMA =====*/
 /* ============================================
    AZUCAPP - Estilos
 ============================================ */
@@ -3865,3 +3865,7 @@ select option {
 .pv-card-label { font-size:10px; color:var(--c-muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:3px; line-height:1.2; }
 .pv-card-valor { font-size:17px; font-weight:700; color:var(--c-rust); font-family:'Playfair Display', serif; line-height:1.15; }
 @media (max-width:420px) { .pv-cards { grid-template-columns:1fr 1fr; } }
+
+/* Banner de auto-actualización */
+.azu-upd-banner { position:fixed; left:0; right:0; bottom:0; z-index:99999; background:var(--c-rust); color:#fff; padding:11px 14px; text-align:center; font-size:14px; box-shadow:0 -2px 14px rgba(0,0,0,.35); }
+.azu-upd-banner button { margin-left:8px; background:#fff; color:var(--c-rust); border:none; border-radius:8px; padding:5px 14px; font-weight:700; cursor:pointer; }
