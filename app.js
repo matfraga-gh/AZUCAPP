@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-07-02-I | ULTIMA | + auto-actualización (la app se refresca sola con la última versión) ===== */
+/* ===== BUILD 2026-07-02-J | ULTIMA | auto-actualización + valida unidad en pedidos ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -6976,6 +6976,12 @@ window.guardarPedido = async function(enviar) {
   leerItemsDesdeDOM();
   const validos = PED_ITEMS.filter(it => it.ingrediente_id && parseFloat(it.cantidad_pedida) > 0);
   if (enviar && !validos.length) { toast('Agreg\u00e1 al menos un insumo con cantidad', 'warning'); return; }
+  const sinUnidad = validos.filter(function(it){ return !it.unidad; });
+  if (sinUnidad.length) {
+    const nombres = sinUnidad.map(function(it){ return pedInsumoNombre(it.ingrediente_id); }).join(', ');
+    toast('Eleg\u00ed la unidad en: ' + nombres, 'warning');
+    return;
+  }
   try {
     if (!PED_ACTUAL.id) {
       const ins = await api('requerimientos', { method: 'POST', body: JSON.stringify({
