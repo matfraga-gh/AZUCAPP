@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-07-02-J | ULTIMA | auto-actualización + valida unidad en pedidos ===== */
+/* ===== BUILD 2026-07-02-K | ULTIMA | editor_biblioteca puede agregar contenido ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -4472,7 +4472,7 @@ const BIB_ICONOS_CAT = [
 
 // ¿Puede el usuario administrar la biblioteca?
 function puedeAdminBib() {
-  return isMaster() || isAdmin();
+  return isMaster() || isAdmin() || (currentUser && currentUser.editor_biblioteca === true);
 }
 
 // ¿Puede gestionar categorías y borrar? (solo Admin/Master)
