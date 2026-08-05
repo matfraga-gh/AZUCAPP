@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-07-02-K | ULTIMA | editor_biblioteca puede agregar contenido ===== */
+/* ===== BUILD 2026-07-02-L | ULTIMA | biblioteca TODOS + pedidos: calendario, fecha comprometida oblig., editar antes de confirmar, fecha recepcion por insumo ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -4863,7 +4863,7 @@ async function guardarContenido() {
     return t ? t.slug : null;
   })();
   const localesParaGuardar = (transversalSlugGuardar && BIB_LOCALES_SEL.includes(transversalSlugGuardar))
-    ? null
+    ? []
     : BIB_LOCALES_SEL;
 
   const body = {
@@ -6627,6 +6627,7 @@ const PED_ESTADOS = {
   completado: { label: 'Completado', color: '#1D9E75' }
 };
 function pedFecha(x) { return x ? fmtFechaCorta(String(x).slice(0, 10)) : ''; }
+function fmtFechaHora(iso) { if (!iso) return ''; try { return new Date(iso).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }); } catch(e){ return ''; } }
 
 let PED_LOCAL_FILTRO = '', PED_ESTADO_FILTRO = '';
 let PED_LISTA = [], PED_INSUMOS = [], PED_UNIDADES = [];
@@ -6867,6 +6868,7 @@ function renderItemPedido(it, i, editable, recepcion, completado) {
         '<select class="ped-recep-estado"' + dis + '><option value="">\u2014 estado \u2014</option>' +
           recep.map(r => '<option value="' + r[0] + '"' + (er === r[0] ? ' selected' : '') + '>' + r[1] + '</option>').join('') + '</select></div>' +
       '<input class="ped-recep-coment" type="text" placeholder="Comentario recepci\u00f3n (opc.)" value="' + esc(it.comentario_recepcion || '') + '"' + dis + '>' +
+      (it.recibido_en ? '<div style="font-size:11px;color:var(--c-muted);margin-top:6px">Estado actualizado: ' + fmtFechaHora(it.recibido_en) + '</div>' : '') +
       '</div>';
   }
   return '<div class="ped-item" data-idx="' + i + '">' +
@@ -6883,6 +6885,7 @@ function renderEditorPedido() {
   const editable = (est === 'borrador');
   const recepcion = (est === 'confirmado');
   const completado = (est === 'completado');
+  const editaItems = editable || (soyAdmin && est === 'pendiente');
 
   document.getElementById('pedEditorTitulo').textContent = esNuevo ? 'Nuevo pedido' : ('Pedido \u00b7 ' + (LOCAL_LABELS[p.local] || p.local));
   document.getElementById('pedEditorSub').innerHTML = '<span class="ped-estado" style="background:' + estInfo.color + '22;color:' + estInfo.color + '">' + esc(estInfo.label) + '</span>';
@@ -6894,11 +6897,11 @@ function renderEditorPedido() {
       locs.map(l => '<option value="' + esc(l) + '"' + (l === p.local ? ' selected' : '') + '>' + esc(LOCAL_LABELS[l] || l) + '</option>').join('') + '</select></label>';
   }
   const fd = p.fecha_deseada ? String(p.fecha_deseada).slice(0, 10) : '';
-  if (editable) html += '<label class="field"><span class="field-label">Fecha que lo necesit\u00e1s</span><input type="date" id="pedFechaDeseada" value="' + fd + '"></label>';
+  if (editable) html += '<label class="field"><span class="field-label">Fecha que lo necesit\u00e1s</span><input type="date" id="pedFechaDeseada" onclick="if(this.showPicker)this.showPicker()" value="' + fd + '"></label>';
   else if (fd) html += '<div class="ped-info"><span>Fecha deseada</span><strong>' + pedFecha(p.fecha_deseada) + '</strong></div>';
 
   const fc = p.fecha_comprometida ? String(p.fecha_comprometida).slice(0, 10) : '';
-  if (soyAdmin && est === 'pendiente') html += '<label class="field"><span class="field-label">Fecha comprometida (entrega)</span><input type="date" id="pedFechaComprometida" value="' + fc + '"></label>';
+  if (soyAdmin && est === 'pendiente') html += '<label class="field"><span class="field-label">Fecha comprometida (entrega)</span><input type="date" id="pedFechaComprometida" onclick="if(this.showPicker)this.showPicker()" value="' + fc + '"></label>';
   else if (fc) html += '<div class="ped-info"><span>Fecha comprometida</span><strong>' + pedFecha(p.fecha_comprometida) + '</strong></div>';
 
   const obs = p.observaciones_generales || '';
@@ -6907,11 +6910,11 @@ function renderEditorPedido() {
   html += '</div>';
 
   html += '<div class="ped-section"><div class="ped-section-title">Insumos</div>';
-  if (!PED_ITEMS.length && !editable) html += '<div class="empty-list">Este pedido no tiene insumos.</div>';
+  if (!PED_ITEMS.length && !editaItems) html += '<div class="empty-list">Este pedido no tiene insumos.</div>';
   html += '<div id="pedItems">';
-  PED_ITEMS.forEach((it, i) => { html += renderItemPedido(it, i, editable, recepcion, completado); });
+  PED_ITEMS.forEach((it, i) => { html += renderItemPedido(it, i, editaItems, recepcion, completado); });
   html += '</div>';
-  if (editable) html += '<button class="btn-ghost" style="width:100%;margin-top:8px;" onclick="agregarItemPedido()"><i class="ti ti-plus"></i> Agregar insumo</button>';
+  if (editaItems) html += '<button class="btn-ghost" style="width:100%;margin-top:8px;" onclick="agregarItemPedido()"><i class="ti ti-plus"></i> Agregar insumo</button>';
   html += '</div>';
 
   if (recepcion) html += '<div class="ped-recep-hint">“Guardar sin cerrar” guarda lo que recibiste y deja el pedido abierto para seguir cargando más tarde. “Cerrar pedido (recibido)” lo da por recibido y finalizado (ya no se edita).</div>';
@@ -7022,9 +7025,23 @@ window.guardarPedido = async function(enviar) {
 window.confirmarPedido = async function() {
   const fcEl = document.getElementById('pedFechaComprometida');
   const obsEl = document.getElementById('pedObs');
+  if (!fcEl || !fcEl.value) { toast('Poné la fecha comprometida de entrega antes de confirmar', 'warning'); return; }
+  leerItemsDesdeDOM();
+  const validos = PED_ITEMS.filter(function(it){ return it.ingrediente_id && parseFloat(it.cantidad_pedida) > 0; });
+  if (!validos.length) { toast('El pedido no tiene insumos con cantidad', 'warning'); return; }
+  const sinUnidad = validos.filter(function(it){ return !it.unidad; });
+  if (sinUnidad.length) { toast('Elegí la unidad en: ' + sinUnidad.map(function(it){ return pedInsumoNombre(it.ingrediente_id); }).join(', '), 'warning'); return; }
   try {
+    await api('requerimiento_items?requerimiento_id=eq.' + PED_ACTUAL.id, { method: 'DELETE' });
+    const payload = validos.map(function(it, i){ return {
+      requerimiento_id: PED_ACTUAL.id, ingrediente_id: it.ingrediente_id,
+      cantidad_pedida: parseFloat(it.cantidad_pedida) || 0, unidad: it.unidad || null,
+      stock_actual: (it.stock_actual !== '' && it.stock_actual != null) ? (parseFloat(it.stock_actual) || 0) : null,
+      comentario_pedido: it.comentario_pedido || null, orden: i
+    }; });
+    await api('requerimiento_items', { method: 'POST', body: JSON.stringify(payload) });
     await api('requerimientos?id=eq.' + PED_ACTUAL.id, { method: 'PATCH', body: JSON.stringify({
-      estado: 'confirmado', fecha_comprometida: (fcEl && fcEl.value) ? fcEl.value : null,
+      estado: 'confirmado', fecha_comprometida: fcEl.value,
       observaciones_generales: obsEl ? (obsEl.value.trim() || null) : PED_ACTUAL.observaciones_generales,
       actualizado_en: new Date().toISOString()
     })});
@@ -7063,7 +7080,7 @@ window.guardarRecepcion = async function(cerrar) {
       const patch = {
         cantidad_recibida: recibido,
         comentario_recepcion: b.querySelector('.ped-recep-coment').value.trim() || null,
-        recibido_en: recibido != null ? new Date().toISOString() : null
+        recibido_en: (recibido != null || estadoVal) ? new Date().toISOString() : null
       };
       // Solo incluir estado_recepcion si fue seleccionado (evita NOT NULL error)
       if (estadoVal) patch.estado_recepcion = estadoVal;

@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260702k">
+<link rel="stylesheet" href="styles.css?v=20260702l">
 </head>
 <body>
 
@@ -716,7 +716,7 @@
       <label class="field"><span class="field-label">Local</span><select id="ccLocal"></select></label>
       <label class="field"><span class="field-label">Moneda</span><select id="ccMoneda" onchange="ccCalcProm()"><option value="ARS">Pesos ($)</option><option value="USD">Dólares (USD)</option></select></label>
       <div class="cierre-row2">
-        <label class="field"><span class="field-label">Fecha</span><input type="date" id="ccFecha"></label>
+        <label class="field"><span class="field-label">Fecha</span><input type="date" id="ccFecha" onclick="if(this.showPicker)this.showPicker()"></label>
         <label class="field"><span class="field-label">Turno</span><select id="ccTurno"></select></label>
       </div>
       <div class="cierre-row2">
@@ -2168,6 +2168,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260702k"></script>
+<script src="app.js?v=20260702l"></script>
 </body>
 </html>
