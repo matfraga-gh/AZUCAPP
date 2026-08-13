@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-07-02-L | ULTIMA | biblioteca TODOS + pedidos: calendario, fecha comprometida oblig., editar antes de confirmar, fecha recepcion por insumo ===== */
+/* ===== BUILD 2026-07-02-M | ULTIMA | sub-elab refresca al crear + stock antes de cantidad en pedidos ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -3040,6 +3040,8 @@ window.guardarSubelab = async function() {
     toast('✓ ' + lbl + ' ' + (esEdicion ? 'actualizad' : 'cread') + gen, 'success');
     if (esMenu) { await cargarPasosEnEditor(recetaId); } else { await cargarComponentesEnEditor(recetaId); }
     COSTEO_CARGADO = false;
+    RECETAS_ELAB_PICKER = [];
+    RECETAS_INSUMOS_VAL = [];
     cargarRecetas();
   } catch (e) {
     console.error('guardarSubelab error:', e);
@@ -6848,10 +6850,10 @@ function renderItemPedido(it, i, editable, recepcion, completado) {
       '<div class="ped-item-head">' + pedInsumoPicker(it, i) +
       '<button class="ped-item-del" onclick="quitarItemPedido(' + i + ')" aria-label="Quitar"><i class="ti ti-trash"></i></button></div>' +
       '<div class="ped-item-row">' +
-        '<input class="ped-cant" type="number" step="any" min="0" placeholder="Cantidad" value="' + (it.cantidad_pedida != null ? it.cantidad_pedida : '') + '">' +
-        '<select class="ped-unidad">' + pedUnidadOptions(it.unidad) + '</select></div>' +
-      '<div class="ped-item-row">' +
         '<input class="ped-stock" type="number" step="any" min="0" placeholder="Stock hoy (opc.)" value="' + (it.stock_actual != null ? it.stock_actual : '') + '">' +
+        '<input class="ped-cant" type="number" step="any" min="0" placeholder="Cantidad a pedir" value="' + (it.cantidad_pedida != null ? it.cantidad_pedida : '') + '"></div>' +
+      '<div class="ped-item-row">' +
+        '<select class="ped-unidad">' + pedUnidadOptions(it.unidad) + '</select>' +
         '<input class="ped-coment" type="text" placeholder="Comentario (opc.)" value="' + esc(it.comentario_pedido || '') + '"></div>' +
       '</div>';
   }
