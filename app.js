@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-07-02-M | ULTIMA | sub-elab refresca al crear + stock antes de cantidad en pedidos ===== */
+/* ===== BUILD 2026-08-17-N | ULTIMA | costeo pagina cargas (fix costos $0 por tope de 1000 filas) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -116,6 +116,19 @@ async function api(path, options = {}) {
 
   if (res.status === 204) return null;
   return res.json();
+}
+
+// Trae TODAS las filas de un endpoint paginando (Supabase corta en ~1000 por request).
+async function apiAll(path, pageSize) {
+  pageSize = pageSize || 1000;
+  const sep = path.indexOf('?') === -1 ? '?' : '&';
+  let out = [], offset = 0, page;
+  do {
+    page = await api(path + sep + 'limit=' + pageSize + '&offset=' + offset) || [];
+    out = out.concat(page);
+    offset += pageSize;
+  } while (page.length === pageSize);
+  return out;
 }
 
 // ============================================
@@ -2462,10 +2475,10 @@ function computeCostoReceta(id, cache, stack) {
 // Carga todo el árbol de recetas/insumos y precalcula el costo de cada receta
 async function cargarDatosCosteo() {
   if (COSTEO_CARGADO) return;
-  const recs = await api('recetas?select=id,tipo,rendimiento,unidad_rendimiento,precio_venta') || [];
-  const comps = await api('receta_componentes?select=receta_id,tipo_componente,ingrediente_id,sub_receta_id,cantidad,unidad') || [];
-  const inss = await api('ingredientes?activo=eq.true&select=id,costo,cantidad_por_presentacion,unidad') || [];
-  const pasos = await api('menu_pasos?select=menu_id,receta_id,orden,opcional') || [];
+  const recs = await apiAll('recetas?select=id,tipo,rendimiento,unidad_rendimiento,precio_venta&order=id') || [];
+  const comps = await apiAll('receta_componentes?select=receta_id,tipo_componente,ingrediente_id,sub_receta_id,cantidad,unidad&order=id') || [];
+  const inss = await apiAll('ingredientes?activo=eq.true&select=id,costo,cantidad_por_presentacion,unidad&order=id') || [];
+  const pasos = await apiAll('menu_pasos?select=menu_id,receta_id,orden,opcional&order=menu_id,orden') || [];
   COSTEO_PASOS = {};
   pasos.forEach(p => { (COSTEO_PASOS[p.menu_id] = COSTEO_PASOS[p.menu_id] || []).push(p); });
   COSTEO_RECETAS = {};
@@ -2502,13 +2515,13 @@ async function cargarRecetas() {
   // 3) Datos para editar: no deben bloquear la lista
   try {
     if (!RECETAS_INSUMOS_VAL.length) {
-      RECETAS_INSUMOS_VAL = await api('ingredientes?validado=eq.true&activo=eq.true&select=id,nombre,unidad,costo,cantidad_por_presentacion&order=nombre.asc') || [];
+      RECETAS_INSUMOS_VAL = await apiAll('ingredientes?validado=eq.true&activo=eq.true&select=id,nombre,unidad,costo,cantidad_por_presentacion&order=nombre.asc') || [];
     }
     if (!RECETAS_ELAB_PICKER.length) {
-      RECETAS_ELAB_PICKER = await api('recetas?tipo=eq.elaboracion&activo=eq.true&select=id,nombre,unidad_rendimiento,rendimiento&order=nombre.asc') || [];
+      RECETAS_ELAB_PICKER = await apiAll('recetas?tipo=eq.elaboracion&activo=eq.true&select=id,nombre,unidad_rendimiento,rendimiento&order=nombre.asc') || [];
     }
     if (!RECETAS_PLATOS_PICKER.length) {
-      RECETAS_PLATOS_PICKER = await api('recetas?tipo=eq.plato&activo=eq.true&select=id,nombre&order=nombre.asc') || [];
+      RECETAS_PLATOS_PICKER = await apiAll('recetas?tipo=eq.plato&activo=eq.true&select=id,nombre&order=nombre.asc') || [];
     }
   } catch (e) { console.warn('Datos de edición no disponibles:', e); }
   poblarFiltroLocalReceta();
