@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-N | ULTIMA | costeo pagina cargas (fix costos $0 por tope de 1000 filas) ===== */
+/* ===== BUILD 2026-08-17-O | ULTIMA | costeo pagina + picker platos del menu (buscable + filtra por local) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -2521,7 +2521,7 @@ async function cargarRecetas() {
       RECETAS_ELAB_PICKER = await apiAll('recetas?tipo=eq.elaboracion&activo=eq.true&select=id,nombre,unidad_rendimiento,rendimiento&order=nombre.asc') || [];
     }
     if (!RECETAS_PLATOS_PICKER.length) {
-      RECETAS_PLATOS_PICKER = await apiAll('recetas?tipo=eq.plato&activo=eq.true&select=id,nombre&order=nombre.asc') || [];
+      RECETAS_PLATOS_PICKER = await apiAll('recetas?tipo=eq.plato&activo=eq.true&select=id,nombre,local&order=nombre.asc') || [];
     }
   } catch (e) { console.warn('Datos de edición no disponibles:', e); }
   poblarFiltroLocalReceta();
@@ -2634,20 +2634,69 @@ function configurarCamposModal() {
   show('menuPasosSection', t === 'menu');
 }
 
+let PASO_PLATOS_LISTA = []; // platos del menú, filtrados por local (buscable)
+
 window.poblarPlatosPicker = function() {
-  const sel = document.getElementById('pasoPlato');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">Elegí un plato...</option>' +
-    RECETAS_PLATOS_PICKER.map(p => '<option value="' + p.id + '">' + esc(p.nombre) + '</option>').join('');
+  const localMenu = (document.getElementById('subelabLocal') || {}).value || '';
+  PASO_PLATOS_LISTA = RECETAS_PLATOS_PICKER
+    .filter(p => !localMenu || !p.local || p.local === localMenu)
+    .map(p => ({ id: p.id, nombre: p.nombre }));
+  const search = document.getElementById('pasoPlatoSearch');
+  const hidden = document.getElementById('pasoPlato');
+  const opts = document.getElementById('pasoPlatoOpts');
+  if (search) search.value = '';
+  if (hidden) hidden.value = '';
+  if (opts) opts.style.display = 'none';
 };
 
+window.pasoFiltrarPlatos = function(input) {
+  const q = (input.value || '').toLowerCase().trim();
+  const opts = document.getElementById('pasoPlatoOpts');
+  if (!opts) return;
+  const filtrados = q
+    ? PASO_PLATOS_LISTA.filter(i => i.nombre.toLowerCase().includes(q))
+    : PASO_PLATOS_LISTA.slice(0, 40);
+  if (!filtrados.length) {
+    opts.innerHTML = '<div class="ped-ins-no-result">Sin resultados en este local</div>';
+  } else {
+    opts.innerHTML = filtrados.map(function(i) {
+      return '<div class="ped-ins-opt" data-paso-id="' + esc(String(i.id)) + '" onclick="pasoSeleccionarPlatoById(this)">' + esc(i.nombre) + '</div>';
+    }).join('');
+  }
+  opts.style.display = 'block';
+};
+
+window.pasoSeleccionarPlatoById = function(el) {
+  const id = el.dataset.pasoId;
+  const item = PASO_PLATOS_LISTA.find(function(i) { return String(i.id) === String(id); });
+  if (!item) return;
+  const search = document.getElementById('pasoPlatoSearch');
+  const hidden = document.getElementById('pasoPlato');
+  if (search) search.value = item.nombre;
+  if (hidden) hidden.value = item.id;
+  const opts = document.getElementById('pasoPlatoOpts');
+  if (opts) opts.style.display = 'none';
+};
+
+// Cerrar el dropdown de platos al tocar/clickear afuera
+document.addEventListener('click', function(e) {
+  const wrap = document.getElementById('pasoPlatoWrap');
+  if (wrap && !wrap.contains(e.target)) { const o = document.getElementById('pasoPlatoOpts'); if (o) o.style.display = 'none'; }
+});
+document.addEventListener('touchstart', function(e) {
+  const wrap = document.getElementById('pasoPlatoWrap');
+  if (wrap && !wrap.contains(e.target)) { const o = document.getElementById('pasoPlatoOpts'); if (o) o.style.display = 'none'; }
+}, { passive: true });
+
 window.agregarPaso = function() {
-  const sel = document.getElementById('pasoPlato');
-  const id = parseInt(sel.value, 10);
-  if (!id) { toast('Elegí un plato', 'error'); return; }
-  const plato = RECETAS_PLATOS_PICKER.find(p => p.id === id);
+  const hidden = document.getElementById('pasoPlato');
+  const id = parseInt(hidden ? hidden.value : '', 10);
+  if (!id) { toast('Elegí un plato de la lista', 'error'); return; }
+  const plato = PASO_PLATOS_LISTA.find(p => p.id === id) || RECETAS_PLATOS_PICKER.find(p => p.id === id);
   MENU_PASOS_EDIT.push({ receta_id: id, nombre: plato ? plato.nombre : ('Plato #' + id), nombre_paso: '', opcional: false });
-  sel.value = '';
+  const search = document.getElementById('pasoPlatoSearch');
+  if (search) search.value = '';
+  if (hidden) hidden.value = '';
   renderPasosEdit();
 };
 

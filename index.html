@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817n">
+<link rel="stylesheet" href="styles.css?v=20260817o">
 </head>
 <body>
 
@@ -1969,7 +1969,7 @@
         <input type="text" id="subelabNombre" placeholder="Ej: Aceite de achiote"></label>
 
       <label class="field"><span class="field-label">Local</span>
-        <select id="subelabLocal"></select></label>
+        <select id="subelabLocal" onchange="poblarPlatosPicker()"></select></label>
 
       <div id="rendimientoCampos">
         <div class="cierre-row2">
@@ -2025,8 +2025,13 @@
         <div class="cierre-section-title"><i class="ti ti-list-numbers"></i> Pasos del menú</div>
         <div class="comp-add">
           <div style="display:flex; gap:8px;">
-            <select id="pasoPlato" class="mini-select" style="flex:1; min-width:0;"></select>
-            <button type="button" class="btn-primary comp-add-btn" onclick="agregarPaso()"><i<i class="ti ti-plus"></i></button>
+            <div id="pasoPlatoWrap" class="ped-ins-wrap" style="flex:1; min-width:0;">
+              <input type="text" id="pasoPlatoSearch" class="ped-ins-search" placeholder="Buscá un plato..." autocomplete="off"
+                onclick="pasoFiltrarPlatos(this)" oninput="pasoFiltrarPlatos(this)">
+              <input type="hidden" id="pasoPlato">
+              <div id="pasoPlatoOpts" class="ped-ins-opts"></div>
+            </div>
+            <button type="button" class="btn-primary comp-add-btn" onclick="agregarPaso()"><i class="ti ti-plus"></i></button>
           </div>
         </div>
         <div id="pasosLista" style="margin-top:10px;"></div>
@@ -2168,6 +2173,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817n"></script>
+<script src="app.js?v=20260817o"></script>
 </body>
 </html>
