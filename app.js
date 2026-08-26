@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-O | ULTIMA | costeo pagina + picker platos del menu (buscable + filtra por local) ===== */
+/* ===== BUILD 2026-08-17-P | ULTIMA | aviso de unidad indica la unidad esperada (+ fixes O/N) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -2996,7 +2996,8 @@ function renderComponentesEdit() {
         costoLinea = '<span class="comp-costo">' + unit + ' · usa <strong>$' + formatNumber(Math.round(cc.usado)) + '</strong></span>';
       } else {
         hayDuda = true;
-        costoLinea = '<span class="comp-costo">' + unit + ' · <span class="comp-duda">revisar unidad</span></span>';
+        const hintU = cc.unidadBase ? ('revisar unidad: usá ' + esc(cc.unidadBase)) : 'revisar unidad';
+        costoLinea = '<span class="comp-costo">' + unit + ' · <span class="comp-duda">' + hintU + '</span></span>';
       }
     }
     return '<div class="comp-row">' +
