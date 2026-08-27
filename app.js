@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-T | ULTIMA | Panel de Resultados: cards por indicador (Acum/%Obj/Obj/Dif) + GO (+ S/R/Fase1) ===== */
+/* ===== BUILD 2026-08-17-U | ULTIMA | Fase 2: planilla CM (Alimentos/Bebida/Extras) + CM en cards (+ T/S/R) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -8056,7 +8056,14 @@ async function cargarPanelResultados() {
         goTotal = goRows.reduce(function(sm, r){ return sm + (parseFloat(r.alquileres)||0) + (parseFloat(r.servicios)||0) + (parseFloat(r.mantenimiento)||0) + (parseFloat(r.lavanderia)||0) + (parseFloat(r.marketing)||0) + (parseFloat(r.sistemas)||0) + (parseFloat(r.otros)||0); }, 0);
       }
     } catch (e) {}
-    renderPanelResultados(cierres, { objNeto: objNeto, hayObj: hayObj, objHer: objHer, cmPct: cmPct, clPct: clPct, goPct: goPct }, agregado, { goTotal: goTotal });
+    let cmTotal = null;
+    try {
+      const cmRows = agregado
+        ? (await api('costos_mercaderia?local=in.(' + reales.map(encodeURIComponent).join(',') + ')&mes=eq.' + PV_MES + '&select=*') || [])
+        : (await api('costos_mercaderia?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + PV_MES + '&select=*') || []);
+      if (cmRows.length) { cmTotal = cmRows.reduce(function(sm, r){ return sm + (parseFloat(r.alimentos)||0) + (parseFloat(r.bebida)||0) + (parseFloat(r.extras)||0); }, 0); }
+    } catch (e) {}
+    renderPanelResultados(cierres, { objNeto: objNeto, hayObj: hayObj, objHer: objHer, cmPct: cmPct, clPct: clPct, goPct: goPct }, agregado, { goTotal: goTotal, cmTotal: cmTotal });
   } catch (e) {
     body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los datos.</div>';
   }
@@ -8076,12 +8083,13 @@ function renderPanelResultados(cierres, obj, agregado, costos) {
   const hayCostoObj = (obj.cmPct != null || obj.clPct != null || obj.goPct != null);
   const gbPct = hayCostoObj ? (100 - (obj.cmPct||0) - (obj.clPct||0) - (obj.goPct||0)) : null;
   const cbObj = (gbPct != null) ? (gbPct/100)*netoVentas : null;
-  const cmAcum = null, clAcum = null;
+  const cmAcum = (costos.cmTotal != null) ? costos.cmTotal : null;
+  const clAcum = null;
   const goAcum = (costos.goTotal != null) ? costos.goTotal : null;
   const costosCompletos = (goAcum != null && cmAcum != null && clAcum != null);
   const cbAcum = costosCompletos ? (netoVentas - goAcum - cmAcum - clAcum) : null;
 
-  const card = function(titulo, code, acum, objv, tipo){
+  const card = function(titulo, code, acum, objv, tipo, color){
     const pctV = (objv != null && objv !== 0 && acum != null) ? (acum/objv*100) : null;
     const difV = (acum != null && objv != null) ? (acum - objv) : null;
     let difExtra = '', difStr = '—';
@@ -8093,7 +8101,7 @@ function renderPanelResultados(cierres, obj, agregado, costos) {
     const m = function(v){ return v != null ? _pvMoney(Math.round(v)) : '—'; };
     const cel = function(lbl, val, extra){ return '<div style="flex:1;text-align:center;padding:7px 2px;border-left:1px solid var(--c-cream-border)"><div style="font-size:9px;opacity:.5;line-height:1.2">' + lbl + '</div><div style="font-weight:600;font-size:13px;margin-top:3px' + (extra||'') + '">' + val + '</div></div>'; };
     return '<div style="border:1px solid var(--c-cream-border);border-radius:10px;overflow:hidden;margin-bottom:10px">' +
-      '<div style="text-align:center;font-weight:700;font-size:12px;letter-spacing:.6px;padding:7px;background:rgba(255,255,255,.05)">' + titulo + '</div>' +
+      '<div style="text-align:center;font-weight:700;font-size:12px;letter-spacing:.6px;padding:7px;background:' + (color || 'rgba(255,255,255,.05)') + ';color:#fff">' + titulo + '</div>' +
       '<div style="display:flex">' +
         '<div style="flex:1;text-align:center;padding:7px 2px"><div style="font-size:9px;opacity:.5;line-height:1.2">$ ' + code + ' Acum</div><div style="font-weight:600;font-size:13px;margin-top:3px">' + m(acum) + '</div></div>' +
         cel('% ' + code + ' Obj', (pctV != null) ? pctV.toFixed(0) + '%' : '—') +
@@ -8111,13 +8119,13 @@ function renderPanelResultados(cierres, obj, agregado, costos) {
   if (agregado) html += '<div class="cierre-hint" style="margin-bottom:12px">Vista consolidada: suma de todos los locales.</div>';
   else if (obj.objHer) html += '<div class="cierre-hint" style="margin-bottom:12px">Objetivos heredados del mes anterior.</div>';
 
-  html += card('VENTAS', 'Vta', netoVentas, ventasObj, 'vta');
-  html += card('CTO LABORAL', 'CL', clAcum, clObj, 'costo');
-  html += card('CTO MERCADERÍA', 'CM', cmAcum, cmObj, 'costo');
-  html += card('GASTOS OPERATIVOS', 'GO', goAcum, goObj, 'costo');
-  html += card('CONTRIB. BRUTA', 'CB', cbAcum, cbObj, 'cb');
+  html += card('VENTAS', 'Vta', netoVentas, ventasObj, 'vta', '#2E7D32');
+  html += card('CTO LABORAL', 'CL', clAcum, clObj, 'costo', '#C87A2C');
+  html += card('CTO MERCADERÍA', 'CM', cmAcum, cmObj, 'costo', '#7E57C2');
+  html += card('GASTOS OPERATIVOS', 'GO', goAcum, goObj, 'costo', '#2A9D8F');
+  html += card('CONTRIB. BRUTA', 'CB', cbAcum, cbObj, 'cb', '#3E86C7');
 
-  html += '<div class="cierre-hint" style="margin:8px 0 16px"><i class="ti ti-info-circle"></i> Gastos Operativos se carga desde “Gestión de estadísticas”. Cto Laboral y Cto Mercadería llegan en las próximas etapas.</div>';
+  html += '<div class="cierre-hint" style="margin:8px 0 16px"><i class="ti ti-info-circle"></i> Gastos Operativos y Mercadería se cargan desde “Gestión de estadísticas”. Cto Laboral llega en la próxima etapa.</div>';
 
   html += '<div class="pv-obj">';
   html += '<div class="est-section-title">Ventas semana a semana (neto)</div>';
@@ -8255,6 +8263,56 @@ window.subirPlanillaGO = async function(input) {
     }
     st.textContent = '✓ ' + n + ' locales cargados para ' + mes + '.';
     toast('✓ Planilla GO cargada', 'success');
+    cargarPanelActivo();
+  } catch (e) { st.textContent = 'Error: ' + ((e && e.message) || e); }
+  finally { input.value = ''; }
+};
+
+window.descargarPlanillaCM = async function() {
+  const st = document.getElementById('gestStatus'); st.textContent = 'Preparando...';
+  const mes = document.getElementById('gestMes').value;
+  try {
+    const XLSX = await ensureXLSX();
+    const locales = _goLocales();
+    const byLocal = {};
+    (await api('costos_mercaderia?mes=eq.' + mes + '&select=*') || []).forEach(function(r){ byLocal[r.local] = r; });
+    const faltan = locales.filter(function(l){ return !byLocal[l]; });
+    if (faltan.length) {
+      const seen = {};
+      (await api('costos_mercaderia?mes=lt.' + mes + '&select=*&order=mes.desc') || []).forEach(function(r){ if (!byLocal[r.local] && !seen[r.local]) { seen[r.local] = 1; byLocal[r.local] = r; } });
+    }
+    const data = [['Local','Alimentos','Bebida','Extras']];
+    locales.forEach(function(l){ const r = byLocal[l] || {}; data.push([localLabel(l), _nz(r.alimentos), _nz(r.bebida), _nz(r.extras)]); });
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'CM ' + mes);
+    XLSX.writeFile(wb, 'Planilla_CM_' + mes + '.xlsx');
+    st.textContent = 'Planilla descargada. Editá los valores y volvé a subirla.';
+  } catch (e) { st.textContent = 'Error: ' + ((e && e.message) || e); }
+};
+
+window.subirPlanillaCM = async function(input) {
+  const file = input.files && input.files[0]; if (!file) return;
+  const st = document.getElementById('gestStatus'); st.textContent = 'Procesando...';
+  const mes = document.getElementById('gestMes').value;
+  try {
+    const XLSX = await ensureXLSX();
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+    const rev = {}; getLocalesActivos().forEach(function(l){ rev[String(localLabel(l)).trim().toLowerCase()] = l; });
+    const pN = function(x){ if (x == null || x === '') return 0; if (typeof x === 'number') return x; const v = parseFloat(String(x).replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.')); return isFinite(v) ? v : 0; };
+    let n = 0;
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i]; if (!row || row[0] == null || row[0] === '') continue;
+      const slug = rev[String(row[0]).trim().toLowerCase()]; if (!slug) continue;
+      const rec = { local: slug, mes: mes, alimentos: pN(row[1]), bebida: pN(row[2]), extras: pN(row[3]), creado_por: currentUser.id, actualizado_en: new Date().toISOString() };
+      const ex = await api('costos_mercaderia?local=eq.' + encodeURIComponent(slug) + '&mes=eq.' + mes + '&select=id') || [];
+      if (ex.length) await api('costos_mercaderia?id=eq.' + ex[0].id, { method: 'PATCH', body: JSON.stringify(rec) });
+      else await api('costos_mercaderia', { method: 'POST', body: JSON.stringify(rec) });
+      n++;
+    }
+    st.textContent = '✓ ' + n + ' locales cargados para ' + mes + '.';
+    toast('✓ Planilla CM cargada', 'success');
     cargarPanelActivo();
   } catch (e) { st.textContent = 'Error: ' + ((e && e.message) || e); }
   finally { input.value = ''; }

@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817t">
+<link rel="stylesheet" href="styles.css?v=20260817u">
 </head>
 <body>
 
@@ -1750,6 +1750,14 @@
           <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="subirPlanillaGO(this)">
         </label>
       </div>
+      <div class="est-section-title" style="margin-top:16px">Cto Mercadería (CM)</div>
+      <p class="field-hint">Por local: Alimentos / Bebida / Extras.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button type="button" class="btn-ghost" onclick="descargarPlanillaCM()"><i class="ti ti-download"></i> Descargar planilla CM</button>
+        <label class="btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px"><i class="ti ti-upload"></i> Subir planilla CM
+          <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="subirPlanillaCM(this)">
+        </label>
+      </div>
       <div class="field-hint" id="gestStatus" style="margin-top:10px"></div>
     </div>
     <div class="modal-actions">
@@ -2211,6 +2219,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817t"></script>
+<script src="app.js?v=20260817u"></script>
 </body>
 </html>
