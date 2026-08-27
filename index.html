@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817p">
+<link rel="stylesheet" href="styles.css?v=20260817q">
 </head>
 <body>
 
@@ -1682,9 +1682,13 @@
     <div class="module-header">
       <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
       <div class="module-title-block">
-        <div class="module-title">Panel de ventas</div>
-        <div class="module-subtitle">Evolución, promedio y objetivo del mes</div>
+        <div class="module-title">Estadísticas</div>
+        <div class="module-subtitle">Ventas y resultados por punto de venta</div>
       </div>
+    </div>
+    <div class="stock-tabs" id="pvTabs">
+      <button type="button" class="stock-tab active" data-pvtab="ventas" onclick="setPvTab('ventas')">Panel de Ventas</button>
+      <button type="button" class="stock-tab" id="pvTabResultados" data-pvtab="resultados" onclick="setPvTab('resultados')">Panel de Resultados</button>
     </div>
     <div class="est-filtros">
       <label class="field" id="pvLocalWrap" style="flex:1;min-width:0"><span class="field-label">Local</span>
@@ -2173,6 +2177,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817p"></script>
+<script src="app.js?v=20260817q"></script>
 </body>
 </html>

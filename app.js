@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-P | ULTIMA | aviso de unidad indica la unidad esperada (+ fixes O/N) ===== */
+/* ===== BUILD 2026-08-17-Q | ULTIMA | Estadisticas: Panel de Resultados Fase 1 (+ fixes O/N/P) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -520,8 +520,8 @@ const MODULES = [
     id: 'panelventas',
     icon: 'ti-chart-line',
     color: '#2D7FC4',
-    title: 'Panel de ventas',
-    desc: 'Evolución, promedio y objetivo del mes',
+    title: 'Estadísticas',
+    desc: 'Ventas y resultados por local',
     visible: () => isMaster() || isAdmin() || isAuditor(),
     action: () => openPanelVentas()
   },
@@ -7792,7 +7792,7 @@ window.rechazarIncidencia = function() { resolverIncidencia('rechazado'); };
 // PANEL DE VENTAS (auditores / admin)
 // ============================================
 const IVA_COEF = 1.21;
-let PV_LOCAL = '', PV_MES = '';
+let PV_LOCAL = '', PV_MES = '', PV_TAB = 'ventas';
 
 function panelLocalesPermitidos() { return pedLocalesPermitidos(); }
 function esLocalAgregado(loc) {
@@ -7806,10 +7806,29 @@ function panelLocalesReales() {
 function openPanelVentas() {
   if (!isMaster() && !isAdmin() && !isAuditor()) { showDashboard(); return; }
   showView('vPanelVentas');
+  const puedeResultados = isMaster() || isAdmin();
+  const tabRes = document.getElementById('pvTabResultados');
+  if (tabRes) tabRes.style.display = puedeResultados ? '' : 'none';
+  if (!puedeResultados) PV_TAB = 'ventas';
   poblarFiltrosPanel();
-  cargarPanelVentas();
+  aplicarPvTabUI();
+  cargarPanelActivo();
 }
 window.openPanelVentas = openPanelVentas;
+
+function aplicarPvTabUI() {
+  document.querySelectorAll('#pvTabs .stock-tab').forEach(function(b){ b.classList.toggle('active', b.dataset.pvtab === PV_TAB); });
+}
+window.setPvTab = function(tab) {
+  if (tab === 'resultados' && !(isMaster() || isAdmin())) return;
+  PV_TAB = tab;
+  aplicarPvTabUI();
+  cargarPanelActivo();
+};
+function cargarPanelActivo() {
+  if (PV_TAB === 'resultados' && (isMaster() || isAdmin())) cargarPanelResultados();
+  else cargarPanelVentas();
+}
 
 function poblarFiltrosPanel() {
   const selMes = document.getElementById('pvMes');
@@ -7841,7 +7860,7 @@ function poblarFiltrosPanel() {
 window.onFiltroPanel = function() {
   PV_MES = document.getElementById('pvMes').value;
   PV_LOCAL = document.getElementById('pvLocal').value;
-  cargarPanelVentas();
+  cargarPanelActivo();
 };
 
 function _pvRango(mes) {
@@ -7985,6 +8004,97 @@ function renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agrega
       '</div>';
     }).join('') + '</div>';
   }
+  body.innerHTML = html;
+}
+
+function _pvSemana(fechaStr) {
+  const dd = parseInt(String(fechaStr).slice(8, 10), 10) || 1;
+  return Math.min(5, Math.floor((dd - 1) / 7) + 1);
+}
+
+async function cargarPanelResultados() {
+  const body = document.getElementById('pvBody');
+  body.innerHTML = '<div class="loading">Cargando...</div>';
+  await asegurarPropConfig();
+  const loc = PV_LOCAL;
+  if (!loc) { body.innerHTML = '<div class="empty-list">No ten\u00e9s un local asignado para ver.</div>'; return; }
+  const agregado = esLocalAgregado(loc);
+  const reales = panelLocalesReales();
+  if (agregado && !reales.length) { body.innerHTML = '<div class="empty-list">No hay locales para consolidar.</div>'; return; }
+  const locFilter = agregado
+    ? 'local=in.(' + reales.map(encodeURIComponent).join(',') + ')'
+    : 'local=eq.' + encodeURIComponent(loc);
+  try {
+    const r = _pvRango(PV_MES);
+    const cierres = await api('cierres_caja?' + locFilter + '&fecha=gte.' + r.desde + '&fecha=lte.' + r.hasta + '&select=*&order=fecha.asc,id.asc') || [];
+    let objNeto = 0, hayObj = false, objHer = false;
+    try {
+      if (agregado) {
+        const allObjs = await api('objetivos_ventas?local=in.(' + reales.map(encodeURIComponent).join(',') + ')&mes=lte.' + PV_MES + '&select=*&order=mes.desc') || [];
+        const seen = {};
+        allObjs.forEach(function(o){ if (!seen[o.local]) { seen[o.local] = 1; objNeto += parseFloat(o.objetivo) || 0; hayObj = true; if (o.mes !== PV_MES) objHer = true; } });
+      } else {
+        const objs = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + PV_MES + '&select=*') || [];
+        if (objs.length) { objNeto = parseFloat(objs[0].objetivo) || 0; hayObj = true; }
+        else {
+          const prev = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=lt.' + PV_MES + '&select=*&order=mes.desc&limit=1') || [];
+          if (prev.length) { objNeto = parseFloat(prev[0].objetivo) || 0; hayObj = true; objHer = true; }
+        }
+      }
+    } catch (e) {}
+    renderPanelResultados(cierres, { objNeto: objNeto, hayObj: hayObj, objHer: objHer }, agregado);
+  } catch (e) {
+    body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los datos.</div>';
+  }
+}
+
+function renderPanelResultados(cierres, obj, agregado) {
+  const body = document.getElementById('pvBody');
+  const brutoVentas = cierres.reduce(function(s, c){ return s + computablePesos(c); }, 0);
+  const netoVentas = brutoVentas / IVA_COEF;
+  const sem = { 1:0, 2:0, 3:0, 4:0, 5:0 };
+  cierres.forEach(function(c){ sem[_pvSemana(c.fecha)] += computablePesos(c) / IVA_COEF; });
+  const fila = function(label, val, o){ o = o || {};
+    const right = o.pend ? '<span style="opacity:.5;font-size:13px">pendiente</span>' : '<span>' + _pvMoney(Math.round(val)) + '</span>';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 2px;border-bottom:1px solid rgba(0,0,0,.06)' + (o.bold ? ';font-weight:700' : '') + '"><span>' + label + '</span>' + right + '</div>';
+  };
+  let html = '';
+  if (agregado) html += '<div class="cierre-hint" style="margin-bottom:12px">Vista consolidada: suma de todos los locales.</div>';
+  html += '<div class="cierre-hint" style="margin-bottom:14px"><i class="ti ti-info-circle"></i> Fase 1: se muestran Ventas y objetivo. El costo de Mercader\u00eda, Laboral y Gastos Operativos se incorporan en las pr\u00f3ximas etapas.</div>';
+  html += '<div class="pv-obj">';
+  html += '<div class="est-section-title">Resultado del mes (acumulado, neto)</div>';
+  html += fila('Ventas', netoVentas);
+  html += fila('\u2212 Cto Mercader\u00eda', 0, { pend:true });
+  html += fila('\u2212 Cto Laboral', 0, { pend:true });
+  html += fila('\u2212 Gastos Operativos', 0, { pend:true });
+  html += fila('= Ganancia Bruta (provisoria)', netoVentas, { bold:true });
+  html += '</div>';
+  html += '<div class="pv-obj">';
+  html += '<div class="pv-obj-head"><span class="est-section-title">Objetivo de ventas (neto)</span></div>';
+  if (obj.hayObj) {
+    if (obj.objHer) html += '<div class="cierre-hint" style="margin-bottom:10px">Objetivo heredado del mes anterior.</div>';
+    const pct = obj.objNeto > 0 ? (netoVentas / obj.objNeto) * 100 : 0;
+    const pctClamp = Math.max(0, Math.min(100, pct));
+    const cumplido = pct >= 100;
+    html += '<div class="pv-bar-wrap"><div class="pv-bar' + (cumplido ? ' ok' : '') + '" style="width:' + pctClamp.toFixed(1) + '%"></div></div>';
+    html += '<div class="pv-obj-pct">' + pct.toFixed(0) + '% del objetivo (acumulado del mes)</div>';
+    html += fila('Objetivo', obj.objNeto);
+    html += fila('Vendido', netoVentas);
+    html += fila(cumplido ? 'Excedente' : 'Falta', Math.abs(obj.objNeto - netoVentas), { bold:true });
+  } else {
+    html += '<div class="cierre-hint">Todav\u00eda no hay objetivo cargado. Se carga desde el Panel de Ventas.</div>';
+  }
+  html += '</div>';
+  html += '<div class="pv-obj">';
+  html += '<div class="est-section-title">Ventas semana a semana (neto)</div>';
+  let haySem = false;
+  for (let s = 1; s <= 5; s++) {
+    if (s === 5 && sem[5] <= 0) continue;
+    html += fila('Semana ' + s, sem[s]);
+    haySem = true;
+  }
+  if (!haySem) html += '<div class="cierre-hint">No hay cierres cargados en este mes.</div>';
+  html += '</div>';
   body.innerHTML = html;
 }
 
