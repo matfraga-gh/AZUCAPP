@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-Q | ULTIMA | Estadisticas: Panel de Resultados Fase 1 (+ fixes O/N/P) ===== */
+/* ===== BUILD 2026-08-17-R | ULTIMA | Panel de Resultados: % por linea + objetivos de costo CM/CL/GO (+ Fase 1/O/N/P) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -8027,22 +8027,25 @@ async function cargarPanelResultados() {
   try {
     const r = _pvRango(PV_MES);
     const cierres = await api('cierres_caja?' + locFilter + '&fecha=gte.' + r.desde + '&fecha=lte.' + r.hasta + '&select=*&order=fecha.asc,id.asc') || [];
-    let objNeto = 0, hayObj = false, objHer = false;
+    let objNeto = 0, hayObj = false, objHer = false, cmPct = null, clPct = null, goPct = null;
+    const _pf = function(x){ const v = parseFloat(x); return isFinite(v) ? v : null; };
     try {
       if (agregado) {
         const allObjs = await api('objetivos_ventas?local=in.(' + reales.map(encodeURIComponent).join(',') + ')&mes=lte.' + PV_MES + '&select=*&order=mes.desc') || [];
         const seen = {};
         allObjs.forEach(function(o){ if (!seen[o.local]) { seen[o.local] = 1; objNeto += parseFloat(o.objetivo) || 0; hayObj = true; if (o.mes !== PV_MES) objHer = true; } });
       } else {
+        let s = null;
         const objs = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + PV_MES + '&select=*') || [];
-        if (objs.length) { objNeto = parseFloat(objs[0].objetivo) || 0; hayObj = true; }
+        if (objs.length) { s = objs[0]; }
         else {
           const prev = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=lt.' + PV_MES + '&select=*&order=mes.desc&limit=1') || [];
-          if (prev.length) { objNeto = parseFloat(prev[0].objetivo) || 0; hayObj = true; objHer = true; }
+          if (prev.length) { s = prev[0]; objHer = true; }
         }
+        if (s) { objNeto = parseFloat(s.objetivo) || 0; hayObj = true; cmPct = _pf(s.obj_cm_pct); clPct = _pf(s.obj_cl_pct); goPct = _pf(s.obj_go_pct); }
       }
     } catch (e) {}
-    renderPanelResultados(cierres, { objNeto: objNeto, hayObj: hayObj, objHer: objHer }, agregado);
+    renderPanelResultados(cierres, { objNeto: objNeto, hayObj: hayObj, objHer: objHer, cmPct: cmPct, clPct: clPct, goPct: goPct }, agregado);
   } catch (e) {
     body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los datos.</div>';
   }
@@ -8055,22 +8058,29 @@ function renderPanelResultados(cierres, obj, agregado) {
   const sem = { 1:0, 2:0, 3:0, 4:0, 5:0 };
   cierres.forEach(function(c){ sem[_pvSemana(c.fecha)] += computablePesos(c) / IVA_COEF; });
   const fila = function(label, val, o){ o = o || {};
-    const right = o.pend ? '<span style="opacity:.5;font-size:13px">pendiente</span>' : '<span>' + _pvMoney(Math.round(val)) + '</span>';
-    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 2px;border-bottom:1px solid rgba(0,0,0,.06)' + (o.bold ? ';font-weight:700' : '') + '"><span>' + label + '</span>' + right + '</div>';
+    const mid = o.pend ? '<span style="opacity:.5;font-size:13px">pendiente</span>' : '<span>' + _pvMoney(Math.round(val)) + '</span>';
+    const pctTxt = (!o.pend && o.pct != null) ? o.pct.toFixed(0) + '%' : '';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid rgba(0,0,0,.06)' + (o.bold ? ';font-weight:700' : '') + '">' +
+      '<span style="flex:1">' + label + '</span>' +
+      '<span style="min-width:120px;text-align:right">' + mid + '</span>' +
+      '<span style="min-width:60px;text-align:right;opacity:.6;font-size:13px">' + pctTxt + '</span>' +
+    '</div>';
   };
   let html = '';
   if (agregado) html += '<div class="cierre-hint" style="margin-bottom:12px">Vista consolidada: suma de todos los locales.</div>';
   html += '<div class="cierre-hint" style="margin-bottom:14px"><i class="ti ti-info-circle"></i> Fase 1: se muestran Ventas y objetivo. El costo de Mercader\u00eda, Laboral y Gastos Operativos se incorporan en las pr\u00f3ximas etapas.</div>';
   html += '<div class="pv-obj">';
   html += '<div class="est-section-title">Resultado del mes (acumulado, neto)</div>';
-  html += fila('Ventas', netoVentas);
+  html += '<div style="display:flex;gap:10px;padding:2px 2px 4px;font-size:11px;opacity:.55;letter-spacing:.3px"><span style="flex:1"></span><span style="min-width:120px;text-align:right">$ NETO</span><span style="min-width:60px;text-align:right">% VTAS</span></div>';
+  html += fila('Ventas', netoVentas, { pct:100 });
   html += fila('\u2212 Cto Mercader\u00eda', 0, { pend:true });
   html += fila('\u2212 Cto Laboral', 0, { pend:true });
   html += fila('\u2212 Gastos Operativos', 0, { pend:true });
-  html += fila('= Ganancia Bruta (provisoria)', netoVentas, { bold:true });
+  html += fila('= Ganancia Bruta (provisoria)', netoVentas, { bold:true, pct:100 });
   html += '</div>';
   html += '<div class="pv-obj">';
-  html += '<div class="pv-obj-head"><span class="est-section-title">Objetivo de ventas (neto)</span></div>';
+  const puedeEditObj = (isMaster() || isAdmin()) && !agregado;
+  html += '<div class="pv-obj-head"><span class="est-section-title">Objetivo de ventas (neto)</span>' + (puedeEditObj ? '<button class="btn-ghost pv-obj-edit" onclick="abrirObjetivo()"><i class="ti ti-pencil"></i> ' + (obj.hayObj ? 'Editar' : 'Cargar') + '</button>' : '') + '</div>';
   if (obj.hayObj) {
     if (obj.objHer) html += '<div class="cierre-hint" style="margin-bottom:10px">Objetivo heredado del mes anterior.</div>';
     const pct = obj.objNeto > 0 ? (netoVentas / obj.objNeto) * 100 : 0;
@@ -8082,7 +8092,23 @@ function renderPanelResultados(cierres, obj, agregado) {
     html += fila('Vendido', netoVentas);
     html += fila(cumplido ? 'Excedente' : 'Falta', Math.abs(obj.objNeto - netoVentas), { bold:true });
   } else {
-    html += '<div class="cierre-hint">Todav\u00eda no hay objetivo cargado. Se carga desde el Panel de Ventas.</div>';
+    html += '<div class="cierre-hint">Todavía no hay objetivo cargado.' + (puedeEditObj ? '' : ' Se carga desde el Panel de Ventas.') + '</div>';
+  }
+  if (!agregado && (obj.cmPct != null || obj.clPct != null || obj.goPct != null)) {
+    const gbP = 100 - (obj.cmPct||0) - (obj.clPct||0) - (obj.goPct||0);
+    const filaObj = function(label, pctv){
+      const dollars = pctv != null ? (pctv/100)*netoVentas : null;
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid rgba(0,0,0,.06)"><span style="flex:1">' + label + '</span><span style="min-width:60px;text-align:right">' + (pctv != null ? pctv.toFixed(0) + '%' : '—') + '</span><span style="min-width:120px;text-align:right">' + (dollars != null ? _pvMoney(Math.round(dollars)) : '—') + '</span></div>';
+    };
+    html += '<div class="est-section-title" style="margin-top:14px">Objetivos de costo (% s/ ventas → $)</div>';
+    html += '<div style="display:flex;gap:10px;padding:2px 2px 4px;font-size:11px;opacity:.55"><span style="flex:1"></span><span style="min-width:60px;text-align:right">%</span><span style="min-width:120px;text-align:right">$ OBJETIVO</span></div>';
+    html += filaObj('Cto Mercadería', obj.cmPct);
+    html += filaObj('Cto Laboral', obj.clPct);
+    html += filaObj('Gastos Operativos', obj.goPct);
+    html += '<div style="display:flex;align-items:center;gap:10px;padding:8px 2px;font-weight:700"><span style="flex:1">Ganancia Bruta objetivo</span><span style="min-width:60px;text-align:right">' + gbP.toFixed(0) + '%</span><span style="min-width:120px;text-align:right">' + _pvMoney(Math.round((gbP/100)*netoVentas)) + '</span></div>';
+    html += '<div class="cierre-hint" style="margin-top:6px">El $ objetivo se calcula sobre las ventas netas del mes.</div>';
+  } else if (puedeEditObj) {
+    html += '<div class="cierre-hint" style="margin-top:10px">Cargá los objetivos de costo (CM/CL/GO en %) con el botón de arriba.</div>';
   }
   html += '</div>';
   html += '<div class="pv-obj">';
@@ -8107,11 +8133,13 @@ window.abrirObjetivo = function() {
   document.getElementById('objetivoContexto').textContent = localLabel(PV_LOCAL) + ' · ' + PV_MES;
   document.getElementById('objetivoInput').value = '';
   initMoneyInput('objetivoInput');
+  const _setObjPct = function(o){ document.getElementById('objCmPct').value = (o && o.obj_cm_pct != null) ? o.obj_cm_pct : ''; document.getElementById('objClPct').value = (o && o.obj_cl_pct != null) ? o.obj_cl_pct : ''; document.getElementById('objGoPct').value = (o && o.obj_go_pct != null) ? o.obj_go_pct : ''; };
+  _setObjPct(null);
   document.getElementById('modalObjetivo').classList.add('show');
   api('objetivos_ventas?local=eq.' + encodeURIComponent(PV_LOCAL) + '&mes=eq.' + PV_MES + '&select=*').then(function(objs) {
-    if (objs && objs.length) { setMoneyVal('objetivoInput', parseFloat(objs[0].objetivo) || 0); return; }
+    if (objs && objs.length) { setMoneyVal('objetivoInput', parseFloat(objs[0].objetivo) || 0); _setObjPct(objs[0]); return; }
     return api('objetivos_ventas?local=eq.' + encodeURIComponent(PV_LOCAL) + '&mes=lt.' + PV_MES + '&select=*&order=mes.desc&limit=1').then(function(prev) {
-      if (prev && prev.length) setMoneyVal('objetivoInput', parseFloat(prev[0].objetivo) || 0);
+      if (prev && prev.length) { setMoneyVal('objetivoInput', parseFloat(prev[0].objetivo) || 0); _setObjPct(prev[0]); }
     });
   }).catch(function() {});
 };
@@ -8120,18 +8148,20 @@ window.guardarObjetivo = async function() {
   const err = document.getElementById('objetivoError'); err.textContent = '';
   const val = parseMiles(document.getElementById('objetivoInput').value);
   if (!val || val <= 0) { err.textContent = 'Ingresá un objetivo válido.'; return; }
+  const _gpct = function(id){ const el = document.getElementById(id); const v = parseFloat(String(el ? el.value : '').replace(',', '.')); return (isFinite(v) && v >= 0) ? v : null; };
+  const _cm = _gpct('objCmPct'), _cl = _gpct('objClPct'), _go = _gpct('objGoPct');
   const btn = document.getElementById('objetivoGuardarBtn');
   btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
   try {
     const ex = await api('objetivos_ventas?local=eq.' + encodeURIComponent(OBJ_LOCAL) + '&mes=eq.' + OBJ_MES + '&select=id') || [];
     if (ex.length) {
-      await api('objetivos_ventas?id=eq.' + ex[0].id, { method: 'PATCH', body: JSON.stringify({ objetivo: val, creado_por: currentUser.id }) });
+      await api('objetivos_ventas?id=eq.' + ex[0].id, { method: 'PATCH', body: JSON.stringify({ objetivo: val, obj_cm_pct: _cm, obj_cl_pct: _cl, obj_go_pct: _go, creado_por: currentUser.id }) });
     } else {
-      await api('objetivos_ventas', { method: 'POST', body: JSON.stringify({ local: OBJ_LOCAL, mes: OBJ_MES, objetivo: val, creado_por: currentUser.id, creado_en: new Date().toISOString() }) });
+      await api('objetivos_ventas', { method: 'POST', body: JSON.stringify({ local: OBJ_LOCAL, mes: OBJ_MES, objetivo: val, obj_cm_pct: _cm, obj_cl_pct: _cl, obj_go_pct: _go, creado_por: currentUser.id, creado_en: new Date().toISOString() }) });
     }
     toast('✓ Objetivo guardado', 'success');
     cerrarObjetivo();
-    cargarPanelVentas();
+    cargarPanelActivo();
   } catch (e) {
     err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e);
   } finally { btn.disabled = false; btn.textContent = t; }
