@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-S | ULTIMA | Fase 2: planilla GO (descarga/subida) + GO en panel (+ R/Fase1/O/N/P) ===== */
+/* ===== BUILD 2026-08-17-T | ULTIMA | Panel de Resultados: cards por indicador (Acum/%Obj/Obj/Dif) + GO (+ S/R/Fase1) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -8069,69 +8069,62 @@ function renderPanelResultados(cierres, obj, agregado, costos) {
   const netoVentas = brutoVentas / IVA_COEF;
   const sem = { 1:0, 2:0, 3:0, 4:0, 5:0 };
   cierres.forEach(function(c){ sem[_pvSemana(c.fecha)] += computablePesos(c) / IVA_COEF; });
-  const fila = function(label, val, o){ o = o || {};
-    const mid = o.pend ? '<span style="opacity:.5;font-size:13px">pendiente</span>' : '<span>' + _pvMoney(Math.round(val)) + '</span>';
-    const pctTxt = (!o.pend && o.pct != null) ? o.pct.toFixed(0) + '%' : '';
-    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid rgba(0,0,0,.06)' + (o.bold ? ';font-weight:700' : '') + '">' +
-      '<span style="flex:1">' + label + '</span>' +
-      '<span style="min-width:120px;text-align:right">' + mid + '</span>' +
-      '<span style="min-width:60px;text-align:right;opacity:.6;font-size:13px">' + pctTxt + '</span>' +
+
+  const pctOf = function(p){ return (p != null) ? (p/100)*netoVentas : null; };
+  const ventasObj = obj.hayObj ? obj.objNeto : null;
+  const cmObj = pctOf(obj.cmPct), clObj = pctOf(obj.clPct), goObj = pctOf(obj.goPct);
+  const hayCostoObj = (obj.cmPct != null || obj.clPct != null || obj.goPct != null);
+  const gbPct = hayCostoObj ? (100 - (obj.cmPct||0) - (obj.clPct||0) - (obj.goPct||0)) : null;
+  const cbObj = (gbPct != null) ? (gbPct/100)*netoVentas : null;
+  const cmAcum = null, clAcum = null;
+  const goAcum = (costos.goTotal != null) ? costos.goTotal : null;
+  const costosCompletos = (goAcum != null && cmAcum != null && clAcum != null);
+  const cbAcum = costosCompletos ? (netoVentas - goAcum - cmAcum - clAcum) : null;
+
+  const card = function(titulo, code, acum, objv, tipo){
+    const pctV = (objv != null && objv !== 0 && acum != null) ? (acum/objv*100) : null;
+    const difV = (acum != null && objv != null) ? (acum - objv) : null;
+    let difExtra = '', difStr = '—';
+    if (difV != null) {
+      const bueno = (tipo === 'costo') ? (difV <= 0) : (difV >= 0);
+      difExtra = ';color:' + (bueno ? '#4CAF7A' : 'var(--c-error)');
+      difStr = (difV > 0 ? '+' : (difV < 0 ? '−' : '')) + _pvMoney(Math.round(Math.abs(difV)));
+    }
+    const m = function(v){ return v != null ? _pvMoney(Math.round(v)) : '—'; };
+    const cel = function(lbl, val, extra){ return '<div style="flex:1;text-align:center;padding:7px 2px;border-left:1px solid var(--c-cream-border)"><div style="font-size:9px;opacity:.5;line-height:1.2">' + lbl + '</div><div style="font-weight:600;font-size:13px;margin-top:3px' + (extra||'') + '">' + val + '</div></div>'; };
+    return '<div style="border:1px solid var(--c-cream-border);border-radius:10px;overflow:hidden;margin-bottom:10px">' +
+      '<div style="text-align:center;font-weight:700;font-size:12px;letter-spacing:.6px;padding:7px;background:rgba(255,255,255,.05)">' + titulo + '</div>' +
+      '<div style="display:flex">' +
+        '<div style="flex:1;text-align:center;padding:7px 2px"><div style="font-size:9px;opacity:.5;line-height:1.2">$ ' + code + ' Acum</div><div style="font-weight:600;font-size:13px;margin-top:3px">' + m(acum) + '</div></div>' +
+        cel('% ' + code + ' Obj', (pctV != null) ? pctV.toFixed(0) + '%' : '—') +
+        cel('$ ' + code + ' Obj', m(objv)) +
+        cel('$ ' + code + ' Dif', difStr, difExtra) +
+      '</div>' +
     '</div>';
   };
-  let html = '';
-  if (agregado) html += '<div class="cierre-hint" style="margin-bottom:12px">Vista consolidada: suma de todos los locales.</div>';
-  html += '<div class="cierre-hint" style="margin-bottom:14px"><i class="ti ti-info-circle"></i> Fase 1: se muestran Ventas y objetivo. El costo de Mercader\u00eda, Laboral y Gastos Operativos se incorporan en las pr\u00f3ximas etapas.</div>';
-  html += '<div class="pv-obj">';
-  html += '<div class="est-section-title">Resultado del mes (acumulado, neto)</div>';
-  html += '<div style="display:flex;gap:10px;padding:2px 2px 4px;font-size:11px;opacity:.55;letter-spacing:.3px"><span style="flex:1"></span><span style="min-width:120px;text-align:right">$ NETO</span><span style="min-width:60px;text-align:right">% VTAS</span></div>';
-  const goT = (costos.goTotal != null) ? costos.goTotal : null;
-  const gbProv = netoVentas - (goT || 0);
-  html += fila('Ventas', netoVentas, { pct:100 });
-  html += fila('− Cto Mercadería', 0, { pend:true });
-  html += fila('− Cto Laboral', 0, { pend:true });
-  if (goT != null) html += fila('− Gastos Operativos', goT, { pct: netoVentas > 0 ? goT / netoVentas * 100 : null });
-  else html += fila('− Gastos Operativos', 0, { pend:true });
-  html += fila('= Ganancia Bruta (provisoria)', gbProv, { bold:true, pct: netoVentas > 0 ? gbProv / netoVentas * 100 : 100 });
-  html += '</div>';
-  html += '<div class="pv-obj">';
+
   const puedeEditObj = (isMaster() || isAdmin()) && !agregado;
-  html += '<div class="pv-obj-head"><span class="est-section-title">Objetivo de ventas (neto)</span>' + (puedeEditObj ? '<button class="btn-ghost pv-obj-edit" onclick="abrirObjetivo()"><i class="ti ti-pencil"></i> ' + (obj.hayObj ? 'Editar' : 'Cargar') + '</button>' : '') + '</div>';
-  if (obj.hayObj) {
-    if (obj.objHer) html += '<div class="cierre-hint" style="margin-bottom:10px">Objetivo heredado del mes anterior.</div>';
-    const pct = obj.objNeto > 0 ? (netoVentas / obj.objNeto) * 100 : 0;
-    const pctClamp = Math.max(0, Math.min(100, pct));
-    const cumplido = pct >= 100;
-    html += '<div class="pv-bar-wrap"><div class="pv-bar' + (cumplido ? ' ok' : '') + '" style="width:' + pctClamp.toFixed(1) + '%"></div></div>';
-    html += '<div class="pv-obj-pct">' + pct.toFixed(0) + '% del objetivo (acumulado del mes)</div>';
-    html += fila('Objetivo', obj.objNeto);
-    html += fila('Vendido', netoVentas);
-    html += fila(cumplido ? 'Excedente' : 'Falta', Math.abs(obj.objNeto - netoVentas), { bold:true });
-  } else {
-    html += '<div class="cierre-hint">Todavía no hay objetivo cargado.' + (puedeEditObj ? '' : ' Se carga desde el Panel de Ventas.') + '</div>';
-  }
-  if (!agregado && (obj.cmPct != null || obj.clPct != null || obj.goPct != null)) {
-    const gbP = 100 - (obj.cmPct||0) - (obj.clPct||0) - (obj.goPct||0);
-    const filaObj = function(label, pctv){
-      const dollars = pctv != null ? (pctv/100)*netoVentas : null;
-      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid rgba(0,0,0,.06)"><span style="flex:1">' + label + '</span><span style="min-width:60px;text-align:right">' + (pctv != null ? pctv.toFixed(0) + '%' : '—') + '</span><span style="min-width:120px;text-align:right">' + (dollars != null ? _pvMoney(Math.round(dollars)) : '—') + '</span></div>';
-    };
-    html += '<div class="est-section-title" style="margin-top:14px">Objetivos de costo (% s/ ventas → $)</div>';
-    html += '<div style="display:flex;gap:10px;padding:2px 2px 4px;font-size:11px;opacity:.55"><span style="flex:1"></span><span style="min-width:60px;text-align:right">%</span><span style="min-width:120px;text-align:right">$ OBJETIVO</span></div>';
-    html += filaObj('Cto Mercadería', obj.cmPct);
-    html += filaObj('Cto Laboral', obj.clPct);
-    html += filaObj('Gastos Operativos', obj.goPct);
-    html += '<div style="display:flex;align-items:center;gap:10px;padding:8px 2px;font-weight:700"><span style="flex:1">Ganancia Bruta objetivo</span><span style="min-width:60px;text-align:right">' + gbP.toFixed(0) + '%</span><span style="min-width:120px;text-align:right">' + _pvMoney(Math.round((gbP/100)*netoVentas)) + '</span></div>';
-    html += '<div class="cierre-hint" style="margin-top:6px">El $ objetivo se calcula sobre las ventas netas del mes.</div>';
-  } else if (puedeEditObj) {
-    html += '<div class="cierre-hint" style="margin-top:10px">Cargá los objetivos de costo (CM/CL/GO en %) con el botón de arriba.</div>';
-  }
-  html += '</div>';
+  let html = '';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+    '<span class="est-section-title" style="margin:0">Resultado del mes (acumulado, neto)</span>' +
+    (puedeEditObj ? '<button class="btn-ghost pv-obj-edit" onclick="abrirObjetivo()"><i class="ti ti-pencil"></i> Objetivos</button>' : '') + '</div>';
+  if (agregado) html += '<div class="cierre-hint" style="margin-bottom:12px">Vista consolidada: suma de todos los locales.</div>';
+  else if (obj.objHer) html += '<div class="cierre-hint" style="margin-bottom:12px">Objetivos heredados del mes anterior.</div>';
+
+  html += card('VENTAS', 'Vta', netoVentas, ventasObj, 'vta');
+  html += card('CTO LABORAL', 'CL', clAcum, clObj, 'costo');
+  html += card('CTO MERCADERÍA', 'CM', cmAcum, cmObj, 'costo');
+  html += card('GASTOS OPERATIVOS', 'GO', goAcum, goObj, 'costo');
+  html += card('CONTRIB. BRUTA', 'CB', cbAcum, cbObj, 'cb');
+
+  html += '<div class="cierre-hint" style="margin:8px 0 16px"><i class="ti ti-info-circle"></i> Gastos Operativos se carga desde “Gestión de estadísticas”. Cto Laboral y Cto Mercadería llegan en las próximas etapas.</div>';
+
   html += '<div class="pv-obj">';
   html += '<div class="est-section-title">Ventas semana a semana (neto)</div>';
   let haySem = false;
   for (let s = 1; s <= 5; s++) {
     if (s === 5 && sem[5] <= 0) continue;
-    html += fila('Semana ' + s, sem[s]);
+    html += '<div style="display:flex;justify-content:space-between;padding:8px 2px;border-bottom:1px solid var(--c-cream-border)"><span>Semana ' + s + '</span><span style="font-weight:600">' + _pvMoney(Math.round(sem[s])) + '</span></div>';
     haySem = true;
   }
   if (!haySem) html += '<div class="cierre-hint">No hay cierres cargados en este mes.</div>';
