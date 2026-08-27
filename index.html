@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817r">
+<link rel="stylesheet" href="styles.css?v=20260817s">
 </head>
 <body>
 
@@ -1690,6 +1690,7 @@
       <button type="button" class="stock-tab active" data-pvtab="ventas" onclick="setPvTab('ventas')">Panel de Ventas</button>
       <button type="button" class="stock-tab" id="pvTabResultados" data-pvtab="resultados" onclick="setPvTab('resultados')">Panel de Resultados</button>
     </div>
+    <button type="button" class="btn-ghost" id="pvGestionBtn" onclick="abrirGestionEst()" style="display:none;margin-bottom:12px"><i class="ti ti-settings"></i> Gestión de estadísticas</button>
     <div class="est-filtros">
       <label class="field" id="pvLocalWrap" style="flex:1;min-width:0"><span class="field-label">Local</span>
         <select id="pvLocal" onchange="onFiltroPanel()"></select>
@@ -1727,6 +1728,32 @@
     <div class="modal-actions">
       <button class="btn-ghost" onclick="cerrarObjetivo()">Cancelar</button>
       <button class="btn-primary" id="objetivoGuardarBtn" onclick="guardarObjetivo()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalGestionEst">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Gestión de estadísticas</h2>
+      <button class="modal-close" onclick="cerrarGestionEst()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <label class="field"><span class="field-label">Mes</span>
+        <select id="gestMes"></select>
+      </label>
+      <div class="est-section-title" style="margin-top:14px">Gastos Operativos (GO)</div>
+      <p class="field-hint">Descargá la planilla, completá los rubros por local y volvé a subirla. Trae los valores del mes (o del último cargado como referencia).</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button type="button" class="btn-ghost" onclick="descargarPlanillaGO()"><i class="ti ti-download"></i> Descargar planilla GO</button>
+        <label class="btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px"><i class="ti ti-upload"></i> Subir planilla GO
+          <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="subirPlanillaGO(this)">
+        </label>
+      </div>
+      <div class="field-hint" id="gestStatus" style="margin-top:10px"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="cerrarGestionEst()">Cerrar</button>
     </div>
   </div>
 </div>
@@ -2184,6 +2211,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817r"></script>
+<script src="app.js?v=20260817s"></script>
 </body>
 </html>

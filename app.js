@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-R | ULTIMA | Panel de Resultados: % por linea + objetivos de costo CM/CL/GO (+ Fase 1/O/N/P) ===== */
+/* ===== BUILD 2026-08-17-S | ULTIMA | Fase 2: planilla GO (descarga/subida) + GO en panel (+ R/Fase1/O/N/P) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -7809,6 +7809,8 @@ function openPanelVentas() {
   const puedeResultados = isMaster() || isAdmin();
   const tabRes = document.getElementById('pvTabResultados');
   if (tabRes) tabRes.style.display = puedeResultados ? '' : 'none';
+  const gestBtn = document.getElementById('pvGestionBtn');
+  if (gestBtn) gestBtn.style.display = puedeResultados ? '' : 'none';
   if (!puedeResultados) PV_TAB = 'ventas';
   poblarFiltrosPanel();
   aplicarPvTabUI();
@@ -8045,13 +8047,23 @@ async function cargarPanelResultados() {
         if (s) { objNeto = parseFloat(s.objetivo) || 0; hayObj = true; cmPct = _pf(s.obj_cm_pct); clPct = _pf(s.obj_cl_pct); goPct = _pf(s.obj_go_pct); }
       }
     } catch (e) {}
-    renderPanelResultados(cierres, { objNeto: objNeto, hayObj: hayObj, objHer: objHer, cmPct: cmPct, clPct: clPct, goPct: goPct }, agregado);
+    let goTotal = null;
+    try {
+      const goRows = agregado
+        ? (await api('gastos_operativos?local=in.(' + reales.map(encodeURIComponent).join(',') + ')&mes=eq.' + PV_MES + '&select=*') || [])
+        : (await api('gastos_operativos?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + PV_MES + '&select=*') || []);
+      if (goRows.length) {
+        goTotal = goRows.reduce(function(sm, r){ return sm + (parseFloat(r.alquileres)||0) + (parseFloat(r.servicios)||0) + (parseFloat(r.mantenimiento)||0) + (parseFloat(r.lavanderia)||0) + (parseFloat(r.marketing)||0) + (parseFloat(r.sistemas)||0) + (parseFloat(r.otros)||0); }, 0);
+      }
+    } catch (e) {}
+    renderPanelResultados(cierres, { objNeto: objNeto, hayObj: hayObj, objHer: objHer, cmPct: cmPct, clPct: clPct, goPct: goPct }, agregado, { goTotal: goTotal });
   } catch (e) {
     body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los datos.</div>';
   }
 }
 
-function renderPanelResultados(cierres, obj, agregado) {
+function renderPanelResultados(cierres, obj, agregado, costos) {
+  costos = costos || {};
   const body = document.getElementById('pvBody');
   const brutoVentas = cierres.reduce(function(s, c){ return s + computablePesos(c); }, 0);
   const netoVentas = brutoVentas / IVA_COEF;
@@ -8072,11 +8084,14 @@ function renderPanelResultados(cierres, obj, agregado) {
   html += '<div class="pv-obj">';
   html += '<div class="est-section-title">Resultado del mes (acumulado, neto)</div>';
   html += '<div style="display:flex;gap:10px;padding:2px 2px 4px;font-size:11px;opacity:.55;letter-spacing:.3px"><span style="flex:1"></span><span style="min-width:120px;text-align:right">$ NETO</span><span style="min-width:60px;text-align:right">% VTAS</span></div>';
+  const goT = (costos.goTotal != null) ? costos.goTotal : null;
+  const gbProv = netoVentas - (goT || 0);
   html += fila('Ventas', netoVentas, { pct:100 });
-  html += fila('\u2212 Cto Mercader\u00eda', 0, { pend:true });
-  html += fila('\u2212 Cto Laboral', 0, { pend:true });
-  html += fila('\u2212 Gastos Operativos', 0, { pend:true });
-  html += fila('= Ganancia Bruta (provisoria)', netoVentas, { bold:true, pct:100 });
+  html += fila('− Cto Mercadería', 0, { pend:true });
+  html += fila('− Cto Laboral', 0, { pend:true });
+  if (goT != null) html += fila('− Gastos Operativos', goT, { pct: netoVentas > 0 ? goT / netoVentas * 100 : null });
+  else html += fila('− Gastos Operativos', 0, { pend:true });
+  html += fila('= Ganancia Bruta (provisoria)', gbProv, { bold:true, pct: netoVentas > 0 ? gbProv / netoVentas * 100 : 100 });
   html += '</div>';
   html += '<div class="pv-obj">';
   const puedeEditObj = (isMaster() || isAdmin()) && !agregado;
@@ -8165,6 +8180,91 @@ window.guardarObjetivo = async function() {
   } catch (e) {
     err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e);
   } finally { btn.disabled = false; btn.textContent = t; }
+};
+
+// ============ GESTIÓN DE ESTADÍSTICAS — planillas (Fase 2) ============
+let _xlsxP = null;
+function ensureXLSX() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (_xlsxP) return _xlsxP;
+  _xlsxP = new Promise(function(resolve, reject){
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    sc.onload = function(){ resolve(window.XLSX); };
+    sc.onerror = function(){ _xlsxP = null; reject(new Error('No se pudo cargar la librería de Excel.')); };
+    document.head.appendChild(sc);
+  });
+  return _xlsxP;
+}
+function _goLocales() { return getLocalesActivos().filter(function(l){ return !/transversal/i.test(l); }); }
+function _nz(x){ const v = parseFloat(x); return isFinite(v) ? v : 0; }
+
+window.abrirGestionEst = function() {
+  if (!isMaster() && !isAdmin()) return;
+  const sel = document.getElementById('gestMes');
+  const hoy = new Date();
+  const ops = [];
+  for (let i = 0; i < 18; i++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    const val = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    ops.push('<option value="' + val + '"' + (val === PV_MES ? ' selected' : '') + '>' + MESES_CORTO[d.getMonth()] + ' ' + d.getFullYear() + '</option>');
+  }
+  sel.innerHTML = ops.join('');
+  document.getElementById('gestStatus').textContent = '';
+  document.getElementById('modalGestionEst').classList.add('show');
+};
+window.cerrarGestionEst = function() { document.getElementById('modalGestionEst').classList.remove('show'); };
+
+window.descargarPlanillaGO = async function() {
+  const st = document.getElementById('gestStatus'); st.textContent = 'Preparando...';
+  const mes = document.getElementById('gestMes').value;
+  try {
+    const XLSX = await ensureXLSX();
+    const locales = _goLocales();
+    const byLocal = {};
+    (await api('gastos_operativos?mes=eq.' + mes + '&select=*') || []).forEach(function(r){ byLocal[r.local] = r; });
+    const faltan = locales.filter(function(l){ return !byLocal[l]; });
+    if (faltan.length) {
+      const seen = {};
+      (await api('gastos_operativos?mes=lt.' + mes + '&select=*&order=mes.desc') || []).forEach(function(r){ if (!byLocal[r.local] && !seen[r.local]) { seen[r.local] = 1; byLocal[r.local] = r; } });
+    }
+    const data = [['Local','Alquileres','Servicios','Mantenimiento','Lavanderia','Marketing','Sistemas','Otros']];
+    locales.forEach(function(l){ const r = byLocal[l] || {};
+      data.push([localLabel(l), _nz(r.alquileres), _nz(r.servicios), _nz(r.mantenimiento), _nz(r.lavanderia), _nz(r.marketing), _nz(r.sistemas), _nz(r.otros)]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'GO ' + mes);
+    XLSX.writeFile(wb, 'Planilla_GO_' + mes + '.xlsx');
+    st.textContent = 'Planilla descargada. Editá los valores y volvé a subirla.';
+  } catch (e) { st.textContent = 'Error: ' + ((e && e.message) || e); }
+};
+
+window.subirPlanillaGO = async function(input) {
+  const file = input.files && input.files[0]; if (!file) return;
+  const st = document.getElementById('gestStatus'); st.textContent = 'Procesando...';
+  const mes = document.getElementById('gestMes').value;
+  try {
+    const XLSX = await ensureXLSX();
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+    const rev = {}; getLocalesActivos().forEach(function(l){ rev[String(localLabel(l)).trim().toLowerCase()] = l; });
+    const pN = function(x){ if (x == null || x === '') return 0; if (typeof x === 'number') return x; const v = parseFloat(String(x).replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.')); return isFinite(v) ? v : 0; };
+    let n = 0;
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i]; if (!row || row[0] == null || row[0] === '') continue;
+      const slug = rev[String(row[0]).trim().toLowerCase()]; if (!slug) continue;
+      const rec = { local: slug, mes: mes, alquileres: pN(row[1]), servicios: pN(row[2]), mantenimiento: pN(row[3]), lavanderia: pN(row[4]), marketing: pN(row[5]), sistemas: pN(row[6]), otros: pN(row[7]), creado_por: currentUser.id, actualizado_en: new Date().toISOString() };
+      const ex = await api('gastos_operativos?local=eq.' + encodeURIComponent(slug) + '&mes=eq.' + mes + '&select=id') || [];
+      if (ex.length) await api('gastos_operativos?id=eq.' + ex[0].id, { method: 'PATCH', body: JSON.stringify(rec) });
+      else await api('gastos_operativos', { method: 'POST', body: JSON.stringify(rec) });
+      n++;
+    }
+    st.textContent = '✓ ' + n + ' locales cargados para ' + mes + '.';
+    toast('✓ Planilla GO cargada', 'success');
+    cargarPanelActivo();
+  } catch (e) { st.textContent = 'Error: ' + ((e && e.message) || e); }
+  finally { input.value = ''; }
 };
 
 let EST_MES = '', EST_LOCAL = '';
