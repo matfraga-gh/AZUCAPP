@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-V | ULTIMA | Fase 3: planilla CL (sueldos + prorrateo) + VN rename + CB siempre (+ U/T/S) ===== */
+/* ===== BUILD 2026-08-17-W | ULTIMA | fix baja de empleados (si hay historial, activo=false) + Fase 3 CL (+ V/U/T) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -3530,7 +3530,7 @@ function renderPersonal() {
         acciones += '<button class="btn-ghost pc-btn" onclick="crearAccesoEmpleado(' + p.empleado.id + ')"><i class="ti ti-user-plus"></i>Crear acceso</button>';
       }
       if (p.empleado) {
-        acciones += '<button class="btn-ghost pc-btn pc-btn-danger" onclick="eliminarPersona(' + p.empleado.id + ', ' + (p.user ? p.user.id : 'null') + ')"><i class="ti ti-trash"></i>Eliminar</button>';
+        acciones += '<button class="btn-ghost pc-btn pc-btn-danger" onclick="eliminarPersona(' + p.empleado.id + ', ' + (p.user ? p.user.id : 'null') + ')"><i class="ti ti-trash"></i>Dar de baja</button>';
       } else if (p.user) {
         acciones += '<button class="btn-ghost pc-btn pc-btn-danger" onclick="eliminarAccesoHuerfano(' + p.user.id + ')"><i class="ti ti-trash"></i>Eliminar acceso</button>';
       }
@@ -7207,21 +7207,26 @@ window.eliminarPersona = async function(empId, userId) {
   const p = PERSONAS_CACHE.find(x => x.empleado && x.empleado.id === empId);
   const nombre = p ? p.nombreCompleto : 'esta persona';
   const ok = await showConfirm({
-    title: 'Eliminar persona',
-    msg: 'Vas a eliminar a ' + nombre + ' de forma permanente (ficha y acceso a la app). Esto NO se puede deshacer. Si la persona tiene turnos o propinas cargadas, el sistema no va a dejar borrarla: en ese caso us\u00e1 Desactivar.',
-    danger: true, okLabel: 'Eliminar', cancelLabel: 'Cancelar'
+    title: 'Dar de baja',
+    msg: 'Vas a dar de baja a ' + nombre + '. Si no tiene historial se elimina por completo; si tiene turnos o propinas cargadas, se da de baja: sale del roster y de propinas, se le quita el acceso y se conserva el historial. En ambos casos deja de figurar en el listado.',
+    danger: true, okLabel: 'Dar de baja', cancelLabel: 'Cancelar'
   });
   if (!ok) return;
   try {
-    if (userId) await api('roster_usuarios?id=eq.' + userId, { method: 'DELETE' });
-    await api('empleados?id=eq.' + empId, { method: 'DELETE' });
+    let baja = false;
+    if (userId) {
+      try { await api('roster_usuarios?id=eq.' + userId, { method: 'DELETE' }); }
+      catch (_) { await api('roster_usuarios?id=eq.' + userId, { method: 'PATCH', body: JSON.stringify({ activo: false }) }); baja = true; }
+    }
+    try { await api('empleados?id=eq.' + empId, { method: 'DELETE' }); }
+    catch (_) { await api('empleados?id=eq.' + empId, { method: 'PATCH', body: JSON.stringify({ activo: false }) }); baja = true; }
     ADMIN_EMPLEADOS_CACHE = (ADMIN_EMPLEADOS_CACHE || []).filter(e => e.id !== empId);
     if (userId) ADMIN_USUARIOS_CACHE = (ADMIN_USUARIOS_CACHE || []).filter(u => u.id !== userId);
     construirPersonas();
     renderPersonal();
-    toast('Persona eliminada', 'success');
+    toast(baja ? 'Dada de baja: fuera de roster y propinas, historial conservado.' : 'Persona eliminada', 'success');
   } catch (e) {
-    toast('No se pudo eliminar (puede tener turnos o propinas asociadas). Prob\u00e1 con Desactivar.', 'error');
+    toast('No se pudo dar de baja: ' + ((e && e.message) || e), 'error');
     try { openPersonal(); } catch (_) {}
   }
 };
