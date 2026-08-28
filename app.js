@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-W | ULTIMA | fix baja de empleados (si hay historial, activo=false) + Fase 3 CL (+ V/U/T) ===== */
+/* ===== BUILD 2026-08-17-Z | ULTIMA | tilde Externo (propina si, nomina no) + eliminar cierre propina (+ Y/X/CL) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -1743,6 +1743,7 @@ function abrirNuevoCierre() {
   CIERRE_EDIT_PUNTOS = {};
   CIERRE_LOCAL_ACTUAL = PROP_LOCAL_SEL;
   const tit = document.getElementById('cierreModalTitulo'); if (tit) tit.textContent = 'Nuevo cierre';
+  { const _be = document.getElementById('btnEliminarPropina'); if (_be) _be.style.display = 'none'; }
 
   document.getElementById('cierreLocal').value = localLabel(PROP_LOCAL_SEL);
   document.getElementById('cierreFecha').value = hoyStr();
@@ -1793,6 +1794,7 @@ async function abrirEditarCierre(cierreId) {
   CIERRE_EDIT_PUNTOS = {};
   CIERRE_LOCAL_ACTUAL = c.local;
   const tit = document.getElementById('cierreModalTitulo'); if (tit) tit.textContent = 'Editar cierre';
+  { const _be = document.getElementById('btnEliminarPropina'); if (_be) _be.style.display = (isMaster() || isAdmin()) ? '' : 'none'; }
 
   document.getElementById('cierreLocal').value = localLabel(c.local);
   document.getElementById('cierreFecha').value = c.fecha || hoyStr();
@@ -2049,6 +2051,26 @@ async function guardarCierre() {
   }
 }
 window.guardarCierre = guardarCierre;
+window.eliminarCierrePropina = async function() {
+  if (!isMaster() && !isAdmin()) return;
+  if (!CIERRE_EDITANDO) return;
+  const cc = (PROP_CIERRES || []).find(function(x){ return x.id === CIERRE_EDITANDO; });
+  const aviso = (cc && cc.pagado) ? ' OJO: este cierre ya figura como PAGADO.' : '';
+  const ok = await showConfirm({ title: 'Eliminar cierre de propina', msg: 'Vas a eliminar este cierre de propina y su reparto entre los colaboradores. Esto no se puede deshacer.' + aviso, danger: true, okLabel: 'Eliminar', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  try {
+    await api('propinas_asignaciones?cierre_id=eq.' + CIERRE_EDITANDO, { method: 'DELETE' });
+    await api('propinas_cierres?id=eq.' + CIERRE_EDITANDO, { method: 'DELETE' });
+    closeNuevoCierre();
+    CIERRE_EDITANDO = null;
+    toast('Cierre de propina eliminado', 'success');
+    PROP_CIERRES = await api('propinas_cierres?order=fecha.desc,id.desc') || [];
+    renderPropGestKpis();
+    renderPropGestTabla();
+  } catch (e) {
+    toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error');
+  }
+};
 window.closeNuevoCierre = function() {
   document.getElementById('modalNuevoCierre').classList.remove('show');
 };
@@ -3386,7 +3408,7 @@ async function cargarUsuarios() {
 
 async function cargarEmpleados() {
   try {
-    ADMIN_EMPLEADOS_CACHE = await api('empleados?activo=eq.true&select=id,nombre,apellido,nombre_p,sector,categoria,local,telefono,fecha_nac,es_multilocal,eventual,activo,documento,email,alias,talle_remera,talle_pantalon,talle_calzado&order=apellido.asc') || [];
+    ADMIN_EMPLEADOS_CACHE = await api('empleados?activo=eq.true&select=id,nombre,apellido,nombre_p,sector,categoria,local,telefono,fecha_nac,es_multilocal,eventual,externo,activo,documento,email,alias,talle_remera,talle_pantalon,talle_calzado&order=apellido.asc') || [];
   } catch (e) {
     console.warn('Error al cargar empleados:', e);
     ADMIN_EMPLEADOS_CACHE = [];
@@ -3421,6 +3443,7 @@ function armarPersona(e, u) {
     talleCalzado: e ? (e.talle_calzado || '') : '',
     esMultilocal: e ? !!e.es_multilocal : false,
     eventual: e ? !!e.eventual : false,
+    externo: e ? !!e.externo : false,
     tieneAcceso: !!u,
     accesoActivo: u ? !!u.activo : false,
     orden: (apellido || pila || (u ? u.nombre : '') || '').toLowerCase()
@@ -3516,6 +3539,7 @@ function renderPersonal() {
     const chips = [];
     if (p.local) chips.push('<span class="pc-chip"><i class="ti ti-map-pin"></i>' + esc(LOCAL_LABELS[p.local] || p.local) + '</span>');
     if (p.esMultilocal) chips.push('<span class="pc-chip"><i class="ti ti-arrows-shuffle"></i>Multilocal</span>');
+    if (p.externo) chips.push('<span class="pc-chip"><i class="ti ti-external-link"></i>Externo</span>');
     if (p.tieneAcceso && !p.accesoActivo) chips.push('<span class="pc-chip pc-chip-off"><i class="ti ti-user-off"></i>Acceso inactivo</span>');
 
     let acciones = '<button class="btn-ghost pc-btn" onclick="abrirFicha(\'' + p.key + '\')"><i class="ti ti-id"></i>Ver ficha</button>';
@@ -3576,6 +3600,7 @@ window.abrirFicha = function(key) {
     fila('Talle pantalón', p.tallePantalon) +
     fila('Talle calzado', p.talleCalzado) +
     fila('Multilocal', p.esMultilocal ? 'Sí' : 'No') +
+    fila('Externo (no nómina)', p.externo ? 'Sí' : 'No') +
     fila('Estado de acceso', estado);
   const btnEd = document.getElementById('fichaEditarBtn');
   if (btnEd) {
@@ -3633,6 +3658,7 @@ window.crearFichaParaUser = function(userId) {
   document.getElementById('efMultilocal').checked = false;
   document.getElementById('efMultilocal').disabled = false;
   if (document.getElementById('efEventual')) document.getElementById('efEventual').checked = false;
+  if (document.getElementById('efExterno')) document.getElementById('efExterno').checked = false;
 
   const todos = getLocalesActivos();
   document.getElementById('efLocal').innerHTML =
@@ -3681,6 +3707,7 @@ window.abrirEditarFicha = function(key) {
   document.getElementById('efCategoria').value = p.categoria || '';
   document.getElementById('efMultilocal').checked = !!p.esMultilocal;
   if (document.getElementById('efEventual')) document.getElementById('efEventual').checked = !!p.eventual;
+  if (document.getElementById('efExterno')) document.getElementById('efExterno').checked = !!p.externo;
 
   // Local principal (incluye el actual aunque esté inactivo)
   const todos = getLocalesActivos().slice();
@@ -3748,7 +3775,7 @@ window.guardarEditarFicha = async function() {
     btn.disabled = true; btn.textContent = 'Guardando...';
     try {
       const nuevoEmp = { nombre_p: nombre_p || null, nombre: nombre_p || null, apellido: apellido || null,
-        sector: sector || null, categoria: categoria || null, local, es_multilocal: multilocal, eventual: (document.getElementById('efEventual') ? document.getElementById('efEventual').checked : false), activo: true };
+        sector: sector || null, categoria: categoria || null, local, es_multilocal: multilocal, eventual: (document.getElementById('efEventual') ? document.getElementById('efEventual').checked : false), externo: (document.getElementById('efExterno') ? document.getElementById('efExterno').checked : false), activo: true };
       const res = await api('empleados', { method: 'POST', body: JSON.stringify(nuevoEmp) });
       const empId = (Array.isArray(res) ? res[0] : res).id;
       const locs = _gridSel.length ? _gridSel : null;
@@ -3795,7 +3822,8 @@ window.guardarEditarFicha = async function() {
       categoria: categoria || null,
       local: local,
       es_multilocal: multilocal,
-      eventual: (document.getElementById('efEventual') ? document.getElementById('efEventual').checked : false)
+      eventual: (document.getElementById('efEventual') ? document.getElementById('efEventual').checked : false),
+      externo: (document.getElementById('efExterno') ? document.getElementById('efExterno').checked : false)
     };
     await api('empleados?id=eq.' + p.empleado.id, { method: 'PATCH', body: JSON.stringify(empPatch) });
     const ec = (ADMIN_EMPLEADOS_CACHE || []).find(e => e.id === p.empleado.id);
@@ -8227,10 +8255,54 @@ window.abrirGestionEst = function() {
     ops.push('<option value="' + val + '"' + (val === PV_MES ? ' selected' : '') + '>' + MESES_CORTO[d.getMonth()] + ' ' + d.getFullYear() + '</option>');
   }
   sel.innerHTML = ops.join('');
+  const locSel = document.getElementById('gestObjLocal');
+  if (locSel) locSel.innerHTML = _optsLocalesGest('');
   document.getElementById('gestStatus').textContent = '';
   document.getElementById('modalGestionEst').classList.add('show');
+  if (typeof cargarObjGest === 'function') cargarObjGest();
 };
 window.cerrarGestionEst = function() { document.getElementById('modalGestionEst').classList.remove('show'); };
+
+function _optsLocalesGest(selm) {
+  return _goLocales().map(function(l){ return '<option value="' + esc(l) + '"' + (l === selm ? ' selected' : '') + '>' + esc(localLabel(l)) + '</option>'; }).join('');
+}
+window.cargarObjGest = async function() {
+  const locEl = document.getElementById('gestObjLocal'); if (!locEl) return;
+  const loc = locEl.value; const mes = document.getElementById('gestMes').value;
+  const st = document.getElementById('gestObjStatus'); if (st) st.textContent = '';
+  document.getElementById('gestObjVta').value = ''; initMoneyInput('gestObjVta');
+  document.getElementById('gestObjCm').value = ''; document.getElementById('gestObjCl').value = ''; document.getElementById('gestObjGo').value = '';
+  if (!loc) return;
+  try {
+    let src = null;
+    const objs = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + mes + '&select=*') || [];
+    if (objs.length) src = objs[0];
+    else { const prev = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=lt.' + mes + '&select=*&order=mes.desc&limit=1') || []; if (prev.length) { src = prev[0]; if (st) st.textContent = 'Heredado del mes anterior — guardá para fijarlo en este mes.'; } }
+    if (src) {
+      setMoneyVal('gestObjVta', parseFloat(src.objetivo) || 0);
+      if (src.obj_cm_pct != null) document.getElementById('gestObjCm').value = src.obj_cm_pct;
+      if (src.obj_cl_pct != null) document.getElementById('gestObjCl').value = src.obj_cl_pct;
+      if (src.obj_go_pct != null) document.getElementById('gestObjGo').value = src.obj_go_pct;
+    }
+  } catch (e) {}
+};
+window.guardarObjGest = async function() {
+  const loc = document.getElementById('gestObjLocal').value;
+  const mes = document.getElementById('gestMes').value;
+  const st = document.getElementById('gestObjStatus');
+  if (!loc) { if (st) st.textContent = 'Elegí un local.'; return; }
+  const val = parseMiles(document.getElementById('gestObjVta').value);
+  const gp = function(id){ const v = parseFloat(String(document.getElementById(id).value || '').replace(',', '.')); return (isFinite(v) && v >= 0) ? v : null; };
+  const rec = { objetivo: (val > 0 ? val : 0), obj_cm_pct: gp('gestObjCm'), obj_cl_pct: gp('gestObjCl'), obj_go_pct: gp('gestObjGo'), creado_por: currentUser.id };
+  try {
+    const ex = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + mes + '&select=id') || [];
+    if (ex.length) await api('objetivos_ventas?id=eq.' + ex[0].id, { method: 'PATCH', body: JSON.stringify(rec) });
+    else await api('objetivos_ventas', { method: 'POST', body: JSON.stringify(Object.assign({ local: loc, mes: mes, creado_en: new Date().toISOString() }, rec)) });
+    if (st) st.textContent = '✓ Objetivos guardados.';
+    toast('✓ Objetivos guardados', 'success');
+    cargarPanelActivo();
+  } catch (e) { if (st) st.textContent = 'Error: ' + ((e && e.message) || e); }
+};
 
 window.descargarPlanillaGO = async function() {
   const st = document.getElementById('gestStatus'); st.textContent = 'Preparando...';
@@ -8345,7 +8417,7 @@ function _mesInfo(mes) {
 }
 
 async function _fetchCLData(mes) {
-  const emps = await apiAll('empleados?activo=eq.true&select=id,local,es_multilocal,eventual') || [];
+  const emps = await apiAll('empleados?activo=eq.true&select=id,local,es_multilocal,eventual,externo') || [];
   const sueldosArr = await apiAll('sueldos_mensuales?mes=eq.' + mes + '&select=empleado_id,sueldo') || [];
   const aportesArr = await apiAll('costos_laborales_local?mes=eq.' + mes + '&select=local,aportes,adicionales') || [];
   const r = _pvRango(mes);
@@ -8374,6 +8446,7 @@ function _computeCLPorLocal(mes, data) {
     empDay[t.empleado_id][t.dia][loc] = 1;
   });
   data.emps.forEach(function(e){
+    if (e.externo) return;
     const S = data.sueldos[e.id]; if (!S) return;
     if (e.eventual) {
       const days = empDay[e.id] || {};
@@ -8401,7 +8474,7 @@ window.descargarPlanillaCL = async function() {
   const mes = document.getElementById('gestMes').value;
   try {
     const XLSX = await ensureXLSX();
-    const emps = await apiAll('empleados?activo=eq.true&select=id,apellido,nombre_p,nombre,local,es_multilocal,eventual&order=local.asc,apellido.asc') || [];
+    const emps = (await apiAll('empleados?activo=eq.true&select=id,apellido,nombre_p,nombre,local,es_multilocal,eventual,externo&order=local.asc,apellido.asc') || []).filter(function(e){ return !e.externo; });
     const sueldos = {};
     (await apiAll('sueldos_mensuales?mes=eq.' + mes + '&select=empleado_id,sueldo') || []).forEach(function(r){ sueldos[r.empleado_id] = r.sueldo; });
     const faltan = emps.filter(function(e){ return sueldos[e.id] == null; });

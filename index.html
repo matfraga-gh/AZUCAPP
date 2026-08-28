@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817w">
+<link rel="stylesheet" href="styles.css?v=20260817z">
 </head>
 <body>
 
@@ -1478,6 +1478,10 @@
         <input type="checkbox" id="efEventual" style="width:auto;">
         <span class="field-label" style="margin:0;">Eventual (refuerzo; su costo cuenta solo los días del roster)</span>
       </label>
+      <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px;cursor:pointer;">
+        <input type="checkbox" id="efExterno" style="width:auto;">
+        <span class="field-label" style="margin:0;">Externo (participa de propinas, no es de nómina)</span>
+      </label>
 
       <div id="efLocalesSection" style="margin-top:16px;">
         <p class="field-label" style="margin-bottom:4px;">Locales asignados</p>
@@ -1592,6 +1596,7 @@
       <div class="login-error" id="cierreError"></div>
     </div>
     <div class="modal-actions">
+      <button class="btn-ghost ped-danger" id="btnEliminarPropina" style="display:none;" onclick="eliminarCierrePropina()">Eliminar</button>
       <button class="btn-ghost" onclick="closeNuevoCierre()">Cancelar</button>
       <button class="btn-primary" id="btnGuardarCierre" onclick="guardarCierre()">Guardar cierre</button>
     </div>
@@ -1744,9 +1749,24 @@
     </div>
     <div class="modal-body">
       <label class="field"><span class="field-label">Mes</span>
-        <select id="gestMes"></select>
+        <select id="gestMes" onchange="cargarObjGest()"></select>
       </label>
-      <div class="est-section-title" style="margin-top:14px">Gastos Operativos (GO)</div>
+      <div class="est-section-title" style="margin-top:14px">Objetivos por local</div>
+      <label class="field" style="margin-top:6px"><span class="field-label">Local</span>
+        <select id="gestObjLocal" onchange="cargarObjGest()"></select>
+      </label>
+      <label class="field" style="margin-top:8px"><span class="field-label">Objetivo de ventas (neto, sin IVA)</span>
+        <input type="text" inputmode="decimal" id="gestObjVta" placeholder="$ 0">
+      </label>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <label class="field" style="flex:1"><span class="field-label">CM %</span><input type="number" step="any" min="0" id="gestObjCm" placeholder="28"></label>
+        <label class="field" style="flex:1"><span class="field-label">CL %</span><input type="number" step="any" min="0" id="gestObjCl" placeholder="30"></label>
+        <label class="field" style="flex:1"><span class="field-label">GO %</span><input type="number" step="any" min="0" id="gestObjGo" placeholder="15"></label>
+      </div>
+      <button type="button" class="btn-primary" onclick="guardarObjGest()" style="margin-top:10px"><i class="ti ti-check"></i> Guardar objetivos</button>
+      <div class="field-hint" id="gestObjStatus" style="margin-top:6px"></div>
+      <div style="height:1px;background:var(--c-cream-border);margin:16px 0"></div>
+      <div class="est-section-title">Gastos Operativos (GO)</div>
       <p class="field-hint">Descargá la planilla, completá los rubros por local y volvé a subirla. Trae los valores del mes (o del último cargado como referencia).</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <button type="button" class="btn-ghost" onclick="descargarPlanillaGO()"><i class="ti ti-download"></i> Descargar planilla GO</button>
@@ -2231,6 +2251,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817w"></script>
+<script src="app.js?v=20260817z"></script>
 </body>
 </html>
