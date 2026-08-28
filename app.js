@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AF | ULTIMA | checkbox marcado se pinta naranja (Multilocal/Eventual/Externo) (+ AE/AD/AC) ===== */
+/* ===== BUILD 2026-08-17-AG | ULTIMA | registro de vistas de biblioteca (quien abre que documento) (+ AF/AE/AD) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -4698,7 +4698,7 @@ function renderBibContenidos(visibles) {
     const tipo = BIB_TIPOS.find(t => t.key === c.tipo) || BIB_TIPOS[0];
     const cat = BIB_CATEGORIAS.find(k => k.id === c.categoria_id);
     html += `
-      <a class="bib-card" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">
+      <a class="bib-card" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer" onclick="registrarVistaBib(${c.id})">
         <div class="bib-card-top">
           <div class="bib-card-icon ${tipo.cls}"><i class="ti ${tipo.icon}"></i></div>
           <span class="bib-card-tipo">${tipo.label}</span>
@@ -4713,6 +4713,18 @@ function renderBibContenidos(visibles) {
   html += '</div>';
   cont.innerHTML = html;
 }
+
+// Registro de vista de documento (fire-and-forget: nunca frena ni molesta al usuario)
+window.registrarVistaBib = function(contId) {
+  try {
+    api('biblioteca_vistas', { method: 'POST', body: JSON.stringify({
+      contenido_id: contId,
+      user_id: (currentUser && currentUser.id) || null,
+      local: (currentUser && currentUser.local) || null,
+      visto_en: new Date().toISOString()
+    }) }).catch(function(){});
+  } catch (e) {}
+};
 
 // ============================================
 // VISTA ADMIN: Administrar Biblioteca
