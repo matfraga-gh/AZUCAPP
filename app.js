@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AC | ULTIMA | fix reabrir modales (.show vs display inline) - Gestion andaba 1 sola vez (+ AB/AA/Z) ===== */
+/* ===== BUILD 2026-08-17-AD | ULTIMA | Panel Resultados: celda % Acum (vs ventas) + % Obj (config); CB=100-sum; consolidado promedia % (+ AC/AB/AA) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -8070,11 +8070,12 @@ async function cargarPanelResultados() {
     const cierres = await api('cierres_caja?' + locFilter + '&fecha=gte.' + r.desde + '&fecha=lte.' + r.hasta + '&select=*&order=fecha.asc,id.asc') || [];
     let objNeto = 0, hayObj = false, objHer = false, cmPct = null, clPct = null, goPct = null;
     const _pf = function(x){ const v = parseFloat(x); return isFinite(v) ? v : null; };
+    const objByLocal = {};
     try {
       if (agregado) {
         const allObjs = await api('objetivos_ventas?local=in.(' + reales.map(encodeURIComponent).join(',') + ')&mes=lte.' + PV_MES + '&select=*&order=mes.desc') || [];
         const seen = {};
-        allObjs.forEach(function(o){ if (!seen[o.local]) { seen[o.local] = 1; objNeto += parseFloat(o.objetivo) || 0; hayObj = true; if (o.mes !== PV_MES) objHer = true; } });
+        allObjs.forEach(function(o){ if (!seen[o.local]) { seen[o.local] = 1; objNeto += parseFloat(o.objetivo) || 0; hayObj = true; if (o.mes !== PV_MES) objHer = true; objByLocal[o.local] = { clPct: _pf(o.obj_cl_pct), cmPct: _pf(o.obj_cm_pct), goPct: _pf(o.obj_go_pct) }; } });
       } else {
         let s = null;
         const objs = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + PV_MES + '&select=*') || [];
@@ -8086,37 +8087,61 @@ async function cargarPanelResultados() {
         if (s) { objNeto = parseFloat(s.objetivo) || 0; hayObj = true; cmPct = _pf(s.obj_cm_pct); clPct = _pf(s.obj_cl_pct); goPct = _pf(s.obj_go_pct); }
       }
     } catch (e) {}
-    let goTotal = null;
+    const goByLocal = {}; let goTotal = null;
     try {
       const goRows = agregado
         ? (await api('gastos_operativos?local=in.(' + reales.map(encodeURIComponent).join(',') + ')&mes=eq.' + PV_MES + '&select=*') || [])
         : (await api('gastos_operativos?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + PV_MES + '&select=*') || []);
       if (goRows.length) {
-        goTotal = goRows.reduce(function(sm, r){ return sm + (parseFloat(r.alquileres)||0) + (parseFloat(r.servicios)||0) + (parseFloat(r.mantenimiento)||0) + (parseFloat(r.lavanderia)||0) + (parseFloat(r.marketing)||0) + (parseFloat(r.sistemas)||0) + (parseFloat(r.otros)||0); }, 0);
+        goTotal = 0;
+        goRows.forEach(function(r){ const v = (parseFloat(r.alquileres)||0) + (parseFloat(r.servicios)||0) + (parseFloat(r.mantenimiento)||0) + (parseFloat(r.lavanderia)||0) + (parseFloat(r.marketing)||0) + (parseFloat(r.sistemas)||0) + (parseFloat(r.otros)||0); goByLocal[r.local] = (goByLocal[r.local]||0) + v; goTotal += v; });
       }
     } catch (e) {}
-    let cmTotal = null;
+    const cmByLocal = {}; let cmTotal = null;
     try {
       const cmRows = agregado
         ? (await api('costos_mercaderia?local=in.(' + reales.map(encodeURIComponent).join(',') + ')&mes=eq.' + PV_MES + '&select=*') || [])
         : (await api('costos_mercaderia?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + PV_MES + '&select=*') || []);
-      if (cmRows.length) { cmTotal = cmRows.reduce(function(sm, r){ return sm + (parseFloat(r.alimentos)||0) + (parseFloat(r.bebida)||0) + (parseFloat(r.extras)||0); }, 0); }
+      if (cmRows.length) { cmTotal = 0; cmRows.forEach(function(r){ const v = (parseFloat(r.alimentos)||0) + (parseFloat(r.bebida)||0) + (parseFloat(r.extras)||0); cmByLocal[r.local] = (cmByLocal[r.local]||0) + v; cmTotal += v; }); }
     } catch (e) {}
-    let clTotal = null;
+    const clByLocal = {}; let clTotal = null;
     try {
       const clData = await _fetchCLData(PV_MES);
       if (Object.keys(clData.sueldos).length) {
         const perLocal = _computeCLPorLocal(PV_MES, clData);
-        clTotal = agregado ? reales.reduce(function(sm, l){ return sm + (perLocal[l]||0); }, 0) : (perLocal[loc] || 0);
+        if (agregado) { reales.forEach(function(l){ clByLocal[l] = perLocal[l] || 0; }); clTotal = reales.reduce(function(sm, l){ return sm + (perLocal[l]||0); }, 0); }
+        else { clTotal = perLocal[loc] || 0; }
       }
     } catch (e) {}
-    renderPanelResultados(cierres, { objNeto: objNeto, hayObj: hayObj, objHer: objHer, cmPct: cmPct, clPct: clPct, goPct: goPct }, agregado, { goTotal: goTotal, cmTotal: cmTotal, clTotal: clTotal });
+    let pctProm = null;
+    if (agregado) {
+      const netoByLocal = {};
+      cierres.forEach(function(c){ netoByLocal[c.local] = (netoByLocal[c.local]||0) + computablePesos(c)/IVA_COEF; });
+      const A = { cl:[], cm:[], go:[], cb:[] }, O = { cl:[], cm:[], go:[], cb:[] };
+      reales.forEach(function(l){
+        const nl = netoByLocal[l] || 0;
+        if (nl > 0) {
+          if (clByLocal[l] != null) A.cl.push(clByLocal[l]/nl*100);
+          if (cmByLocal[l] != null) A.cm.push(cmByLocal[l]/nl*100);
+          if (goByLocal[l] != null) A.go.push(goByLocal[l]/nl*100);
+          A.cb.push(100 - (clByLocal[l]||0)/nl*100 - (cmByLocal[l]||0)/nl*100 - (goByLocal[l]||0)/nl*100);
+        }
+        const ob = objByLocal[l] || {};
+        if (ob.clPct != null) O.cl.push(ob.clPct);
+        if (ob.cmPct != null) O.cm.push(ob.cmPct);
+        if (ob.goPct != null) O.go.push(ob.goPct);
+        if (ob.clPct != null || ob.cmPct != null || ob.goPct != null) O.cb.push(100 - (ob.clPct||0) - (ob.cmPct||0) - (ob.goPct||0));
+      });
+      const avg = function(a){ return a.length ? a.reduce(function(sm, x){ return sm + x; }, 0)/a.length : null; };
+      pctProm = { clAcum: avg(A.cl), cmAcum: avg(A.cm), goAcum: avg(A.go), cbAcum: avg(A.cb), clObj: avg(O.cl), cmObj: avg(O.cm), goObj: avg(O.go), cbObj: avg(O.cb) };
+    }
+    renderPanelResultados(cierres, { objNeto: objNeto, hayObj: hayObj, objHer: objHer, cmPct: cmPct, clPct: clPct, goPct: goPct }, agregado, { goTotal: goTotal, cmTotal: cmTotal, clTotal: clTotal }, pctProm);
   } catch (e) {
     body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los datos.</div>';
   }
 }
 
-function renderPanelResultados(cierres, obj, agregado, costos) {
+function renderPanelResultados(cierres, obj, agregado, costos, pctProm) {
   costos = costos || {};
   const body = document.getElementById('pvBody');
   const brutoVentas = cierres.reduce(function(s, c){ return s + computablePesos(c); }, 0);
@@ -8135,8 +8160,17 @@ function renderPanelResultados(cierres, obj, agregado, costos) {
   const goAcum = (costos.goTotal != null) ? costos.goTotal : null;
   const cbAcum = netoVentas - (goAcum||0) - (cmAcum||0) - (clAcum||0);
 
-  const card = function(titulo, code, acum, objv, tipo, color){
-    const pctV = (objv != null && objv !== 0 && acum != null) ? (acum/objv*100) : null;
+  const _pAcum = function(x){ return (x != null && netoVentas > 0) ? (x/netoVentas*100) : null; };
+  let clPctA, cmPctA, goPctA, cbPctA, clPctO, cmPctO, goPctO, cbPctO;
+  if (agregado && pctProm) {
+    clPctA = pctProm.clAcum; cmPctA = pctProm.cmAcum; goPctA = pctProm.goAcum; cbPctA = pctProm.cbAcum;
+    clPctO = pctProm.clObj; cmPctO = pctProm.cmObj; goPctO = pctProm.goObj; cbPctO = pctProm.cbObj;
+  } else {
+    clPctA = _pAcum(clAcum); cmPctA = _pAcum(cmAcum); goPctA = _pAcum(goAcum); cbPctA = _pAcum(cbAcum);
+    clPctO = obj.clPct; cmPctO = obj.cmPct; goPctO = obj.goPct; cbPctO = gbPct;
+  }
+
+  const card = function(titulo, code, acum, objv, tipo, color, pctAcum, pctObj){
     const difV = (acum != null && objv != null) ? (acum - objv) : null;
     let difExtra = '', difStr = '—';
     if (difV != null) {
@@ -8144,16 +8178,21 @@ function renderPanelResultados(cierres, obj, agregado, costos) {
       difExtra = ';color:' + (bueno ? '#4CAF7A' : 'var(--c-error)');
       difStr = (difV > 0 ? '+' : (difV < 0 ? '−' : '')) + _pvMoney(Math.round(Math.abs(difV)));
     }
+    const cinco = (pctAcum !== undefined);
+    const fs = cinco ? 10 : 13;
     const m = function(v){ return v != null ? _pvMoney(Math.round(v)) : '—'; };
-    const cel = function(lbl, val, extra){ return '<div style="flex:1;text-align:center;padding:7px 2px;border-left:1px solid var(--c-cream-border)"><div style="font-size:9px;opacity:.5;line-height:1.2">' + lbl + '</div><div style="font-weight:600;font-size:13px;margin-top:3px' + (extra||'') + '">' + val + '</div></div>'; };
+    const ps = function(p){ return (p != null && isFinite(p)) ? p.toFixed(0) + '%' : '—'; };
+    const cel = function(lbl, val, extra, first){ return '<div style="flex:1;min-width:0;text-align:center;padding:7px 1px' + (first ? '' : ';border-left:1px solid var(--c-cream-border)') + '"><div style="font-size:8px;opacity:.5;line-height:1.2">' + lbl + '</div><div style="font-weight:600;font-size:' + fs + 'px;margin-top:3px;white-space:nowrap' + (extra||'') + '">' + val + '</div></div>'; };
+    let cells;
+    if (cinco) {
+      cells = cel('$ ' + code + ' Acum', m(acum), '', true) + cel('% ' + code + ' Acum', ps(pctAcum)) + cel('$ ' + code + ' Obj', m(objv)) + cel('% ' + code + ' Obj', ps(pctObj)) + cel('$ ' + code + ' Dif', difStr, difExtra);
+    } else {
+      const pctV = (objv != null && objv !== 0 && acum != null) ? (acum/objv*100) : null;
+      cells = cel('$ ' + code + ' Acum', m(acum), '', true) + cel('% ' + code + ' Obj', ps(pctV)) + cel('$ ' + code + ' Obj', m(objv)) + cel('$ ' + code + ' Dif', difStr, difExtra);
+    }
     return '<div style="border:1px solid var(--c-cream-border);border-radius:10px;overflow:hidden;margin-bottom:10px">' +
       '<div style="text-align:center;font-weight:700;font-size:12px;letter-spacing:.6px;padding:7px;background:' + (color || 'rgba(255,255,255,.05)') + ';color:#fff">' + titulo + '</div>' +
-      '<div style="display:flex">' +
-        '<div style="flex:1;text-align:center;padding:7px 2px"><div style="font-size:9px;opacity:.5;line-height:1.2">$ ' + code + ' Acum</div><div style="font-weight:600;font-size:13px;margin-top:3px">' + m(acum) + '</div></div>' +
-        cel('% ' + code + ' Obj', (pctV != null) ? pctV.toFixed(0) + '%' : '—') +
-        cel('$ ' + code + ' Obj', m(objv)) +
-        cel('$ ' + code + ' Dif', difStr, difExtra) +
-      '</div>' +
+      '<div style="display:flex">' + cells + '</div>' +
     '</div>';
   };
 
@@ -8166,10 +8205,10 @@ function renderPanelResultados(cierres, obj, agregado, costos) {
   else if (obj.objHer) html += '<div class="cierre-hint" style="margin-bottom:12px">Objetivos heredados del mes anterior.</div>';
 
   html += card('VENTAS NETAS', 'VN', netoVentas, ventasObj, 'vta', '#2E7D32');
-  html += card('CTO LABORAL', 'CL', clAcum, clObj, 'costo', '#C87A2C');
-  html += card('CTO MERCADERÍA', 'CM', cmAcum, cmObj, 'costo', '#7E57C2');
-  html += card('GASTOS OPERATIVOS', 'GO', goAcum, goObj, 'costo', '#2A9D8F');
-  html += card('CONTRIB. BRUTA', 'CB', cbAcum, cbObj, 'cb', '#3E86C7');
+  html += card('CTO LABORAL', 'CL', clAcum, clObj, 'costo', '#C87A2C', clPctA, clPctO);
+  html += card('CTO MERCADERÍA', 'CM', cmAcum, cmObj, 'costo', '#7E57C2', cmPctA, cmPctO);
+  html += card('GASTOS OPERATIVOS', 'GO', goAcum, goObj, 'costo', '#2A9D8F', goPctA, goPctO);
+  html += card('CONTRIB. BRUTA', 'CB', cbAcum, cbObj, 'cb', '#3E86C7', cbPctA, cbPctO);
 
   html += '<div class="cierre-hint" style="margin:8px 0 16px"><i class="ti ti-info-circle"></i> Todos los costos se cargan desde “Gestión de estadísticas”. El Laboral se prorratea por roster/ficha (fijo, multilocal, eventual).</div>';
 
