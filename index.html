@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817z">
+<link rel="stylesheet" href="styles.css?v=20260817aa">
 </head>
 <body>
 
@@ -1727,9 +1727,9 @@
       <p class="field-hint">Se guarda en neto. El bruto se calcula automáticamente (× 1,21).</p>
       <div class="est-section-title" style="margin-top:14px;font-size:13px">Objetivos de costo (% s/ ventas)</div>
       <div style="display:flex;gap:8px">
-        <label class="field" style="flex:1"><span class="field-label">CM %</span><input type="number" step="any" min="0" id="objCmPct" placeholder="28"></label>
-        <label class="field" style="flex:1"><span class="field-label">CL %</span><input type="number" step="any" min="0" id="objClPct" placeholder="30"></label>
-        <label class="field" style="flex:1"><span class="field-label">GO %</span><input type="number" step="any" min="0" id="objGoPct" placeholder="15"></label>
+        <label class="field" style="flex:1;min-width:0"><span class="field-label">CM %</span><input type="number" step="any" min="0" id="objCmPct" placeholder="28" style="width:100%;min-width:0;box-sizing:border-box"></label>
+        <label class="field" style="flex:1;min-width:0"><span class="field-label">CL %</span><input type="number" step="any" min="0" id="objClPct" placeholder="30" style="width:100%;min-width:0;box-sizing:border-box"></label>
+        <label class="field" style="flex:1;min-width:0"><span class="field-label">GO %</span><input type="number" step="any" min="0" id="objGoPct" placeholder="15" style="width:100%;min-width:0;box-sizing:border-box"></label>
       </div>
       <p class="field-hint">Opcional. Se convierten a $ en el Panel de Resultados. Ganancia Bruta objetivo = 100% − CM − CL − GO.</p>
       <div class="login-error" id="objetivoError"></div>
@@ -1759,9 +1759,9 @@
         <input type="text" inputmode="decimal" id="gestObjVta" placeholder="$ 0">
       </label>
       <div style="display:flex;gap:8px;margin-top:8px">
-        <label class="field" style="flex:1"><span class="field-label">CM %</span><input type="number" step="any" min="0" id="gestObjCm" placeholder="28"></label>
-        <label class="field" style="flex:1"><span class="field-label">CL %</span><input type="number" step="any" min="0" id="gestObjCl" placeholder="30"></label>
-        <label class="field" style="flex:1"><span class="field-label">GO %</span><input type="number" step="any" min="0" id="gestObjGo" placeholder="15"></label>
+        <label class="field" style="flex:1;min-width:0"><span class="field-label">CM %</span><input type="number" step="any" min="0" id="gestObjCm" placeholder="28" style="width:100%;min-width:0;box-sizing:border-box"></label>
+        <label class="field" style="flex:1;min-width:0"><span class="field-label">CL %</span><input type="number" step="any" min="0" id="gestObjCl" placeholder="30" style="width:100%;min-width:0;box-sizing:border-box"></label>
+        <label class="field" style="flex:1;min-width:0"><span class="field-label">GO %</span><input type="number" step="any" min="0" id="gestObjGo" placeholder="15" style="width:100%;min-width:0;box-sizing:border-box"></label>
       </div>
       <button type="button" class="btn-primary" onclick="guardarObjGest()" style="margin-top:10px"><i class="ti ti-check"></i> Guardar objetivos</button>
       <div class="field-hint" id="gestObjStatus" style="margin-top:6px"></div>
@@ -2251,6 +2251,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817z"></script>
+<script src="app.js?v=20260817aa"></script>
 </body>
 </html>

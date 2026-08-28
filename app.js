@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-Z | ULTIMA | tilde Externo (propina si, nomina no) + eliminar cierre propina (+ Y/X/CL) ===== */
+/* ===== BUILD 2026-08-17-AA | ULTIMA | ancho inputs % objetivos (sin scroll lateral) + Externo (+ Z/Y/X) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
