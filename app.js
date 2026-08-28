@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AB | ULTIMA | Gestion estad. a prueba de fallos (abre aunque falte algo) + anchos (+ AA/Z/Y) ===== */
+/* ===== BUILD 2026-08-17-AC | ULTIMA | fix reabrir modales (.show vs display inline) - Gestion andaba 1 sola vez (+ AB/AA/Z) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -406,7 +406,8 @@ document.addEventListener('click', (e) => {
   if (e.target.classList && e.target.classList.contains('modal-overlay')) {
     const card = e.target.querySelector('.modal-card');
     if (card && card.hasAttribute('data-prevent-close')) return;
-    e.target.style.display = 'none';
+    e.target.classList.remove('show');
+    e.target.style.display = '';
     // Si era el modal de confirmación, resolver como cancelar
     if (e.target.id === 'modalConfirm' && _confirmResolve) {
       const r = _confirmResolve;
@@ -422,8 +423,9 @@ document.addEventListener('keydown', (e) => {
     const modales = document.querySelectorAll('.modal-overlay');
     for (let i = modales.length - 1; i >= 0; i--) {
       const m = modales[i];
-      if (m.style.display === 'flex') {
-        m.style.display = 'none';
+      if (m.style.display === 'flex' || m.classList.contains('show')) {
+        m.classList.remove('show');
+        m.style.display = '';
         if (m.id === 'modalConfirm' && _confirmResolve) {
           const r = _confirmResolve;
           _confirmResolve = null;
@@ -8262,6 +8264,7 @@ window.abrirGestionEst = function() {
   const locSel = document.getElementById('gestObjLocal');
   if (locSel) locSel.innerHTML = _optsLocalesGest('');
   const st = document.getElementById('gestStatus'); if (st) st.textContent = '';
+  modal.style.display = '';
   modal.classList.add('show');
   try { if (typeof cargarObjGest === 'function') cargarObjGest(); } catch (e) {}
 };
