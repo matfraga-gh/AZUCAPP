@@ -171,6 +171,39 @@ button {
   padding-right: 38px;
 }
 
+/* Checkboxes (Multilocal / Eventual / Externo, etc.): casilla naranja al marcar */
+.field input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  flex: none;
+  padding: 0;
+  border-radius: 6px;
+  border: 1.5px solid var(--c-cream-border);
+  background: var(--c-cream-soft);
+  cursor: pointer;
+  position: relative;
+}
+.field input[type="checkbox"]:checked {
+  background: var(--c-rust);
+  border-color: var(--c-rust);
+}
+.field input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 3px;
+  width: 5px;
+  height: 10px;
+  border: solid #fff;
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg);
+}
+.field input[type="checkbox"]:disabled {
+  opacity: 0.9;
+  cursor: not-allowed;
+}
+
 /* Forzar contraste oscuro en las opciones del dropdown nativo */
 .field select option {
   background: #F5F0E8;

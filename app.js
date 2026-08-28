@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AE | ULTIMA | $ Obj = %Obj x ventas netas (tambien en consolidado) -> aparece $ Dif (+ AD/AC/AB) ===== */
+/* ===== BUILD 2026-08-17-AF | ULTIMA | checkbox marcado se pinta naranja (Multilocal/Eventual/Externo) (+ AE/AD/AC) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
