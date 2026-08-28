@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-U | ULTIMA | Fase 2: planilla CM (Alimentos/Bebida/Extras) + CM en cards (+ T/S/R) ===== */
+/* ===== BUILD 2026-08-17-V | ULTIMA | Fase 3: planilla CL (sueldos + prorrateo) + VN rename + CB siempre (+ U/T/S) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -3386,7 +3386,7 @@ async function cargarUsuarios() {
 
 async function cargarEmpleados() {
   try {
-    ADMIN_EMPLEADOS_CACHE = await api('empleados?activo=eq.true&select=id,nombre,apellido,nombre_p,sector,categoria,local,telefono,fecha_nac,es_multilocal,activo,documento,email,alias,talle_remera,talle_pantalon,talle_calzado&order=apellido.asc') || [];
+    ADMIN_EMPLEADOS_CACHE = await api('empleados?activo=eq.true&select=id,nombre,apellido,nombre_p,sector,categoria,local,telefono,fecha_nac,es_multilocal,eventual,activo,documento,email,alias,talle_remera,talle_pantalon,talle_calzado&order=apellido.asc') || [];
   } catch (e) {
     console.warn('Error al cargar empleados:', e);
     ADMIN_EMPLEADOS_CACHE = [];
@@ -3420,6 +3420,7 @@ function armarPersona(e, u) {
     tallePantalon: e ? (e.talle_pantalon || '') : '',
     talleCalzado: e ? (e.talle_calzado || '') : '',
     esMultilocal: e ? !!e.es_multilocal : false,
+    eventual: e ? !!e.eventual : false,
     tieneAcceso: !!u,
     accesoActivo: u ? !!u.activo : false,
     orden: (apellido || pila || (u ? u.nombre : '') || '').toLowerCase()
@@ -3631,6 +3632,7 @@ window.crearFichaParaUser = function(userId) {
   document.getElementById('efCategoria').value = '';
   document.getElementById('efMultilocal').checked = false;
   document.getElementById('efMultilocal').disabled = false;
+  if (document.getElementById('efEventual')) document.getElementById('efEventual').checked = false;
 
   const todos = getLocalesActivos();
   document.getElementById('efLocal').innerHTML =
@@ -3678,6 +3680,7 @@ window.abrirEditarFicha = function(key) {
   document.getElementById('efSector').value = p.sector || '';
   document.getElementById('efCategoria').value = p.categoria || '';
   document.getElementById('efMultilocal').checked = !!p.esMultilocal;
+  if (document.getElementById('efEventual')) document.getElementById('efEventual').checked = !!p.eventual;
 
   // Local principal (incluye el actual aunque esté inactivo)
   const todos = getLocalesActivos().slice();
@@ -3745,7 +3748,7 @@ window.guardarEditarFicha = async function() {
     btn.disabled = true; btn.textContent = 'Guardando...';
     try {
       const nuevoEmp = { nombre_p: nombre_p || null, nombre: nombre_p || null, apellido: apellido || null,
-        sector: sector || null, categoria: categoria || null, local, es_multilocal: multilocal, activo: true };
+        sector: sector || null, categoria: categoria || null, local, es_multilocal: multilocal, eventual: (document.getElementById('efEventual') ? document.getElementById('efEventual').checked : false), activo: true };
       const res = await api('empleados', { method: 'POST', body: JSON.stringify(nuevoEmp) });
       const empId = (Array.isArray(res) ? res[0] : res).id;
       const locs = _gridSel.length ? _gridSel : null;
@@ -3791,7 +3794,8 @@ window.guardarEditarFicha = async function() {
       sector: sector || null,
       categoria: categoria || null,
       local: local,
-      es_multilocal: multilocal
+      es_multilocal: multilocal,
+      eventual: (document.getElementById('efEventual') ? document.getElementById('efEventual').checked : false)
     };
     await api('empleados?id=eq.' + p.empleado.id, { method: 'PATCH', body: JSON.stringify(empPatch) });
     const ec = (ADMIN_EMPLEADOS_CACHE || []).find(e => e.id === p.empleado.id);
@@ -8063,7 +8067,15 @@ async function cargarPanelResultados() {
         : (await api('costos_mercaderia?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + PV_MES + '&select=*') || []);
       if (cmRows.length) { cmTotal = cmRows.reduce(function(sm, r){ return sm + (parseFloat(r.alimentos)||0) + (parseFloat(r.bebida)||0) + (parseFloat(r.extras)||0); }, 0); }
     } catch (e) {}
-    renderPanelResultados(cierres, { objNeto: objNeto, hayObj: hayObj, objHer: objHer, cmPct: cmPct, clPct: clPct, goPct: goPct }, agregado, { goTotal: goTotal, cmTotal: cmTotal });
+    let clTotal = null;
+    try {
+      const clData = await _fetchCLData(PV_MES);
+      if (Object.keys(clData.sueldos).length) {
+        const perLocal = _computeCLPorLocal(PV_MES, clData);
+        clTotal = agregado ? reales.reduce(function(sm, l){ return sm + (perLocal[l]||0); }, 0) : (perLocal[loc] || 0);
+      }
+    } catch (e) {}
+    renderPanelResultados(cierres, { objNeto: objNeto, hayObj: hayObj, objHer: objHer, cmPct: cmPct, clPct: clPct, goPct: goPct }, agregado, { goTotal: goTotal, cmTotal: cmTotal, clTotal: clTotal });
   } catch (e) {
     body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los datos.</div>';
   }
@@ -8084,10 +8096,9 @@ function renderPanelResultados(cierres, obj, agregado, costos) {
   const gbPct = hayCostoObj ? (100 - (obj.cmPct||0) - (obj.clPct||0) - (obj.goPct||0)) : null;
   const cbObj = (gbPct != null) ? (gbPct/100)*netoVentas : null;
   const cmAcum = (costos.cmTotal != null) ? costos.cmTotal : null;
-  const clAcum = null;
+  const clAcum = (costos.clTotal != null) ? costos.clTotal : null;
   const goAcum = (costos.goTotal != null) ? costos.goTotal : null;
-  const costosCompletos = (goAcum != null && cmAcum != null && clAcum != null);
-  const cbAcum = costosCompletos ? (netoVentas - goAcum - cmAcum - clAcum) : null;
+  const cbAcum = netoVentas - (goAcum||0) - (cmAcum||0) - (clAcum||0);
 
   const card = function(titulo, code, acum, objv, tipo, color){
     const pctV = (objv != null && objv !== 0 && acum != null) ? (acum/objv*100) : null;
@@ -8119,13 +8130,13 @@ function renderPanelResultados(cierres, obj, agregado, costos) {
   if (agregado) html += '<div class="cierre-hint" style="margin-bottom:12px">Vista consolidada: suma de todos los locales.</div>';
   else if (obj.objHer) html += '<div class="cierre-hint" style="margin-bottom:12px">Objetivos heredados del mes anterior.</div>';
 
-  html += card('VENTAS', 'Vta', netoVentas, ventasObj, 'vta', '#2E7D32');
+  html += card('VENTAS NETAS', 'VN', netoVentas, ventasObj, 'vta', '#2E7D32');
   html += card('CTO LABORAL', 'CL', clAcum, clObj, 'costo', '#C87A2C');
   html += card('CTO MERCADERÍA', 'CM', cmAcum, cmObj, 'costo', '#7E57C2');
   html += card('GASTOS OPERATIVOS', 'GO', goAcum, goObj, 'costo', '#2A9D8F');
   html += card('CONTRIB. BRUTA', 'CB', cbAcum, cbObj, 'cb', '#3E86C7');
 
-  html += '<div class="cierre-hint" style="margin:8px 0 16px"><i class="ti ti-info-circle"></i> Gastos Operativos y Mercadería se cargan desde “Gestión de estadísticas”. Cto Laboral llega en la próxima etapa.</div>';
+  html += '<div class="cierre-hint" style="margin:8px 0 16px"><i class="ti ti-info-circle"></i> Todos los costos se cargan desde “Gestión de estadísticas”. El Laboral se prorratea por roster/ficha (fijo, multilocal, eventual).</div>';
 
   html += '<div class="pv-obj">';
   html += '<div class="est-section-title">Ventas semana a semana (neto)</div>';
@@ -8313,6 +8324,142 @@ window.subirPlanillaCM = async function(input) {
     }
     st.textContent = '✓ ' + n + ' locales cargados para ' + mes + '.';
     toast('✓ Planilla CM cargada', 'success');
+    cargarPanelActivo();
+  } catch (e) { st.textContent = 'Error: ' + ((e && e.message) || e); }
+  finally { input.value = ''; }
+};
+
+function _mesInfo(mes) {
+  const p = mes.split('-'); const y = +p[0], mm = +p[1];
+  const dias = new Date(y, mm, 0).getDate();
+  const hoy = new Date();
+  const cur = hoy.getFullYear() + '-' + String(hoy.getMonth()+1).padStart(2,'0');
+  let transc;
+  if (mes < cur) transc = dias; else if (mes > cur) transc = 0; else transc = Math.min(dias, hoy.getDate());
+  return { dias: dias, transc: transc };
+}
+
+async function _fetchCLData(mes) {
+  const emps = await apiAll('empleados?activo=eq.true&select=id,local,es_multilocal,eventual') || [];
+  const sueldosArr = await apiAll('sueldos_mensuales?mes=eq.' + mes + '&select=empleado_id,sueldo') || [];
+  const aportesArr = await apiAll('costos_laborales_local?mes=eq.' + mes + '&select=local,aportes,adicionales') || [];
+  const r = _pvRango(mes);
+  const turnos = await apiAll('roster_turnos?dia=gte.' + r.desde + '&dia=lte.' + r.hasta + '&es_off=eq.false&select=empleado_id,dia,semana_id') || [];
+  const semIds = Array.from(new Set(turnos.map(function(t){ return t.semana_id; }).filter(Boolean)));
+  const semLocal = {};
+  if (semIds.length) {
+    (await api('roster_semanas?id=in.(' + semIds.join(',') + ')&select=id,local') || []).forEach(function(sm){ semLocal[sm.id] = sm.local; });
+  }
+  const sueldos = {}; sueldosArr.forEach(function(x){ sueldos[x.empleado_id] = parseFloat(x.sueldo) || 0; });
+  const aportes = {}; aportesArr.forEach(function(x){ aportes[x.local] = { ap: parseFloat(x.aportes)||0, ad: parseFloat(x.adicionales)||0 }; });
+  return { emps: emps, sueldos: sueldos, aportes: aportes, turnos: turnos, semLocal: semLocal };
+}
+
+function _computeCLPorLocal(mes, data) {
+  const info = _mesInfo(mes), dias = info.dias, transc = info.transc;
+  const perLocal = {};
+  const add = function(loc, v){ if (!loc || !v) return; perLocal[loc] = (perLocal[loc]||0) + v; };
+  const empDay = {};
+  data.turnos.forEach(function(t){
+    const diaNum = parseInt(String(t.dia).slice(8,10),10) || 0;
+    if (diaNum > transc) return;
+    const loc = data.semLocal[t.semana_id]; if (!loc) return;
+    if (!empDay[t.empleado_id]) empDay[t.empleado_id] = {};
+    if (!empDay[t.empleado_id][t.dia]) empDay[t.empleado_id][t.dia] = {};
+    empDay[t.empleado_id][t.dia][loc] = 1;
+  });
+  data.emps.forEach(function(e){
+    const S = data.sueldos[e.id]; if (!S) return;
+    if (e.eventual) {
+      const days = empDay[e.id] || {};
+      Object.keys(days).forEach(function(d){ Object.keys(days[d]).forEach(function(loc){ add(loc, S); }); });
+    } else if (e.es_multilocal) {
+      const valorDia = dias > 0 ? S/dias : 0;
+      const days = empDay[e.id] || {};
+      for (let d = 1; d <= transc; d++) {
+        const ds = mes + '-' + String(d).padStart(2,'0');
+        const locs = days[ds] ? Object.keys(days[ds]) : [];
+        if (locs.length) { locs.forEach(function(loc){ add(loc, valorDia / locs.length); }); }
+        else { add(e.local, valorDia); }
+      }
+    } else {
+      add(e.local, (dias > 0 ? S/dias : 0) * transc);
+    }
+  });
+  const factor = dias > 0 ? (transc/dias) : 0;
+  Object.keys(data.aportes).forEach(function(loc){ add(loc, (data.aportes[loc].ap + data.aportes[loc].ad) * factor); });
+  return perLocal;
+}
+
+window.descargarPlanillaCL = async function() {
+  const st = document.getElementById('gestStatus'); st.textContent = 'Preparando...';
+  const mes = document.getElementById('gestMes').value;
+  try {
+    const XLSX = await ensureXLSX();
+    const emps = await apiAll('empleados?activo=eq.true&select=id,apellido,nombre_p,nombre,local,es_multilocal,eventual&order=local.asc,apellido.asc') || [];
+    const sueldos = {};
+    (await apiAll('sueldos_mensuales?mes=eq.' + mes + '&select=empleado_id,sueldo') || []).forEach(function(r){ sueldos[r.empleado_id] = r.sueldo; });
+    const faltan = emps.filter(function(e){ return sueldos[e.id] == null; });
+    if (faltan.length) {
+      const seen = {};
+      (await apiAll('sueldos_mensuales?mes=lt.' + mes + '&select=empleado_id,sueldo,mes&order=mes.desc') || []).forEach(function(r){ if (sueldos[r.empleado_id] == null && !seen[r.empleado_id]) { seen[r.empleado_id] = 1; sueldos[r.empleado_id] = r.sueldo; } });
+    }
+    const tipo = function(e){ return e.eventual ? 'Eventual' : (e.es_multilocal ? 'Multilocal' : 'Fijo'); };
+    const s1 = [['ID','Empleado','Local','Tipo','Sueldo']];
+    emps.forEach(function(e){ const nom = ((e.apellido||'') + ' ' + (e.nombre_p||e.nombre||'')).trim(); s1.push([e.id, nom, localLabel(e.local), tipo(e), _nz(sueldos[e.id])]); });
+    const locales = _goLocales();
+    const apPrev = {};
+    (await api('costos_laborales_local?mes=eq.' + mes + '&select=*') || []).forEach(function(r){ apPrev[r.local] = r; });
+    const faltanL = locales.filter(function(l){ return !apPrev[l]; });
+    if (faltanL.length) { const seen = {}; (await api('costos_laborales_local?mes=lt.' + mes + '&select=*&order=mes.desc') || []).forEach(function(r){ if (!apPrev[r.local] && !seen[r.local]) { seen[r.local] = 1; apPrev[r.local] = r; } }); }
+    const s2 = [['Local','Aportes','Adicionales']];
+    locales.forEach(function(l){ const r = apPrev[l] || {}; s2.push([localLabel(l), _nz(r.aportes), _nz(r.adicionales)]); });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(s1), 'Sueldos');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(s2), 'Aportes-Adic');
+    XLSX.writeFile(wb, 'Planilla_CL_' + mes + '.xlsx');
+    st.textContent = 'Planilla descargada (hojas: Sueldos y Aportes-Adic). Completá y volvé a subirla.';
+  } catch (e) { st.textContent = 'Error: ' + ((e && e.message) || e); }
+};
+
+window.subirPlanillaCL = async function(input) {
+  const file = input.files && input.files[0]; if (!file) return;
+  const st = document.getElementById('gestStatus'); st.textContent = 'Procesando...';
+  const mes = document.getElementById('gestMes').value;
+  try {
+    const XLSX = await ensureXLSX();
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const pN = function(x){ if (x == null || x === '') return 0; if (typeof x === 'number') return x; const v = parseFloat(String(x).replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.')); return isFinite(v) ? v : 0; };
+    let nS = 0, nA = 0;
+    const wsS = wb.Sheets['Sueldos'] || wb.Sheets[wb.SheetNames[0]];
+    if (wsS) {
+      const rows = XLSX.utils.sheet_to_json(wsS, { header: 1 });
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i]; if (!row || row[0] == null || row[0] === '') continue;
+        const empId = parseInt(row[0], 10); if (!empId) continue;
+        const rec = { empleado_id: empId, mes: mes, sueldo: pN(row[4]), creado_por: currentUser.id, actualizado_en: new Date().toISOString() };
+        const ex = await api('sueldos_mensuales?empleado_id=eq.' + empId + '&mes=eq.' + mes + '&select=id') || [];
+        if (ex.length) await api('sueldos_mensuales?id=eq.' + ex[0].id, { method: 'PATCH', body: JSON.stringify(rec) });
+        else await api('sueldos_mensuales', { method: 'POST', body: JSON.stringify(rec) });
+        nS++;
+      }
+    }
+    const wsA = wb.Sheets['Aportes-Adic'];
+    if (wsA) {
+      const rev = {}; getLocalesActivos().forEach(function(l){ rev[String(localLabel(l)).trim().toLowerCase()] = l; });
+      const rows = XLSX.utils.sheet_to_json(wsA, { header: 1 });
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i]; if (!row || row[0] == null || row[0] === '') continue;
+        const slug = rev[String(row[0]).trim().toLowerCase()]; if (!slug) continue;
+        const rec = { local: slug, mes: mes, aportes: pN(row[1]), adicionales: pN(row[2]), creado_por: currentUser.id, actualizado_en: new Date().toISOString() };
+        const ex = await api('costos_laborales_local?local=eq.' + encodeURIComponent(slug) + '&mes=eq.' + mes + '&select=id') || [];
+        if (ex.length) await api('costos_laborales_local?id=eq.' + ex[0].id, { method: 'PATCH', body: JSON.stringify(rec) });
+        else await api('costos_laborales_local', { method: 'POST', body: JSON.stringify(rec) });
+        nA++;
+      }
+    }
+    st.textContent = '✓ ' + nS + ' sueldos y ' + nA + ' locales cargados para ' + mes + '.';
+    toast('✓ Planilla CL cargada', 'success');
     cargarPanelActivo();
   } catch (e) { st.textContent = 'Error: ' + ((e && e.message) || e); }
   finally { input.value = ''; }

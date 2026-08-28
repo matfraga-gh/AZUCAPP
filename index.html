@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817u">
+<link rel="stylesheet" href="styles.css?v=20260817v">
 </head>
 <body>
 
@@ -1474,6 +1474,10 @@
         <input type="checkbox" id="efMultilocal" style="width:auto;">
         <span class="field-label" style="margin:0;">Multilocal (se marca solo según los locales asignados)</span>
       </label>
+      <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px;cursor:pointer;">
+        <input type="checkbox" id="efEventual" style="width:auto;">
+        <span class="field-label" style="margin:0;">Eventual (refuerzo; su costo cuenta solo los días del roster)</span>
+      </label>
 
       <div id="efLocalesSection" style="margin-top:16px;">
         <p class="field-label" style="margin-bottom:4px;">Locales asignados</p>
@@ -1756,6 +1760,14 @@
         <button type="button" class="btn-ghost" onclick="descargarPlanillaCM()"><i class="ti ti-download"></i> Descargar planilla CM</button>
         <label class="btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px"><i class="ti ti-upload"></i> Subir planilla CM
           <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="subirPlanillaCM(this)">
+        </label>
+      </div>
+      <div class="est-section-title" style="margin-top:16px">Cto Laboral (CL)</div>
+      <p class="field-hint">Dos hojas: Sueldos (por empleado) y Aportes-Adic (por local). Se prorratea por roster.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button type="button" class="btn-ghost" onclick="descargarPlanillaCL()"><i class="ti ti-download"></i> Descargar planilla CL</button>
+        <label class="btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px"><i class="ti ti-upload"></i> Subir planilla CL
+          <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="subirPlanillaCL(this)">
         </label>
       </div>
       <div class="field-hint" id="gestStatus" style="margin-top:10px"></div>
@@ -2219,6 +2231,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817u"></script>
+<script src="app.js?v=20260817v"></script>
 </body>
 </html>
