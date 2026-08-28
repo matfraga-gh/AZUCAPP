@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AA | ULTIMA | ancho inputs % objetivos (sin scroll lateral) + Externo (+ Z/Y/X) ===== */
+/* ===== BUILD 2026-08-17-AB | ULTIMA | Gestion estad. a prueba de fallos (abre aunque falte algo) + anchos (+ AA/Z/Y) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -8246,20 +8246,24 @@ function _nz(x){ const v = parseFloat(x); return isFinite(v) ? v : 0; }
 
 window.abrirGestionEst = function() {
   if (!isMaster() && !isAdmin()) return;
+  const modal = document.getElementById('modalGestionEst');
+  if (!modal) { toast('No encuentro el módulo. Actualizá la app (Ctrl+Shift+R) y probá de nuevo.', 'error'); return; }
   const sel = document.getElementById('gestMes');
-  const hoy = new Date();
-  const ops = [];
-  for (let i = 0; i < 18; i++) {
-    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
-    const val = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-    ops.push('<option value="' + val + '"' + (val === PV_MES ? ' selected' : '') + '>' + MESES_CORTO[d.getMonth()] + ' ' + d.getFullYear() + '</option>');
+  if (sel) {
+    const hoy = new Date();
+    const ops = [];
+    for (let i = 0; i < 18; i++) {
+      const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+      const val = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      ops.push('<option value="' + val + '"' + (val === PV_MES ? ' selected' : '') + '>' + MESES_CORTO[d.getMonth()] + ' ' + d.getFullYear() + '</option>');
+    }
+    sel.innerHTML = ops.join('');
   }
-  sel.innerHTML = ops.join('');
   const locSel = document.getElementById('gestObjLocal');
   if (locSel) locSel.innerHTML = _optsLocalesGest('');
-  document.getElementById('gestStatus').textContent = '';
-  document.getElementById('modalGestionEst').classList.add('show');
-  if (typeof cargarObjGest === 'function') cargarObjGest();
+  const st = document.getElementById('gestStatus'); if (st) st.textContent = '';
+  modal.classList.add('show');
+  try { if (typeof cargarObjGest === 'function') cargarObjGest(); } catch (e) {}
 };
 window.cerrarGestionEst = function() { document.getElementById('modalGestionEst').classList.remove('show'); };
 
