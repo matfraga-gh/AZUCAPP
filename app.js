@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AD | ULTIMA | Panel Resultados: celda % Acum (vs ventas) + % Obj (config); CB=100-sum; consolidado promedia % (+ AC/AB/AA) ===== */
+/* ===== BUILD 2026-08-17-AE | ULTIMA | $ Obj = %Obj x ventas netas (tambien en consolidado) -> aparece $ Dif (+ AD/AC/AB) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -8151,10 +8151,8 @@ function renderPanelResultados(cierres, obj, agregado, costos, pctProm) {
 
   const pctOf = function(p){ return (p != null) ? (p/100)*netoVentas : null; };
   const ventasObj = obj.hayObj ? obj.objNeto : null;
-  const cmObj = pctOf(obj.cmPct), clObj = pctOf(obj.clPct), goObj = pctOf(obj.goPct);
   const hayCostoObj = (obj.cmPct != null || obj.clPct != null || obj.goPct != null);
   const gbPct = hayCostoObj ? (100 - (obj.cmPct||0) - (obj.clPct||0) - (obj.goPct||0)) : null;
-  const cbObj = (gbPct != null) ? (gbPct/100)*netoVentas : null;
   const cmAcum = (costos.cmTotal != null) ? costos.cmTotal : null;
   const clAcum = (costos.clTotal != null) ? costos.clTotal : null;
   const goAcum = (costos.goTotal != null) ? costos.goTotal : null;
@@ -8169,6 +8167,8 @@ function renderPanelResultados(cierres, obj, agregado, costos, pctProm) {
     clPctA = _pAcum(clAcum); cmPctA = _pAcum(cmAcum); goPctA = _pAcum(goAcum); cbPctA = _pAcum(cbAcum);
     clPctO = obj.clPct; cmPctO = obj.cmPct; goPctO = obj.goPct; cbPctO = gbPct;
   }
+  const _pObj = function(p){ return (p != null && isFinite(p)) ? (p/100)*netoVentas : null; };
+  const clObj = _pObj(clPctO), cmObj = _pObj(cmPctO), goObj = _pObj(goPctO), cbObj = _pObj(cbPctO);
 
   const card = function(titulo, code, acum, objv, tipo, color, pctAcum, pctObj){
     const difV = (acum != null && objv != null) ? (acum - objv) : null;
