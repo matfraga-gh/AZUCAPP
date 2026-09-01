@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AG | ULTIMA | registro de vistas de biblioteca (quien abre que documento) (+ AF/AE/AD) ===== */
+/* ===== BUILD 2026-08-17-AH | ULTIMA | aclaracion precio de venta sin IVA (neto) en costeo (+ AG/AF/AE) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */

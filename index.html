@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817ag">
+<link rel="stylesheet" href="styles.css?v=20260817ah">
 </head>
 <body>
 
@@ -2071,8 +2071,11 @@
       </div>
 
       <div id="precioCampo" style="display:none;">
-        <label class="field"><span class="field-label">Precio de venta</span>
+        <label class="field"><span class="field-label">Precio de venta (sin IVA · neto)</span>
           <input type="text" inputmode="decimal" id="platoPrecio" placeholder="$ 0"></label>
+        <p class="modal-text" style="font-size:12px;color:var(--c-muted);margin:4px 0 0;">
+          Cargá el precio SIN IVA, igual que los costos. Así el FC% y el margen quedan sobre valores netos.
+        </p>
       </div>
 
       <div id="componentesSection" class="cierre-section" style="margin-top:6px;">
@@ -2251,6 +2254,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817ag"></script>
+<script src="app.js?v=20260817ah"></script>
 </body>
 </html>
