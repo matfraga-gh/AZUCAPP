@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AH | ULTIMA | aclaracion precio de venta sin IVA (neto) en costeo (+ AG/AF/AE) ===== */
+/* ===== BUILD 2026-08-17-AI | ULTIMA | eliminar receta/plato/menu (con confirmacion; baja logica si esta referenciada) (+ AH/AG/AF) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -2801,6 +2801,7 @@ window.abrirNuevaSubelab = function() {
   renderComponentesEdit();
   poblarPlatosPicker();
   renderPasosEdit();
+  var _beN = document.getElementById('btnEliminarReceta'); if (_beN) _beN.style.display = 'none';
   document.getElementById('modalSubelab').classList.add('show');
 };
 
@@ -2824,6 +2825,7 @@ window.abrirEditarSubelab = async function(id) {
   configurarCamposModal();
   prepararPickerComponente();
   poblarPlatosPicker();
+  var _beE = document.getElementById('btnEliminarReceta'); if (_beE) _beE.style.display = '';
   document.getElementById('modalSubelab').classList.add('show');
   if (t === 'menu') { cargarPasosEnEditor(id); } else { cargarComponentesEnEditor(id); }
 };
@@ -2851,6 +2853,39 @@ async function cargarComponentesEnEditor(id) {
 
 window.closeSubelab = function() {
   document.getElementById('modalSubelab').classList.remove('show');
+};
+
+window.eliminarRecetaActual = async function() {
+  if (!puedeGestionarRecetas()) { toast('No ten\u00e9s permiso', 'error'); return; }
+  const id = RECETA_EDITANDO;
+  if (!id) return;
+  const t = RECETA_TIPO;
+  const tn = t === 'menu' ? 'men\u00fa' : (t === 'plato' ? 'plato' : 'sub-elaboraci\u00f3n');
+  const nom = (document.getElementById('subelabNombre').value || '').trim() || 'este \u00edtem';
+  const ok = await showConfirm({
+    title: 'Eliminar ' + tn,
+    msg: '\u00bfSeguro que quer\u00e9s eliminar "' + nom + '"?\n\nEsta acci\u00f3n no se puede deshacer.',
+    type: 'warning', okLabel: 'S\u00ed, eliminar', cancelLabel: 'Cancelar'
+  });
+  if (!ok) return;
+  const btn = document.getElementById('btnEliminarReceta');
+  if (btn) btn.disabled = true;
+  try {
+    if (t === 'menu') { try { await api('menu_pasos?menu_id=eq.' + id, { method: 'DELETE' }); } catch (e) {} }
+    try {
+      await api('recetas?id=eq.' + id, { method: 'DELETE' });
+    } catch (e) {
+      await api('recetas?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ activo: false }) });
+    }
+    toast('\u2713 ' + tn.charAt(0).toUpperCase() + tn.slice(1) + ' eliminado', 'success');
+    closeSubelab();
+    RECETAS_PLATOS_PICKER = []; RECETAS_ELAB_PICKER = [];
+    await cargarRecetas();
+  } catch (e) {
+    toast('Error al eliminar: ' + ((e && e.message) || e), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 };
 
 function prepararPickerComponente() {
