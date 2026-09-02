@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AJ | ULTIMA | % retencion admin editable en cierre de propina (solo Admin/Master) (+ AI/AH/AG) ===== */
+/* ===== BUILD 2026-08-17-AK | ULTIMA | recetas: local persiste entre tabs + editar componente al tocarlo (+ AJ/AI/AH) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -2338,6 +2338,7 @@ let RECETAS_INSUMOS_VAL = [];   // insumos validados (para el picker)
 let RECETA_FILTRO_LOCAL = '';
 let RECETA_EDITANDO = null;
 let RECETA_COMP_EDIT = [];      // componentes en edición
+let RECETA_COMP_EDIT_IDX = null; // índice del componente que se está editando (null = alta nueva)
 const UNIDADES_RECETA = ['kg', 'g', 'l', 'ml', 'unidad', 'porción'];
 let RECETA_TIPO = 'elaboracion';     // sección activa: 'elaboracion' | 'plato'
 let RECETAS_VIEW = {};               // receta_id -> fila de v_costeo_recetas
@@ -2473,7 +2474,6 @@ window.cambiarSeccionReceta = function(tipo) {
   RECETA_TIPO = tipo;
   actualizarTabsReceta();
   const s = document.getElementById('recetaSearch'); if (s) s.value = '';
-  const fl = document.getElementById('recetaFiltroLocal'); if (fl) fl.value = '';
   cargarRecetas();
 };
 
@@ -2579,12 +2579,12 @@ async function cargarRecetas() {
 function poblarFiltroLocalReceta() {
   const sel = document.getElementById('recetaFiltroLocal');
   if (!sel) return;
-  const locales = Array.from(new Set(RECETAS_DB.map(r => r.local).filter(Boolean)))
+  const locales = getLocalesActivos().filter(function(l){ return !/transversal/i.test(l); })
     .sort((a, b) => (localLabel(a) || a).localeCompare(localLabel(b) || b, 'es'));
-  const prev = sel.value;
   sel.innerHTML = '<option value="">Todos los locales</option>' +
     locales.map(l => '<option value="' + esc(l) + '">' + esc(localLabel(l)) + '</option>').join('');
-  sel.value = prev;
+  sel.value = (RECETA_FILTRO_LOCAL && locales.indexOf(RECETA_FILTRO_LOCAL) !== -1) ? RECETA_FILTRO_LOCAL : '';
+  RECETA_FILTRO_LOCAL = sel.value;
 }
 
 function recetasFiltradas() {
@@ -2917,6 +2917,8 @@ function prepararPickerComponente() {
   if (tipoSel) tipoSel.value = 'ingrediente';
   poblarItemsComponente();
   const cant = document.getElementById('compCantidad'); if (cant) cant.value = '';
+  RECETA_COMP_EDIT_IDX = null;
+  const addBtn = document.getElementById('compAddBtn'); if (addBtn) addBtn.innerHTML = '<i class="ti ti-plus"></i>';
 }
 
 // Lista global de items disponibles para el picker de componentes
@@ -3012,7 +3014,14 @@ window.agregarComponente = function() {
   // Buscar nombre en la lista global
   const item = REC_ITEMS_LISTA.find(i => String(i.id) === String(refId));
   const nombre = item ? item.nombre : (searchEl ? searchEl.value : ('Item #' + refId));
-  RECETA_COMP_EDIT.push({ tipo: tipo, refId: refId, nombre: nombre, cantidad: cantidad, unidad: unidad });
+  const nuevo = { tipo: tipo, refId: refId, nombre: nombre, cantidad: cantidad, unidad: unidad };
+  if (RECETA_COMP_EDIT_IDX != null && RECETA_COMP_EDIT[RECETA_COMP_EDIT_IDX]) {
+    RECETA_COMP_EDIT[RECETA_COMP_EDIT_IDX] = nuevo;
+    RECETA_COMP_EDIT_IDX = null;
+    const addBtn = document.getElementById('compAddBtn'); if (addBtn) addBtn.innerHTML = '<i class="ti ti-plus"></i>';
+  } else {
+    RECETA_COMP_EDIT.push(nuevo);
+  }
   if (hiddenEl) hiddenEl.value = '';
   if (searchEl) searchEl.value = '';
   document.getElementById('compCantidad').value = '';
@@ -3021,7 +3030,22 @@ window.agregarComponente = function() {
 
 window.quitarComponente = function(idx) {
   RECETA_COMP_EDIT.splice(idx, 1);
+  if (RECETA_COMP_EDIT_IDX === idx) { RECETA_COMP_EDIT_IDX = null; const ab = document.getElementById('compAddBtn'); if (ab) ab.innerHTML = '<i class="ti ti-plus"></i>'; }
   renderComponentesEdit();
+};
+
+window.editarComponente = function(idx) {
+  const c = RECETA_COMP_EDIT[idx];
+  if (!c) return;
+  RECETA_COMP_EDIT_IDX = idx;
+  const tipoSel = document.getElementById('compTipo'); if (tipoSel) tipoSel.value = c.tipo;
+  poblarItemsComponente();
+  const hiddenEl = document.getElementById('compItem'); if (hiddenEl) hiddenEl.value = c.refId;
+  const searchEl = document.getElementById('compItemSearch'); if (searchEl) searchEl.value = c.nombre;
+  const cant = document.getElementById('compCantidad'); if (cant) cant.value = c.cantidad;
+  const uSel = document.getElementById('compUnidad'); if (uSel) uSel.value = c.unidad;
+  const addBtn = document.getElementById('compAddBtn'); if (addBtn) addBtn.innerHTML = '<i class="ti ti-check"></i>';
+  if (cant) { cant.focus(); }
 };
 
 // Conversión de unidades para estimar costos (peso y volumen)
@@ -3084,7 +3108,7 @@ function renderComponentesEdit() {
       }
     }
     return '<div class="comp-row">' +
-      '<div class="comp-info">' +
+      '<div class="comp-info" style="cursor:pointer" onclick="editarComponente(' + idx + ')" title="Tocá para editar">' +
         '<span class="comp-nombre">' + esc(c.nombre) + (c.tipo === 'receta' ? ' <span class="comp-tag">sub-elab</span>' : '') + '</span>' +
         '<span class="comp-cant">' + fmtCant(c.cantidad) + ' ' + esc(c.unidad) + '</span>' +
         costoLinea +
@@ -3202,7 +3226,7 @@ window.guardarSubelab = async function() {
   const s = document.getElementById('recetaSearch');
   if (s) s.addEventListener('input', renderRecetas);
   const fl = document.getElementById('recetaFiltroLocal');
-  if (fl) fl.addEventListener('change', renderRecetas);
+  if (fl) fl.addEventListener('change', function(){ RECETA_FILTRO_LOCAL = fl.value; renderRecetas(); });
 })();
 
 function nuevoCierrePlaceholder() {
