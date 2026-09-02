@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817ai">
+<link rel="stylesheet" href="styles.css?v=20260817aj">
 </head>
 <body>
 
@@ -1583,6 +1583,10 @@
         </div>
       </div>
 
+      <label class="field" style="margin-top:4px"><span class="field-label">Retención administración (%)</span>
+        <input type="number" min="0" max="100" step="any" id="cierreAdminPct" oninput="recalcCierre()"></label>
+      <div id="cierreAdminPctHint" class="cierre-hint" style="margin:4px 0 12px"></div>
+
       <div class="cierre-resumen" id="cierreResumen"></div>
 
       <div class="cierre-section">
@@ -2255,6 +2259,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817ai"></script>
+<script src="app.js?v=20260817aj"></script>
 </body>
 </html>

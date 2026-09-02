@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AI | ULTIMA | eliminar receta/plato/menu (con confirmacion; baja logica si esta referenciada) (+ AH/AG/AF) ===== */
+/* ===== BUILD 2026-08-17-AJ | ULTIMA | % retencion admin editable en cierre de propina (solo Admin/Master) (+ AI/AH/AG) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -1754,6 +1754,7 @@ function abrirNuevoCierre() {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('cierreError').textContent = '';
+  _setCierreAdminPct(null);
 
   const tc = PROP_CONFIG || {};
   document.getElementById('cierreTcHint').textContent =
@@ -1808,6 +1809,7 @@ async function abrirEditarCierre(cierreId) {
   setMoneyVal('cierreTransf', c.monto_transferencia);
   document.getElementById('cierreComentario').value = c.comentario || '';
   document.getElementById('cierreError').textContent = '';
+  _setCierreAdminPct(c.porcentaje_admin);
 
   const tc = PROP_CONFIG || {};
   document.getElementById('cierreTcHint').textContent =
@@ -1943,6 +1945,28 @@ function resumenRow(k, v, hi) {
   return '<div class="cierre-res-row' + (hi ? ' hi' : '') + '"><span>' + k + '</span><strong>' + v + '</strong></div>';
 }
 
+function _cierrePctActual() {
+  const el = document.getElementById('cierreAdminPct');
+  const v = el ? parseFloat(el.value) : NaN;
+  if (isFinite(v) && v >= 0) return v;
+  return parseFloat((PROP_CONFIG || {}).porcentaje_admin) || 0;
+}
+function _setCierreAdminPct(val) {
+  const el = document.getElementById('cierreAdminPct');
+  const hint = document.getElementById('cierreAdminPctHint');
+  const puede = isMaster() || isAdmin();
+  const def = parseFloat((PROP_CONFIG || {}).porcentaje_admin) || 0;
+  if (el) {
+    const n = parseFloat(val);
+    el.value = (isFinite(n) && n >= 0) ? n : def;
+    el.disabled = !puede;
+  }
+  if (hint) {
+    hint.textContent = puede
+      ? ('Default ' + def + '%. Cambialo solo en casos puntuales (ej. eventos al 15%).')
+      : 'Solo un Admin puede modificar la retenci\u00f3n; queda en el valor por defecto.';
+  }
+}
 function recalcCierre() {
   const tc = PROP_CONFIG || {};
   let cash = 0;
@@ -1954,7 +1978,7 @@ function recalcCierre() {
   const total = cash + extranjera + electronico;
   const puntos = CIERRE_COLABS.reduce((s, c) => s + (parseFloat(c.puntos) || 0), 0);
 
-  const pctPreview = parseFloat((PROP_CONFIG || {}).porcentaje_admin) || 0;
+  const pctPreview = _cierrePctActual();
   const adminPreview = Math.round(total * pctPreview / 100);
   const netoPreview = total - adminPreview;
 
@@ -1977,7 +2001,7 @@ async function guardarCierre() {
   const tarjeta = valNumCierre('cierreTarjeta'), transf = valNumCierre('cierreTransf');
   const extranjera = usd * (parseFloat(tc.cambio_usd) || 0) + eur * (parseFloat(tc.cambio_eur) || 0) + brl * (parseFloat(tc.cambio_brl) || 0);
   const bruto = cash + extranjera + tarjeta + transf;
-  const pct = parseFloat((PROP_CONFIG || {}).porcentaje_admin) || 0;
+  const pct = _cierrePctActual();
   const montoAdmin = Math.round(bruto * pct / 100);
   const neto = bruto - montoAdmin;  // lo que se reparte entre colaboradores
   const colabs = CIERRE_COLABS.filter(c => (parseFloat(c.puntos) || 0) > 0);
