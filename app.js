@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AL | ULTIMA | recetas: navegar menu->plato->sub-elab (Volver, pide guardar antes) (+ AK/AJ/AI) ===== */
+/* ===== BUILD 2026-08-17-AM | ULTIMA | pedidos: traba anti doble-envio (no se duplican) (+ AL/AK/AJ) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -7234,7 +7234,9 @@ window.quitarItemPedido = function(i) {
   renderEditorPedido();
 };
 
+let PED_OP_EN_CURSO = false;
 window.guardarPedido = async function(enviar) {
+  if (PED_OP_EN_CURSO) return;
   leerHeaderDesdeDOM();
   leerItemsDesdeDOM();
   const validos = PED_ITEMS.filter(it => it.ingrediente_id && parseFloat(it.cantidad_pedida) > 0);
@@ -7245,6 +7247,7 @@ window.guardarPedido = async function(enviar) {
     toast('Eleg\u00ed la unidad en: ' + nombres, 'warning');
     return;
   }
+  PED_OP_EN_CURSO = true;
   try {
     if (!PED_ACTUAL.id) {
       const ins = await api('requerimientos', { method: 'POST', body: JSON.stringify({
@@ -7280,9 +7283,11 @@ window.guardarPedido = async function(enviar) {
       renderEditorPedido();
     }
   } catch (e) { toast('No se pudo guardar: ' + ((e && e.message) || e), 'error'); }
+  finally { PED_OP_EN_CURSO = false; }
 };
 
 window.confirmarPedido = async function() {
+  if (PED_OP_EN_CURSO) return;
   const fcEl = document.getElementById('pedFechaComprometida');
   const obsEl = document.getElementById('pedObs');
   if (!fcEl || !fcEl.value) { toast('Poné la fecha comprometida de entrega antes de confirmar', 'warning'); return; }
@@ -7291,6 +7296,7 @@ window.confirmarPedido = async function() {
   if (!validos.length) { toast('El pedido no tiene insumos con cantidad', 'warning'); return; }
   const sinUnidad = validos.filter(function(it){ return !it.unidad; });
   if (sinUnidad.length) { toast('Elegí la unidad en: ' + sinUnidad.map(function(it){ return pedInsumoNombre(it.ingrediente_id); }).join(', '), 'warning'); return; }
+  PED_OP_EN_CURSO = true;
   try {
     await api('requerimiento_items?requerimiento_id=eq.' + PED_ACTUAL.id, { method: 'DELETE' });
     const payload = validos.map(function(it, i){ return {
@@ -7308,6 +7314,7 @@ window.confirmarPedido = async function() {
     toast('\u2713 Pedido confirmado', 'success');
     openMisPedidos();
   } catch (e) { toast('No se pudo confirmar: ' + ((e && e.message) || e), 'error'); }
+  finally { PED_OP_EN_CURSO = false; }
 };
 window.devolverPedido = async function() {
   const ok = await showConfirm({ title: 'Devolver a borrador', msg: 'El editor podr\u00e1 modificarlo de nuevo. \u00bfSeguimos?', okLabel: 'Devolver' });
@@ -7319,8 +7326,10 @@ window.devolverPedido = async function() {
   } catch (e) { toast('No se pudo devolver: ' + ((e && e.message) || e), 'error'); }
 };
 window.guardarRecepcion = async function(cerrar) {
+  if (PED_OP_EN_CURSO) return;
   const cont = document.getElementById('pedItems');
   const blocks = cont.querySelectorAll('.ped-item');
+  PED_OP_EN_CURSO = true;
   try {
     for (const b of blocks) {
       const itemId = b.dataset.itemid;
@@ -7357,6 +7366,7 @@ window.guardarRecepcion = async function(cerrar) {
       renderEditorPedido();
     }
   } catch (e) { toast('No se pudo guardar la recepci\u00f3n: ' + ((e && e.message) || e), 'error'); }
+  finally { PED_OP_EN_CURSO = false; }
 };
 window.eliminarAccesoHuerfano = async function(userId) {
   if (!isMaster() && !isAdmin()) return;
