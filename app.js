@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AK | ULTIMA | recetas: local persiste entre tabs + editar componente al tocarlo (+ AJ/AI/AH) ===== */
+/* ===== BUILD 2026-08-17-AL | ULTIMA | recetas: navegar menu->plato->sub-elab (Volver, pide guardar antes) (+ AK/AJ/AI) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -2338,7 +2338,9 @@ let RECETAS_INSUMOS_VAL = [];   // insumos validados (para el picker)
 let RECETA_FILTRO_LOCAL = '';
 let RECETA_EDITANDO = null;
 let RECETA_COMP_EDIT = [];      // componentes en edición
-let RECETA_COMP_EDIT_IDX = null; // índice del componente que se está editando (null = alta nueva)
+let RECETA_COMP_EDIT_IDX = null;
+let RECETA_NAV_STACK = [];
+let RECETA_EDIT_SNAPSHOT = ''; // índice del componente que se está editando (null = alta nueva)
 const UNIDADES_RECETA = ['kg', 'g', 'l', 'ml', 'unidad', 'porción'];
 let RECETA_TIPO = 'elaboracion';     // sección activa: 'elaboracion' | 'plato'
 let RECETAS_VIEW = {};               // receta_id -> fila de v_costeo_recetas
@@ -2774,7 +2776,7 @@ function renderPasosEdit() {
     if (!p.opcional) total += costoPlato;
     return '<div class="comp-row">' +
       '<div class="comp-info" style="flex:1;">' +
-        '<span class="comp-nombre"><strong>' + (idx + 1) + '.</strong> ' + esc(p.nombre) + '</span>' +
+        '<span class="comp-nombre"><strong>' + (idx + 1) + '.</strong> <span style="cursor:pointer;text-decoration:underline dotted" onclick="drillPlato(' + p.receta_id + ')" title="Abrir plato para editar">' + esc(p.nombre) + '</span></span>' +
         '<span class="comp-costo">costo $' + formatNumber(Math.round(costoPlato)) + (p.opcional ? ' · <span class="comp-duda">opcional (no suma)</span>' : '') + '</span>' +
         '<div class="paso-controls">' +
           '<input type="text" class="paso-nombre" placeholder="Nombre del paso (ej: Entrada)" value="' + esc(p.nombre_paso || '') + '" oninput="setPasoNombre(' + idx + ', this.value)">' +
@@ -2800,6 +2802,7 @@ async function cargarPasosEnEditor(id) {
       return { receta_id: p.receta_id, nombre: plato ? plato.nombre : ('Plato #' + p.receta_id), nombre_paso: p.nombre_paso || '', opcional: !!p.opcional };
     });
     renderPasosEdit();
+    _marcarRecetaLimpia();
   } catch (e) {
     if (cont) cont.innerHTML = '<div class="cierre-hint" style="color:var(--c-error)">Error al cargar los pasos</div>';
   }
@@ -2826,6 +2829,8 @@ window.abrirNuevaSubelab = function() {
   poblarPlatosPicker();
   renderPasosEdit();
   var _beN = document.getElementById('btnEliminarReceta'); if (_beN) _beN.style.display = 'none';
+  RECETA_NAV_STACK = []; _actualizarBotonVolver();
+  _marcarRecetaLimpia();
   document.getElementById('modalSubelab').classList.add('show');
 };
 
@@ -2870,6 +2875,7 @@ async function cargarComponentesEnEditor(id) {
       return { tipo: 'receta', refId: c.sub_receta_id, nombre: sub ? sub.nombre : ('Sub-elab #' + c.sub_receta_id), cantidad: parseFloat(c.cantidad) || 0, unidad: c.unidad || '' };
     });
     renderComponentesEdit();
+    _marcarRecetaLimpia();
   } catch (e) {
     if (cont) cont.innerHTML = '<div class="cierre-hint" style="color:var(--c-error)">Error al cargar componentes</div>';
   }
@@ -2877,6 +2883,65 @@ async function cargarComponentesEnEditor(id) {
 
 window.closeSubelab = function() {
   document.getElementById('modalSubelab').classList.remove('show');
+  RECETA_NAV_STACK = [];
+  _actualizarBotonVolver();
+  actualizarTabsReceta();
+  cargarRecetas();
+};
+
+function _snapshotReceta() {
+  const g = function(id){ return (document.getElementById(id) || {}).value || ''; };
+  return JSON.stringify({
+    n: g('subelabNombre'), l: g('subelabLocal'), r: g('subelabRendimiento'),
+    u: g('subelabUnidad'), p: g('subelabProcedimiento'), c: g('platoCategoria'), pr: g('platoPrecio'),
+    comp: RECETA_COMP_EDIT, pasos: MENU_PASOS_EDIT
+  });
+}
+function _recetaDirty() { return RECETA_EDIT_SNAPSHOT !== _snapshotReceta(); }
+function _marcarRecetaLimpia() { RECETA_EDIT_SNAPSHOT = _snapshotReceta(); }
+function _actualizarBotonVolver() {
+  const b = document.getElementById('btnVolverReceta');
+  if (b) b.style.display = RECETA_NAV_STACK.length ? '' : 'none';
+}
+async function _guardarSiSucio(verbo) {
+  if (!_recetaDirty()) return true;
+  const ok = await showConfirm({
+    title: 'Cambios sin guardar',
+    msg: 'Ten\u00e9s cambios sin guardar ac\u00e1.\n\n\u00bfGuardar y ' + verbo + '? (Cancelar para quedarte y revisar)',
+    type: 'warning', okLabel: 'Guardar y ' + verbo, cancelLabel: 'Cancelar'
+  });
+  if (!ok) return false;
+  await guardarSubelab();
+  const errTxt = ((document.getElementById('subelabError') || {}).textContent || '').trim();
+  return !errTxt;
+}
+async function drillReceta(childTipo, childId) {
+  if (!puedeGestionarRecetas() || !childId) return;
+  const seguir = await _guardarSiSucio('continuar');
+  if (!seguir) return;
+  let rec = RECETAS_DB.find(function(x){ return String(x.id) === String(childId); });
+  if (!rec) { try { const d = await api('recetas?id=eq.' + childId + '&select=*'); rec = d && d[0]; } catch (e) {} }
+  if (!rec) { toast('No se encontr\u00f3 la receta', 'error'); return; }
+  RECETA_NAV_STACK.push({ tipo: RECETA_TIPO, id: RECETA_EDITANDO });
+  RECETA_TIPO = childTipo;
+  if (!RECETAS_DB.find(function(x){ return String(x.id) === String(childId); })) RECETAS_DB.push(rec);
+  await abrirEditarSubelab(rec.id);
+  _actualizarBotonVolver();
+}
+window.drillPlato = function(id) { return drillReceta('plato', id); };
+window.drillSubelab = function(id) { return drillReceta('elaboracion', id); };
+window.volverReceta = async function() {
+  const seguir = await _guardarSiSucio('volver');
+  if (!seguir) return;
+  const parent = RECETA_NAV_STACK.pop();
+  _actualizarBotonVolver();
+  if (!parent || !parent.id) { closeSubelab(); return; }
+  RECETA_TIPO = parent.tipo;
+  let rec = RECETAS_DB.find(function(x){ return String(x.id) === String(parent.id); });
+  if (!rec) { try { const d = await api('recetas?id=eq.' + parent.id + '&select=*'); rec = d && d[0]; if (rec) RECETAS_DB.push(rec); } catch (e) {} }
+  if (!rec) { toast('No se pudo volver', 'error'); return; }
+  await abrirEditarSubelab(parent.id);
+  _actualizarBotonVolver();
 };
 
 window.eliminarRecetaActual = async function() {
@@ -3113,6 +3178,7 @@ function renderComponentesEdit() {
         '<span class="comp-cant">' + fmtCant(c.cantidad) + ' ' + esc(c.unidad) + '</span>' +
         costoLinea +
       '</div>' +
+      (c.tipo === 'receta' ? '<button type="button" class="comp-del" style="color:var(--c-sand)" onclick="drillSubelab(' + c.refId + ')" aria-label="Abrir" title="Abrir sub-elaboraci\u00f3n"><i class="ti ti-external-link"></i></button>' : '') +
       '<button type="button" class="comp-del" onclick="quitarComponente(' + idx + ')" aria-label="Quitar"><i class="ti ti-trash"></i></button>' +
     '</div>';
   }).join('');
