@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AN | ULTIMA | confirm por encima del modal (z-index) + Platos sin rendimiento (1 porcion) (+ AM/AL/AK) ===== */
+/* ===== BUILD 2026-08-17-AO | ULTIMA | conversion g<->ml (densidad 1) en costeo, sin alerta amarilla (+ AN/AM/AL) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -3125,6 +3125,9 @@ function convertirCantidad(cant, fromU, toU) {
   const porc = { porcion: 1, porciones: 1, porc: 1 };
   if (peso[f] != null && peso[t] != null) return cant * peso[f] / peso[t];
   if (vol[f] != null && vol[t] != null) return cant * vol[f] / vol[t];
+  // Peso <-> volumen asumiendo densidad 1 (1 g = 1 ml), para líquidos cargados en gramos
+  if (peso[f] != null && vol[t] != null) return cant * peso[f] / vol[t];
+  if (vol[f] != null && peso[t] != null) return cant * vol[f] / peso[t];
   if (uni[f] != null && uni[t] != null) return cant * uni[f] / uni[t];
   if (porc[f] != null && porc[t] != null) return cant * porc[f] / porc[t];
   return null; // unidades no convertibles entre sí (ej: unidad <-> kg)
