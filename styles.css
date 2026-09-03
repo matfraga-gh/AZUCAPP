@@ -1497,6 +1497,9 @@ button {
   display: flex;
 }
 
+/* El cartel de confirmación siempre por encima de cualquier modal */
+#modalConfirm { z-index: 3000; }
+
 .modal-card {
   background: var(--c-bg-soft);
   border: 0.5px solid var(--c-cream-border);

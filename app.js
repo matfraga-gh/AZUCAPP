@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AM | ULTIMA | pedidos: traba anti doble-envio (no se duplican) (+ AL/AK/AJ) ===== */
+/* ===== BUILD 2026-08-17-AN | ULTIMA | confirm por encima del modal (z-index) + Platos sin rendimiento (1 porcion) (+ AM/AL/AK) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -2677,7 +2677,7 @@ function opcionesUnidad(sel) {
 function configurarCamposModal() {
   const t = RECETA_TIPO;
   const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
-  show('rendimientoCampos', t !== 'menu');
+  show('rendimientoCampos', t === 'elaboracion');
   show('categoriaCampo', t === 'plato');
   show('precioCampo', t === 'plato' || t === 'menu');
   show('componentesSection', t !== 'menu');
@@ -3209,8 +3209,10 @@ window.guardarSubelab = async function() {
   if (esMenu) {
     if (!MENU_PASOS_EDIT.length) { err.textContent = 'Agregá al menos un paso (plato).'; return; }
   } else {
-    const rendChk = parseFloat(document.getElementById('subelabRendimiento').value) || 0;
-    if (rendChk <= 0) { err.textContent = 'El rendimiento tiene que ser mayor a 0.'; return; }
+    if (RECETA_TIPO === 'elaboracion') {
+      const rendChk = parseFloat(document.getElementById('subelabRendimiento').value) || 0;
+      if (rendChk <= 0) { err.textContent = 'El rendimiento tiene que ser mayor a 0.'; return; }
+    }
     if (!RECETA_COMP_EDIT.length) { err.textContent = 'Agregá al menos un componente.'; return; }
   }
 
@@ -3219,8 +3221,8 @@ window.guardarSubelab = async function() {
   const ahora = new Date().toISOString();
   const receta = {
     nombre: nombre, tipo: RECETA_TIPO, local: local,
-    rendimiento: esMenu ? 1 : (parseFloat(document.getElementById('subelabRendimiento').value) || 0),
-    unidad_rendimiento: esMenu ? 'menú' : document.getElementById('subelabUnidad').value,
+    rendimiento: esMenu ? 1 : (RECETA_TIPO === 'plato' ? 1 : (parseFloat(document.getElementById('subelabRendimiento').value) || 0)),
+    unidad_rendimiento: esMenu ? 'menú' : (RECETA_TIPO === 'plato' ? 'porción' : document.getElementById('subelabUnidad').value),
     procedimiento: procedimiento, activo: true,
     actualizado_en: ahora, actualizado_por: currentUser.id
   };
