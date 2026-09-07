@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AO | ULTIMA | conversion g<->ml (densidad 1) en costeo, sin alerta amarilla (+ AN/AM/AL) ===== */
+/* ===== BUILD 2026-08-17-AP | ULTIMA | mostrador ADITIVO: suma al total/objetivo, no al promedio; permite cierre solo-mostrador (+ AO/AN/AM) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -7722,7 +7722,8 @@ function mostradorPesos(c) {
   const m = parseFloat(c && c.ventas_mostrador) || 0;
   return (c && c.moneda === 'USD') ? m * tcUsd() : m;
 }
-function computablePesos(c) { return ventasPesos(c) - mostradorPesos(c); }
+function computablePesos(c) { return ventasPesos(c) + mostradorPesos(c); } // total (incluye mostrador)
+function salonPesos(c) { return ventasPesos(c); } // solo salon (para promedio por comensal)
 async function asegurarPropConfig() {
   if (PROP_CONFIG) return;
   try { const d = await api('propinas_config?id=eq.1'); PROP_CONFIG = (d && d[0]) ? d[0] : {}; }
@@ -7766,10 +7767,9 @@ function renderCierres() {
   if (!CC_LISTA.length) { lista.innerHTML = '<div class="empty-list">No hay cierres cargados todav\u00eda.</div>'; return; }
   const puedeEd = puedeEditarCierres();
   lista.innerHTML = CC_LISTA.map(c => {
-    const vp = ventasPesos(c);
-    const comp = computablePesos(c);
+    const vp = computablePesos(c);
     const most = mostradorPesos(c);
-    const prom = (c.pax && c.pax > 0) ? (comp / c.pax) : null;
+    const prom = (c.pax && c.pax > 0) ? (salonPesos(c) / c.pax) : null;
     const usdTag = (c.moneda === 'USD') ? (' · USD ' + formatNumber(c.ventas_total || 0)) : '';
     const mostTag = (most > 0) ? (' · mostr. $' + formatNumber(most)) : '';
     const click = puedeEd ? ' onclick="abrirEditarCierreCaja(' + c.id + ')" style="cursor:pointer"' : '';
@@ -7826,7 +7826,7 @@ window.closeCierreCaja = function() { document.getElementById('modalCierreCaja')
 window.ccCalcProm = function() {
   const v = parseMiles(document.getElementById('ccVentas').value);
   const most = parseMiles((document.getElementById('ccMostrador') || {}).value) || 0;
-  const comp = v - most;
+  const comp = v;
   const p = parseInt(document.getElementById('ccPax').value, 10);
   const moneda = (document.getElementById('ccMoneda') || {}).value || 'ARS';
   const el = document.getElementById('ccProm');
@@ -7845,16 +7845,16 @@ window.guardarCierreCaja = async function() {
   const local = document.getElementById('ccLocal').value;
   const fecha = document.getElementById('ccFecha').value;
   const turno = document.getElementById('ccTurno').value;
-  const ventas = parseMiles(document.getElementById('ccVentas').value);
+  const ventas = parseMiles(document.getElementById('ccVentas').value) || 0;
   const moneda = (document.getElementById('ccMoneda') || {}).value || 'ARS';
   const mostrador = parseMiles((document.getElementById('ccMostrador') || {}).value) || 0;
   const pax = parseInt(document.getElementById('ccPax').value, 10);
   if (!local) { err.textContent = 'Eleg\u00ed un local.'; return; }
   if (!fecha) { err.textContent = 'Eleg\u00ed la fecha.'; return; }
-  if (isNaN(ventas) || ventas < 0) { err.textContent = 'Carg\u00e1 las ventas totales.'; return; }
+  if (ventas < 0) { err.textContent = 'Las ventas de sal\u00f3n no pueden ser negativas.'; return; }
   if (isNaN(pax) || pax < 0) { err.textContent = 'Carg\u00e1 la cantidad de pax.'; return; }
   if (moneda === 'USD' && tcUsd() <= 0) { err.textContent = 'Cargá primero el tipo de cambio (USD) en Propinas → Configuración.'; return; }
-  if (mostrador > ventas) { err.textContent = 'Las ventas mostrador no pueden ser mayores que las ventas totales.'; return; }
+  if (ventas <= 0 && mostrador <= 0) { err.textContent = 'Cargá algún monto: ventas de salón o mostrador.'; return; }
   const payload = { local: local, fecha: fecha, turno: turno, ventas_total: ventas, ventas_mostrador: mostrador, pax: pax, moneda: moneda, observaciones: document.getElementById('ccObs').value.trim() || null };
   const btn = document.getElementById('ccGuardarBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
   try {
@@ -8134,11 +8134,12 @@ function _pvMoney(n) { return '$' + formatNumber(n); }
 function renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agregado) {
   const body = document.getElementById('pvBody');
   const brutoVentas = cierres.reduce(function(s, c) { return s + computablePesos(c); }, 0);
+  const salonVentas = cierres.reduce(function(s, c) { return s + salonPesos(c); }, 0);
   const mostradorTotal = cierres.reduce(function(s, c) { return s + mostradorPesos(c); }, 0);
   const pax = cierres.reduce(function(s, c) { return s + (parseInt(c.pax, 10) || 0); }, 0);
   const netoVentas = brutoVentas / IVA_COEF;
-  const promBruto = pax > 0 ? brutoVentas / pax : null;
-  const promNeto = pax > 0 ? netoVentas / pax : null;
+  const promBruto = pax > 0 ? salonVentas / pax : null;
+  const promNeto = pax > 0 ? (salonVentas / IVA_COEF) / pax : null;
   const nTurnos = cierres.length;
   const promPaxTurno = nTurnos > 0 ? pax / nTurnos : null;
   const promVtaBrutoTurno = nTurnos > 0 ? brutoVentas / nTurnos : null;
@@ -8153,7 +8154,7 @@ function renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agrega
     '<div class="pv-card"><div class="pv-card-label">Prom. x comensal</div><div class="pv-card-valor">' + (promBruto != null ? _pvMoney(promBruto) : '—') + '</div><div class="pv-sub">' + (promNeto != null ? 'Neto ' + _pvMoney(promNeto) : '') + '</div></div>' +
     '<div class="pv-card"><div class="pv-card-label">Prom. pax x turno</div><div class="pv-card-valor">' + (promPaxTurno != null ? formatNumber(Math.round(promPaxTurno)) : '—') + '</div></div>' +
     '<div class="pv-card"><div class="pv-card-label">Prom. vtas x turno</div><div class="pv-card-valor">' + (promVtaBrutoTurno != null ? _pvMoney(promVtaBrutoTurno) : '—') + '</div><div class="pv-sub">' + (promVtaNetoTurno != null ? 'Neto ' + _pvMoney(promVtaNetoTurno) : '') + '</div></div>' +
-    (mostradorTotal > 0 ? '<div class="pv-card"><div class="pv-card-label">Ventas mostrador</div><div class="pv-card-valor">' + _pvMoney(mostradorTotal) + '</div><div class="pv-sub">No computa en objetivo ni promedio</div></div>' : '') +
+    (mostradorTotal > 0 ? '<div class="pv-card"><div class="pv-card-label">Ventas mostrador</div><div class="pv-card-valor">' + _pvMoney(mostradorTotal) + '</div><div class="pv-sub">Incluidas en el total. No computan en el promedio por comensal</div></div>' : '') +
   '</div>';
 
   html += '<div class="pv-obj">';
@@ -8211,7 +8212,7 @@ function renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agrega
       const v = computablePesos(c);
       const most = mostradorPesos(c);
       const p = parseInt(c.pax, 10) || 0;
-      const pr = p > 0 ? v / p : null;
+      const pr = p > 0 ? salonPesos(c) / p : null;
       const obs = c.observaciones ? '<div class="pv-det-obs"><i class="ti ti-message-circle"></i> ' + esc(c.observaciones) + '</div>' : '';
       return '<div class="pv-det-row">' +
         '<div class="pv-det-top"><span class="pv-det-fecha">' + (agregado ? esc(localLabel(c.local)) + ' · ' : '') + fmtFechaCorta(String(c.fecha).slice(0, 10)) + ' · ' + esc(ccTurnoLabel(c.turno)) + '</span>' +
@@ -8839,8 +8840,9 @@ function renderEstadisticas(data) {
   }
 
   const totalVentas = data.reduce(function(s, c) { return s + computablePesos(c); }, 0);
+  const salonVentasEst = data.reduce(function(s, c) { return s + salonPesos(c); }, 0);
   const totalPax    = data.reduce(function(s, c) { return s + (parseInt(c.pax, 10) || 0); }, 0);
-  const promGlobal  = totalPax > 0 ? totalVentas / totalPax : null;
+  const promGlobal  = totalPax > 0 ? salonVentasEst / totalPax : null;
 
   elRes.innerHTML =
     '<div class="est-cards">' +
@@ -8855,8 +8857,9 @@ function renderEstadisticas(data) {
   if (!EST_LOCAL) {
     const porLocal = {};
     data.forEach(function(c) {
-      if (!porLocal[c.local]) porLocal[c.local] = { ventas: 0, pax: 0 };
+      if (!porLocal[c.local]) porLocal[c.local] = { ventas: 0, salon: 0, pax: 0 };
       porLocal[c.local].ventas += computablePesos(c);
+      porLocal[c.local].salon  += salonPesos(c);
       porLocal[c.local].pax    += parseInt(c.pax, 10) || 0;
     });
     const locs = Object.keys(porLocal).sort(function(a, b) { return porLocal[b].ventas - porLocal[a].ventas; });
@@ -8865,7 +8868,7 @@ function renderEstadisticas(data) {
         '<div class="est-tabla-head"><span>Local</span><span>Ventas</span><span>Pax</span><span>Prom/pax</span></div>' +
         locs.map(function(loc) {
           const r = porLocal[loc];
-          const pr = r.pax > 0 ? r.ventas / r.pax : null;
+          const pr = r.pax > 0 ? r.salon / r.pax : null;
           return '<div class="est-tabla-fila">' +
             '<span>' + esc(localLabel(loc)) + '</span>' +
             '<span>$' + formatNumber(r.ventas) + '</span>' +
@@ -8878,7 +8881,7 @@ function renderEstadisticas(data) {
 
   html += '<div class="est-section-title">Cierres del período</div>' +
     data.map(function(c) {
-      const prom = (c.pax && c.pax > 0) ? computablePesos(c) / c.pax : null;
+      const prom = (c.pax && c.pax > 0) ? salonPesos(c) / c.pax : null;
       return '<div class="ped-sub">' +
           pedFecha(c.fecha) + ' · ' + esc(ccTurnoLabel(c.turno)) + ' · ' + (c.pax || 0) + ' pax' +
           (prom != null ? ' · $' + formatNumber(prom) + '/pax' : '') +
