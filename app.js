@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AP | ULTIMA | mostrador ADITIVO: suma al total/objetivo, no al promedio; permite cierre solo-mostrador (+ AO/AN/AM) ===== */
+/* ===== BUILD 2026-08-17-AQ | ULTIMA | tilde Venta neta (sin IVA) por cierre: no descuenta IVA (+ AP/AO/AN) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -7724,6 +7724,8 @@ function mostradorPesos(c) {
 }
 function computablePesos(c) { return ventasPesos(c) + mostradorPesos(c); } // total (incluye mostrador)
 function salonPesos(c) { return ventasPesos(c); } // solo salon (para promedio por comensal)
+function netoPesos(c) { return (c && c.venta_neta) ? computablePesos(c) : computablePesos(c) / IVA_COEF; } // neto: si es venta neta no descuenta IVA
+function salonNetoPesos(c) { return (c && c.venta_neta) ? salonPesos(c) : salonPesos(c) / IVA_COEF; }
 async function asegurarPropConfig() {
   if (PROP_CONFIG) return;
   try { const d = await api('propinas_config?id=eq.1'); PROP_CONFIG = (d && d[0]) ? d[0] : {}; }
@@ -7794,6 +7796,7 @@ window.abrirNuevoCierreCaja = function() {
   document.getElementById('ccTurno').innerHTML = CIERRE_CAJA_TURNOS.map(t => '<option value="' + t[0] + '"' + (t[0] === 'noche' ? ' selected' : '') + '>' + t[1] + '</option>').join('');
   document.getElementById('ccVentas').value = '';
   document.getElementById('ccMostrador').value = '';
+  if (document.getElementById('ccVentaNeta')) document.getElementById('ccVentaNeta').checked = false;
   document.getElementById('ccPax').value = '';
   document.getElementById('ccObs').value = '';
   document.getElementById('ccProm').textContent = '';
@@ -7815,6 +7818,7 @@ window.abrirEditarCierreCaja = function(id) {
   document.getElementById('ccMoneda').value = c.moneda || 'ARS';
   setMoneyVal('ccVentas', c.ventas_total);
   setMoneyVal('ccMostrador', c.ventas_mostrador || 0);
+  if (document.getElementById('ccVentaNeta')) document.getElementById('ccVentaNeta').checked = !!c.venta_neta;
   document.getElementById('ccPax').value = c.pax != null ? c.pax : '';
   document.getElementById('ccObs').value = c.observaciones || '';
   ccCalcProm();
@@ -7855,7 +7859,7 @@ window.guardarCierreCaja = async function() {
   if (isNaN(pax) || pax < 0) { err.textContent = 'Carg\u00e1 la cantidad de pax.'; return; }
   if (moneda === 'USD' && tcUsd() <= 0) { err.textContent = 'Cargá primero el tipo de cambio (USD) en Propinas → Configuración.'; return; }
   if (ventas <= 0 && mostrador <= 0) { err.textContent = 'Cargá algún monto: ventas de salón o mostrador.'; return; }
-  const payload = { local: local, fecha: fecha, turno: turno, ventas_total: ventas, ventas_mostrador: mostrador, pax: pax, moneda: moneda, observaciones: document.getElementById('ccObs').value.trim() || null };
+  const payload = { local: local, fecha: fecha, turno: turno, ventas_total: ventas, ventas_mostrador: mostrador, pax: pax, moneda: moneda, venta_neta: !!(document.getElementById('ccVentaNeta') && document.getElementById('ccVentaNeta').checked), observaciones: document.getElementById('ccObs').value.trim() || null };
   const btn = document.getElementById('ccGuardarBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
   try {
     if (CC_EDIT) {
@@ -8135,11 +8139,12 @@ function renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agrega
   const body = document.getElementById('pvBody');
   const brutoVentas = cierres.reduce(function(s, c) { return s + computablePesos(c); }, 0);
   const salonVentas = cierres.reduce(function(s, c) { return s + salonPesos(c); }, 0);
+  const netoVentas = cierres.reduce(function(s, c) { return s + netoPesos(c); }, 0);
+  const salonNeto = cierres.reduce(function(s, c) { return s + salonNetoPesos(c); }, 0);
   const mostradorTotal = cierres.reduce(function(s, c) { return s + mostradorPesos(c); }, 0);
   const pax = cierres.reduce(function(s, c) { return s + (parseInt(c.pax, 10) || 0); }, 0);
-  const netoVentas = brutoVentas / IVA_COEF;
   const promBruto = pax > 0 ? salonVentas / pax : null;
-  const promNeto = pax > 0 ? (salonVentas / IVA_COEF) / pax : null;
+  const promNeto = pax > 0 ? salonNeto / pax : null;
   const nTurnos = cierres.length;
   const promPaxTurno = nTurnos > 0 ? pax / nTurnos : null;
   const promVtaBrutoTurno = nTurnos > 0 ? brutoVentas / nTurnos : null;
@@ -8217,7 +8222,7 @@ function renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agrega
       return '<div class="pv-det-row">' +
         '<div class="pv-det-top"><span class="pv-det-fecha">' + (agregado ? esc(localLabel(c.local)) + ' · ' : '') + fmtFechaCorta(String(c.fecha).slice(0, 10)) + ' · ' + esc(ccTurnoLabel(c.turno)) + '</span>' +
         '<span class="pv-det-venta">' + _pvMoney(v) + '</span></div>' +
-        '<div class="pv-det-sub">' + p + ' comensales' + (pr != null ? ' · ' + _pvMoney(pr) + '/comensal · neto ' + _pvMoney(v / IVA_COEF) : '') + (most > 0 ? ' · mostrador ' + _pvMoney(most) : '') + (c.moneda === 'USD' ? ' · USD ' + formatNumber(c.ventas_total || 0) : '') + '</div>' +
+        '<div class="pv-det-sub">' + p + ' comensales' + (pr != null ? ' · ' + _pvMoney(pr) + '/comensal · neto ' + _pvMoney(netoPesos(c)) : '') + (most > 0 ? ' · mostrador ' + _pvMoney(most) : '') + (c.moneda === 'USD' ? ' · USD ' + formatNumber(c.ventas_total || 0) : '') + '</div>' +
         obs +
       '</div>';
     }).join('') + '</div>';
@@ -8293,7 +8298,7 @@ async function cargarPanelResultados() {
     let pctProm = null;
     if (agregado) {
       const netoByLocal = {};
-      cierres.forEach(function(c){ netoByLocal[c.local] = (netoByLocal[c.local]||0) + computablePesos(c)/IVA_COEF; });
+      cierres.forEach(function(c){ netoByLocal[c.local] = (netoByLocal[c.local]||0) + netoPesos(c); });
       const A = { cl:[], cm:[], go:[], cb:[] }, O = { cl:[], cm:[], go:[], cb:[] };
       reales.forEach(function(l){
         const nl = netoByLocal[l] || 0;
@@ -8322,9 +8327,9 @@ function renderPanelResultados(cierres, obj, agregado, costos, pctProm) {
   costos = costos || {};
   const body = document.getElementById('pvBody');
   const brutoVentas = cierres.reduce(function(s, c){ return s + computablePesos(c); }, 0);
-  const netoVentas = brutoVentas / IVA_COEF;
+  const netoVentas = cierres.reduce(function(s, c){ return s + netoPesos(c); }, 0);
   const sem = { 1:0, 2:0, 3:0, 4:0, 5:0 };
-  cierres.forEach(function(c){ sem[_pvSemana(c.fecha)] += computablePesos(c) / IVA_COEF; });
+  cierres.forEach(function(c){ sem[_pvSemana(c.fecha)] += netoPesos(c); });
 
   const pctOf = function(p){ return (p != null) ? (p/100)*netoVentas : null; };
   const ventasObj = obj.hayObj ? obj.objNeto : null;
