@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AQ | ULTIMA | tilde Venta neta (sin IVA) por cierre: no descuenta IVA (+ AP/AO/AN) ===== */
+/* ===== BUILD 2026-08-17-AR | ULTIMA | CL histórico (costos_laborales_local sin sueldos) ahora se muestra + meses desde ene-2026 (+ AQ/AP/AO) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -15,6 +15,7 @@ const SUPABASE_KEY = 'sb_publishable_VGfoUAU6e0zlXzkY2y8iBw_lYeOKU7K';
 const DIAS_CORTO = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const DIAS_LARGO = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const MESES_CORTO = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const MES_MIN = '2026-01'; // el historico arranca en enero 2026: no mostrar meses anteriores
 
 // Lista de locales - se carga dinámicamente desde la base al iniciar sesión
 // LOCALES_DB es el array completo de objetos {slug, nombre, orden, activo}
@@ -8060,6 +8061,7 @@ function poblarFiltrosPanel() {
   for (let i = 0; i < 18; i++) {
     const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
     const val = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    if (val < MES_MIN) break;
     opsMes.push('<option value="' + val + '"' + (val === PV_MES ? ' selected' : '') + '>' + MESES_CORTO[d.getMonth()] + ' ' + d.getFullYear() + '</option>');
   }
   selMes.innerHTML = opsMes.join('');
@@ -8289,7 +8291,7 @@ async function cargarPanelResultados() {
     const clByLocal = {}; let clTotal = null;
     try {
       const clData = await _fetchCLData(PV_MES);
-      if (Object.keys(clData.sueldos).length) {
+      if (Object.keys(clData.sueldos).length || Object.keys(clData.aportes).length) {
         const perLocal = _computeCLPorLocal(PV_MES, clData);
         if (agregado) { reales.forEach(function(l){ clByLocal[l] = perLocal[l] || 0; }); clTotal = reales.reduce(function(sm, l){ return sm + (perLocal[l]||0); }, 0); }
         else { clTotal = perLocal[loc] || 0; }
@@ -8478,6 +8480,7 @@ window.abrirGestionEst = function() {
     for (let i = 0; i < 18; i++) {
       const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
       const val = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      if (val < MES_MIN) break;
       ops.push('<option value="' + val + '"' + (val === PV_MES ? ' selected' : '') + '>' + MESES_CORTO[d.getMonth()] + ' ' + d.getFullYear() + '</option>');
     }
     sel.innerHTML = ops.join('');
@@ -8792,6 +8795,7 @@ function poblarFiltrosEst() {
   for (let i = 0; i < 18; i++) {
     const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
     const val = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    if (val < MES_MIN) break;
     const label = MESES_CORTO[d.getMonth()] + ' ' + d.getFullYear();
     opsMes.push('<option value="' + val + '"' + (val === EST_MES ? ' selected' : '') + '>' + label + '</option>');
   }
