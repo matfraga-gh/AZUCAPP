@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AR | ULTIMA | CL histórico (costos_laborales_local sin sueldos) ahora se muestra + meses desde ene-2026 (+ AQ/AP/AO) ===== */
+/* ===== BUILD 2026-08-17-AS | ULTIMA | receta: boton editar componente; pedidos: no borrar fecha/obs al agregar item + estado 'No recibido' (+ AR/AQ/AP) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -3183,6 +3183,7 @@ function renderComponentesEdit() {
         costoLinea +
       '</div>' +
       (c.tipo === 'receta' ? '<button type="button" class="comp-del" style="color:var(--c-sand)" onclick="drillSubelab(' + c.refId + ')" aria-label="Abrir" title="Abrir sub-elaboraci\u00f3n"><i class="ti ti-external-link"></i></button>' : '') +
+      '<button type="button" class="comp-del" style="color:var(--c-sand)" onclick="editarComponente(' + idx + ')" aria-label="Editar" title="Editar cantidad/unidad"><i class="ti ti-pencil"></i></button>' +
       '<button type="button" class="comp-del" onclick="quitarComponente(' + idx + ')" aria-label="Quitar"><i class="ti ti-trash"></i></button>' +
     '</div>';
   }).join('');
@@ -7122,7 +7123,7 @@ function renderItemPedido(it, i, editable, recepcion, completado) {
       '</div>';
   }
   if (recepcion || completado) {
-    const recep = [['correcto', 'Recibido correcto'], ['observacion', 'Recibido con observación']];
+    const recep = [['correcto', 'Recibido correcto'], ['observacion', 'Recibido con observación'], ['no_recibido', 'No recibido']];
     const er = it.estado_recepcion || '';
     const recibido = it.cantidad_recibida != null ? it.cantidad_recibida : '';
     const dis = completado ? ' disabled' : '';
@@ -7230,11 +7231,13 @@ function leerHeaderDesdeDOM() {
   if (obsEl) PED_ACTUAL.observaciones_generales = obsEl.value.trim() || null;
 }
 window.agregarItemPedido = function() {
+  leerHeaderDesdeDOM();
   leerItemsDesdeDOM();
   PED_ITEMS.push({ ingrediente_id: null, cantidad_pedida: '', unidad: '', stock_actual: '', comentario_pedido: '' });
   renderEditorPedido();
 };
 window.quitarItemPedido = function(i) {
+  leerHeaderDesdeDOM();
   leerItemsDesdeDOM();
   PED_ITEMS.splice(i, 1);
   renderEditorPedido();
