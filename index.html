@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817at">
+<link rel="stylesheet" href="styles.css?v=20260817au">
 </head>
 <body>
 
@@ -1825,7 +1825,7 @@
 <div class="modal-overlay" id="modalNuevaReserva">
   <div class="modal-card cierre-card">
     <div class="modal-header">
-      <h2 class="modal-title">Nueva solicitud de reserva</h2>
+      <h2 class="modal-title" id="resModalTitulo">Nueva solicitud de reserva</h2>
       <button class="modal-close" onclick="closeNuevaReserva()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
     </div>
     <div class="modal-body cierre-body">
@@ -1833,14 +1833,27 @@
       <label class="field"><span class="field-label">Cliente</span><select id="resCliente" onchange="resClienteChange()"></select></label>
       <div id="resNuevoClienteBox" style="display:none">
         <label class="field"><span class="field-label">Nombre o Razón Social</span><input type="text" id="resCliNombre"></label>
-        <div class="cierre-row2">
-          <label class="field"><span class="field-label">Email</span><input type="email" id="resCliEmail"></label>
-          <label class="field"><span class="field-label">WhatsApp</span><input type="text" id="resCliWa"></label>
-        </div>
+        <label class="field"><span class="field-label">Email</span><input type="email" id="resCliEmail"></label>
+        <label class="field"><span class="field-label">WhatsApp</span>
+          <div style="display:flex;gap:6px">
+            <select id="resCliPais" onchange="resPaisChange()" style="width:auto;flex:0 0 auto">
+              <option value="+54">Argentina +54</option>
+              <option value="+55">Brasil +55</option>
+              <option value="+598">Uruguay +598</option>
+              <option value="+56">Chile +56</option>
+              <option value="+595">Paraguay +595</option>
+              <option value="+1">EEUU/Canadá +1</option>
+              <option value="+34">España +34</option>
+              <option value="otro">Otro código…</option>
+            </select>
+            <input type="text" id="resCliCodigo" placeholder="+código" style="width:80px;flex:0 0 auto;display:none">
+            <input type="tel" id="resCliWa" placeholder="Número (sin 0 ni 15)" style="flex:1;min-width:0">
+          </div>
+        </label>
       </div>
       <div class="cierre-row2">
         <label class="field"><span class="field-label">Fecha</span><input type="date" id="resFecha"></label>
-        <label class="field"><span class="field-label">Hora</span><input type="time" id="resHora"></label>
+        <label class="field"><span class="field-label">Hora</span><input type="time" id="resHora" step="900"></label>
       </div>
       <div class="cierre-row2">
         <label class="field"><span class="field-label">Personas (pax)</span><input type="number" min="1" id="resPax"></label>
@@ -2313,6 +2326,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817at"></script>
+<script src="app.js?v=20260817au"></script>
 </body>
 </html>
