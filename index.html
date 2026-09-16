@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817au">
+<link rel="stylesheet" href="styles.css?v=20260817av">
 </head>
 <body>
 
@@ -1853,11 +1853,11 @@
       </div>
       <div class="cierre-row2">
         <label class="field"><span class="field-label">Fecha</span><input type="date" id="resFecha"></label>
-        <label class="field"><span class="field-label">Hora</span><input type="time" id="resHora" step="900"></label>
+        <label class="field"><span class="field-label">Hora</span><div style="display:flex;gap:6px"><select id="resHoraH" style="flex:1"></select><select id="resHoraM" style="flex:1"><option value="00">00</option><option value="15">15</option><option value="30">30</option><option value="45">45</option></select></div></label>
       </div>
       <div class="cierre-row2">
         <label class="field"><span class="field-label">Personas (pax)</span><input type="number" min="1" id="resPax"></label>
-        <label class="field"><span class="field-label">Forma de pago</span><select id="resPago"><option value="presencial">Presencial</option><option value="cuenta_corriente">Cuenta corriente</option></select></label>
+        <label class="field"><span class="field-label">Forma de pago</span><select id="resPago"><option value="presencial">Presencial</option><option value="cuenta_corriente">Cuenta corriente</option><option value="voucher">Voucher</option></select></label>
       </div>
       <label class="field"><span class="field-label">Cortesías</span><input type="text" id="resCortesias" placeholder="Opcional"></label>
       <label class="field"><span class="field-label">Restricciones</span><input type="text" id="resRestricciones" placeholder="Opcional (alergias, etc.)"></label>
@@ -2326,6 +2326,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817au"></script>
+<script src="app.js?v=20260817av"></script>
 </body>
 </html>

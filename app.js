@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AU | ULTIMA | Reservas: Aceptada/Rechazada + editar, WhatsApp con pais, local/fecha resaltados, hora cada 15, Cta Cte NO COBRAR (+ AT/AS/AR) ===== */
+/* ===== BUILD 2026-08-17-AV | ULTIMA | Reservas: hora en selectores (15min), Voucher, editar/eliminar cualquier estado, autolimpieza pasadas, fix cliente al editar, sin duplicado (+ AU/AT/AS) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -4669,7 +4669,9 @@ async function openMisReservas() {
     const cli = await api('reservas_clientes?order=nombre.asc');
     const sol = await api('reservas_solicitudes?order=fecha.desc,id.desc');
     RESERVAS_CLIENTES = cli || [];
-    RESERVAS_SOLIC = sol || [];
+    const hoy = hoyStr();
+    RESERVAS_SOLIC = (sol || []).filter(function(s){ return String(s.fecha).slice(0,10) >= hoy; });
+    api('reservas_solicitudes?fecha=lt.' + hoy, { method: 'DELETE' }).catch(function(){}); // auto-limpieza de reservas pasadas
   } catch (e) {
     body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar las reservas.</div>';
     return;
@@ -4688,7 +4690,7 @@ function renderReservas() {
   const body = document.getElementById('reservasBody');
   const misLoc = _misLocalesReservas();
   const soy = currentUser ? currentUser.id : null;
-  const paraResponder = RESERVAS_SOLIC.filter(function(s){ return s.estado === 'pendiente' && misLoc.indexOf(s.local) !== -1; });
+  const paraResponder = RESERVAS_SOLIC.filter(function(s){ return s.estado === 'pendiente' && misLoc.indexOf(s.local) !== -1 && s.solicitado_por !== soy; });
   const mias = RESERVAS_SOLIC.filter(function(s){ return s.solicitado_por === soy; });
 
   let html = '<button class="btn-primary" style="width:100%;margin-bottom:16px" onclick="abrirNuevaReserva()"><i class="ti ti-plus"></i> Nueva solicitud de reserva</button>';
@@ -4704,7 +4706,7 @@ function renderReservas() {
 function _reservaCard(s, puedeResponder) {
   const est = RESERVA_ESTADOS[s.estado] || { label: s.estado, color: '#888' };
   const cli = _clienteReserva(s.cliente_id);
-  const pago = s.forma_pago === 'cuenta_corriente' ? 'Cuenta corriente (NO COBRAR)' : 'Presencial';
+  const pago = s.forma_pago === 'cuenta_corriente' ? 'Cuenta corriente (NO COBRAR)' : (s.forma_pago === 'voucher' ? 'Voucher (NO COBRAR)' : 'Presencial');
   const waDigits = (cli && cli.whatsapp) ? String(cli.whatsapp).replace(/[^0-9]/g, '') : '';
   const contacto = cli ? [
     waDigits ? '<a href="https://wa.me/' + waDigits + '" target="_blank" rel="noopener noreferrer" style="color:#25D366;text-decoration:none;font-weight:600"><i class="ti ti-brand-whatsapp"></i> ' + esc(cli.whatsapp) + '</a>' : '',
@@ -4715,26 +4717,49 @@ function _reservaCard(s, puedeResponder) {
     (s.restricciones ? 'Restricciones: ' + esc(s.restricciones) : ''),
     (s.otros ? 'Otros: ' + esc(s.otros) : '')
   ].filter(Boolean).join(' · ');
-  const fechaChip = '<span style="display:inline-block;background:#2D7FC4;color:#fff;font-weight:700;padding:3px 10px;border-radius:8px;font-size:13px">' +
-    fmtFechaCorta(String(s.fecha).slice(0,10)) + (s.hora ? ' · ' + esc(s.hora) : '') + '</span>';
-  let acciones = '';
+  const localPill = '<span style="display:inline-block;background:var(--c-rust);color:#fff;font-weight:700;font-size:15px;padding:3px 11px;border-radius:8px">' + esc(localLabel(s.local)) + '</span>';
+  const fechaChip = '<span style="display:inline-block;background:#2D7FC4;color:#fff;font-weight:700;padding:4px 11px;border-radius:8px;font-size:14px">' +
+    fmtFechaCorta(String(s.fecha).slice(0,10)) + (s.hora ? ' · ' + esc(s.hora) + ' hs' : '') + '</span>';
+  const misLoc2 = _misLocalesReservas();
+  const puedeGestionar = (misLoc2.indexOf(s.local) !== -1) || (s.solicitado_por === (currentUser && currentUser.id));
+  const btns = [];
   if (puedeResponder && s.estado === 'pendiente') {
-    acciones = '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
-      '<button class="btn-primary" style="flex:1;min-width:110px" onclick="responderReserva(' + s.id + ', \'aceptada\')"><i class="ti ti-check"></i> Aceptar</button>' +
-      '<button class="btn-ghost" style="flex:1;min-width:100px;color:var(--c-error)" onclick="responderReserva(' + s.id + ', \'rechazada\')"><i class="ti ti-x"></i> Rechazar</button>' +
-      '<button class="btn-ghost" style="flex:0 0 auto" onclick="abrirEditarReserva(' + s.id + ')"><i class="ti ti-pencil"></i> Editar</button></div>';
+    btns.push('<button class="btn-primary" style="flex:1;min-width:110px" onclick="responderReserva(' + s.id + ', \'aceptada\')"><i class="ti ti-check"></i> Aceptar</button>');
+    btns.push('<button class="btn-ghost" style="flex:1;min-width:100px;color:var(--c-error)" onclick="responderReserva(' + s.id + ', \'rechazada\')"><i class="ti ti-x"></i> Rechazar</button>');
   }
+  if (puedeGestionar && s.estado !== 'rechazada') btns.push('<button class="btn-ghost" style="flex:0 0 auto" onclick="abrirEditarReserva(' + s.id + ')"><i class="ti ti-pencil"></i> Editar</button>');
+  if (puedeGestionar) btns.push('<button class="btn-ghost" style="flex:0 0 auto;color:var(--c-error)" onclick="eliminarReserva(' + s.id + ')"><i class="ti ti-trash"></i> Eliminar</button>');
+  const acciones = btns.length ? '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' + btns.join('') + '</div>' : '';
   return '<div class="ped-card" style="margin-bottom:10px">' +
-    '<div class="ped-card-top" style="align-items:flex-start">' +
-      '<div><div style="font-size:16px;font-weight:700;color:var(--c-rust)">' + esc(localLabel(s.local)) + '</div>' +
-      '<div style="font-size:13px;color:var(--c-cream);margin-top:2px">' + esc(cli ? cli.nombre : 'Cliente') + '</div></div>' +
+    '<div class="ped-card-top" style="align-items:flex-start">' + localPill +
       '<span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;background:' + est.color + ';color:#fff;white-space:nowrap">' + est.label + '</span>' +
     '</div>' +
-    '<div style="margin:8px 0 4px">' + fechaChip + ' <span style="font-size:13px;color:var(--c-cream)">' + (s.pax || 0) + ' pax · ' + pago + '</span></div>' +
+    '<div style="font-size:14px;color:var(--c-cream);font-weight:600;margin-top:6px">' + esc(cli ? cli.nombre : '(cliente sin cargar)') + '</div>' +
+    '<div style="margin:8px 0 4px">' + fechaChip + ' <span style="font-size:13px;color:var(--c-cream)"> · ' + (s.pax || 0) + ' pax · ' + pago + '</span></div>' +
     (contacto ? '<div class="ped-card-sub">' + contacto + '</div>' : '') +
     (extra ? '<div class="ped-card-sub" style="margin-top:4px">' + extra + '</div>' : '') +
     acciones +
   '</div>';
+}
+window.eliminarReserva = async function(id) {
+  if (!puedeReservas()) return;
+  const s = RESERVAS_SOLIC.find(function(x){ return x.id === id; });
+  if (!s) return;
+  const cli = _clienteReserva(s.cliente_id);
+  const ok = await showConfirm({ title: 'Eliminar reserva', msg: 'Vas a eliminar la reserva de ' + (cli ? cli.nombre : 'el cliente') + ' en ' + localLabel(s.local) + '.\n\nEsta acción no se puede deshacer. ¿Confirmás?', type: 'warning', okLabel: 'Sí, eliminar', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  try {
+    await api('reservas_solicitudes?id=eq.' + id, { method: 'DELETE' });
+    toast('✓ Reserva eliminada', 'success');
+    await openMisReservas();
+  } catch (e) { toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error'); }
+};
+function _resLlenarHoras() {
+  const h = document.getElementById('resHoraH');
+  if (!h) return;
+  let o = '<option value="">--</option>';
+  for (let i = 0; i < 24; i++) { const v = String(i).padStart(2, '0'); o += '<option value="' + v + '">' + v + '</option>'; }
+  h.innerHTML = o;
 }
 
 function _resLlenarSelectores(clienteSel) {
@@ -4750,8 +4775,10 @@ window.abrirNuevaReserva = function() {
   document.getElementById('resModalTitulo').textContent = 'Nueva solicitud de reserva';
   document.getElementById('resGuardarBtn').textContent = 'Enviar solicitud';
   _resLlenarSelectores(null);
+  _resLlenarHoras();
   document.getElementById('resNuevoClienteBox').style.display = 'none';
-  ['resFecha','resHora','resPax','resCortesias','resRestricciones','resOtros','resCliNombre','resCliEmail','resCliWa','resCliCodigo'].forEach(function(id){ const el = document.getElementById(id); if (el) el.value = ''; });
+  ['resFecha','resPax','resCortesias','resRestricciones','resOtros','resCliNombre','resCliEmail','resCliWa','resCliCodigo'].forEach(function(id){ const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('resHoraH').value = ''; document.getElementById('resHoraM').value = '00';
   const pais = document.getElementById('resCliPais'); if (pais) pais.value = '+54';
   document.getElementById('resCliCodigo').style.display = 'none';
   document.getElementById('resPago').value = 'presencial';
@@ -4766,12 +4793,19 @@ window.abrirEditarReserva = function(id) {
   document.getElementById('resModalTitulo').textContent = 'Editar solicitud';
   document.getElementById('resGuardarBtn').textContent = 'Guardar cambios';
   _resLlenarSelectores(s.cliente_id);
+  _resLlenarHoras();
   document.getElementById('resNuevoClienteBox').style.display = 'none';
   document.getElementById('resLocal').value = s.local;
   document.getElementById('resFecha').value = s.fecha ? String(s.fecha).slice(0,10) : '';
-  document.getElementById('resHora').value = s.hora || '';
+  const _hh = s.hora ? String(s.hora).slice(0,2) : '';
+  const _mm = s.hora ? String(s.hora).slice(3,5) : '00';
+  document.getElementById('resHoraH').value = _hh;
+  document.getElementById('resHoraM').value = (['00','15','30','45'].indexOf(_mm) !== -1 ? _mm : '00');
   document.getElementById('resPax').value = s.pax != null ? s.pax : '';
   document.getElementById('resPago').value = s.forma_pago || 'presencial';
+  ['resCliNombre','resCliEmail','resCliWa','resCliCodigo'].forEach(function(id){ const el = document.getElementById(id); if (el) el.value = ''; });
+  const _p = document.getElementById('resCliPais'); if (_p) _p.value = '+54';
+  document.getElementById('resCliCodigo').style.display = 'none';
   document.getElementById('resCortesias').value = s.cortesias || '';
   document.getElementById('resRestricciones').value = s.restricciones || '';
   document.getElementById('resOtros').value = s.otros || '';
@@ -4791,7 +4825,8 @@ window.guardarReserva = async function() {
   const err = document.getElementById('resError'); err.textContent = '';
   const local = document.getElementById('resLocal').value;
   const fecha = document.getElementById('resFecha').value;
-  const hora = document.getElementById('resHora').value;
+  const _hh = document.getElementById('resHoraH').value;
+  const hora = _hh ? (_hh + ':' + document.getElementById('resHoraM').value) : '';
   const pax = parseInt(document.getElementById('resPax').value, 10);
   const pago = document.getElementById('resPago').value;
   if (!local) { err.textContent = 'Elegí el punto de venta.'; return; }
@@ -4800,7 +4835,7 @@ window.guardarReserva = async function() {
   let clienteId = document.getElementById('resCliente').value;
   const btn = document.getElementById('resGuardarBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
   try {
-    if (!RESERVA_EDIT_ID && (clienteId === '__nuevo__' || !clienteId)) {
+    if (clienteId === '__nuevo__' || !clienteId) {
       const nom = document.getElementById('resCliNombre').value.trim();
       if (!nom) { err.textContent = 'Cargá el nombre o razón social del cliente.'; btn.disabled = false; btn.textContent = t; return; }
       const pais = document.getElementById('resCliPais').value;
