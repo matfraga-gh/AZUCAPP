@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817as">
+<link rel="stylesheet" href="styles.css?v=20260817at">
 </head>
 <body>
 
@@ -1809,6 +1809,55 @@
 <!-- ============================================
      VISTA: MIS CIERRES
 ============================================ -->
+<div id="vReservas" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Mis Reservas</div>
+        <div class="module-subtitle">Solicitudes de reserva por punto de venta</div>
+      </div>
+    </div>
+    <div id="reservasBody"><div class="loading">Cargando...</div></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalNuevaReserva">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Nueva solicitud de reserva</h2>
+      <button class="modal-close" onclick="closeNuevaReserva()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+      <label class="field"><span class="field-label">Punto de venta</span><select id="resLocal"></select></label>
+      <label class="field"><span class="field-label">Cliente</span><select id="resCliente" onchange="resClienteChange()"></select></label>
+      <div id="resNuevoClienteBox" style="display:none">
+        <label class="field"><span class="field-label">Nombre o Razón Social</span><input type="text" id="resCliNombre"></label>
+        <div class="cierre-row2">
+          <label class="field"><span class="field-label">Email</span><input type="email" id="resCliEmail"></label>
+          <label class="field"><span class="field-label">WhatsApp</span><input type="text" id="resCliWa"></label>
+        </div>
+      </div>
+      <div class="cierre-row2">
+        <label class="field"><span class="field-label">Fecha</span><input type="date" id="resFecha"></label>
+        <label class="field"><span class="field-label">Hora</span><input type="time" id="resHora"></label>
+      </div>
+      <div class="cierre-row2">
+        <label class="field"><span class="field-label">Personas (pax)</span><input type="number" min="1" id="resPax"></label>
+        <label class="field"><span class="field-label">Forma de pago</span><select id="resPago"><option value="presencial">Presencial</option><option value="cuenta_corriente">Cuenta corriente</option></select></label>
+      </div>
+      <label class="field"><span class="field-label">Cortesías</span><input type="text" id="resCortesias" placeholder="Opcional"></label>
+      <label class="field"><span class="field-label">Restricciones</span><input type="text" id="resRestricciones" placeholder="Opcional (alergias, etc.)"></label>
+      <label class="field"><span class="field-label">Otros</span><textarea id="resOtros" rows="2" placeholder="Opcional"></textarea></label>
+      <div class="login-error" id="resError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeNuevaReserva()">Cancelar</button>
+      <button class="btn-primary" id="resGuardarBtn" onclick="guardarReserva()">Enviar solicitud</button>
+    </div>
+  </div>
+</div>
+
 <div id="vMisCierres" class="view">
   <div class="module-wrap">
     <div class="module-header">
@@ -2264,6 +2313,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817as"></script>
+<script src="app.js?v=20260817at"></script>
 </body>
 </html>

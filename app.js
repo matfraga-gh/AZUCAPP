@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AS | ULTIMA | receta: boton editar componente; pedidos: no borrar fecha/obs al agregar item + estado 'No recibido' (+ AR/AQ/AP) ===== */
+/* ===== BUILD 2026-08-17-AT | ULTIMA | NUEVO modulo Mis Reservas (fase 1): permiso + clientes + solicitudes con estados (+ AS/AR/AQ) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -500,6 +500,15 @@ const MODULES = [
     desc: 'Requerimientos y stock',
     visible: () => isMaster() || isAdmin() || currentUser.editor_pedidos,
     action: () => openMisPedidos()
+  },
+  {
+    id: 'reservas',
+    icon: 'ti-calendar-heart',
+    color: '#C64E8B',
+    title: 'Mis Reservas',
+    desc: 'Solicitudes de reserva por local',
+    visible: () => isMaster() || isAdmin() || currentUser.editor_reservas,
+    action: () => openMisReservas()
   },
   {
     id: 'stock',
@@ -4419,6 +4428,7 @@ const PERMISOS_DEF = [
   { key: 'editor_biblioteca', label: 'Biblioteca',    icon: 'ti-books',          tipo: 'editor' },
   { key: 'editor_recetas',    label: 'Recetas',       icon: 'ti-chef-hat',       tipo: 'editor' },
   { key: 'editor_pedidos',    label: 'Pedidos',       icon: 'ti-shopping-cart',  tipo: 'editor' },
+  { key: 'editor_reservas',   label: 'Reservas',      icon: 'ti-calendar-heart', tipo: 'editor' },
   { key: 'editor_insumos',    label: 'Insumos / Compras', icon: 'ti-package',    tipo: 'editor' },
   { key: 'editor_stock',      label: 'Stock',         icon: 'ti-clipboard-check', tipo: 'editor' },
   { key: 'editor_cierres',    label: 'Cierres de caja', icon: 'ti-cash-register', tipo: 'editor' }
@@ -4635,6 +4645,158 @@ function showView(viewId) {
   if (v) v.classList.add('active');
   window.scrollTo(0, 0);
 }
+
+// ============================================
+// MÓDULO: MIS RESERVAS
+// ============================================
+function puedeReservas() { return isMaster() || isAdmin() || (currentUser && currentUser.editor_reservas === true); }
+let RESERVAS_CLIENTES = [];
+let RESERVAS_SOLIC = [];
+const RESERVA_ESTADOS = {
+  pendiente:  { label: 'Pendiente', color: '#EF9F27' },
+  disponible: { label: 'Hay disponibilidad', color: '#3E86C7' },
+  sin_lugar:  { label: 'Sin lugar', color: 'var(--c-error)' },
+  confirmada: { label: 'Confirmada', color: '#4CAF7A' },
+  cancelada:  { label: 'Cancelada', color: '#888' }
+};
+
+async function openMisReservas() {
+  if (!puedeReservas()) { showDashboard(); return; }
+  showView('vReservas');
+  const body = document.getElementById('reservasBody');
+  body.innerHTML = '<div class="loading">Cargando...</div>';
+  try {
+    const cli = await api('reservas_clientes?order=nombre.asc');
+    const sol = await api('reservas_solicitudes?order=fecha.desc,id.desc');
+    RESERVAS_CLIENTES = cli || [];
+    RESERVAS_SOLIC = sol || [];
+  } catch (e) {
+    body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar las reservas.</div>';
+    return;
+  }
+  renderReservas();
+}
+window.openMisReservas = openMisReservas;
+
+function _misLocalesReservas() {
+  if (isMaster() || isAdmin()) return getLocalesActivos();
+  return (currentUser && currentUser.locales_asignados) || [];
+}
+function _clienteReserva(id) { return RESERVAS_CLIENTES.find(function(x){ return x.id === id; }) || null; }
+
+function renderReservas() {
+  const body = document.getElementById('reservasBody');
+  const misLoc = _misLocalesReservas();
+  const soy = currentUser ? currentUser.id : null;
+  const paraResponder = RESERVAS_SOLIC.filter(function(s){ return s.estado === 'pendiente' && misLoc.indexOf(s.local) !== -1; });
+  const mias = RESERVAS_SOLIC.filter(function(s){ return s.solicitado_por === soy; });
+
+  let html = '<button class="btn-primary" style="width:100%;margin-bottom:16px" onclick="abrirNuevaReserva()"><i class="ti ti-plus"></i> Nueva solicitud de reserva</button>';
+  html += '<div class="est-section-title">Para responder (' + paraResponder.length + ')</div>';
+  html += paraResponder.length ? paraResponder.map(function(s){ return _reservaCard(s, true); }).join('')
+    : '<div class="cierre-hint" style="margin-bottom:14px">No tenés solicitudes pendientes en tus locales.</div>';
+  html += '<div class="est-section-title" style="margin-top:18px">Mis solicitudes (' + mias.length + ')</div>';
+  html += mias.length ? mias.map(function(s){ return _reservaCard(s, false); }).join('')
+    : '<div class="cierre-hint">Todavía no cargaste solicitudes.</div>';
+  body.innerHTML = html;
+}
+
+function _reservaCard(s, puedeResponder) {
+  const est = RESERVA_ESTADOS[s.estado] || { label: s.estado, color: '#888' };
+  const cli = _clienteReserva(s.cliente_id);
+  const pago = s.forma_pago === 'cuenta_corriente' ? 'Cuenta corriente' : 'Presencial';
+  const contacto = cli ? [cli.whatsapp ? 'WA ' + esc(cli.whatsapp) : '', cli.email ? esc(cli.email) : ''].filter(Boolean).join(' · ') : '';
+  const extra = [
+    (s.cortesias ? 'Cortesías: ' + esc(s.cortesias) : ''),
+    (s.restricciones ? 'Restricciones: ' + esc(s.restricciones) : ''),
+    (s.otros ? 'Otros: ' + esc(s.otros) : '')
+  ].filter(Boolean).join(' · ');
+  let acciones = '';
+  if (puedeResponder && s.estado === 'pendiente') {
+    acciones = '<div style="display:flex;gap:8px;margin-top:10px">' +
+      '<button class="btn-primary" style="flex:1" onclick="responderReserva(' + s.id + ', \'disponible\')"><i class="ti ti-check"></i> Hay disponibilidad</button>' +
+      '<button class="btn-ghost" style="flex:1;color:var(--c-error)" onclick="responderReserva(' + s.id + ', \'sin_lugar\')"><i class="ti ti-x"></i> Sin lugar</button></div>';
+  } else if (puedeResponder && s.estado === 'disponible') {
+    acciones = '<div style="margin-top:10px"><button class="btn-primary" style="width:100%" onclick="responderReserva(' + s.id + ', \'confirmada\')"><i class="ti ti-calendar-check"></i> Marcar confirmada</button></div>';
+  }
+  return '<div class="ped-card" style="margin-bottom:10px">' +
+    '<div class="ped-card-top"><span class="ped-local">' + esc(cli ? cli.nombre : 'Cliente') + '</span>' +
+    '<span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;background:' + est.color + ';color:#fff">' + est.label + '</span></div>' +
+    '<div class="ped-card-sub">' + esc(localLabel(s.local)) + ' · ' + fmtFechaCorta(String(s.fecha).slice(0,10)) + (s.hora ? ' ' + esc(s.hora) : '') + ' · ' + (s.pax || 0) + ' pax · ' + pago + '</div>' +
+    (contacto ? '<div class="ped-card-sub">' + contacto + '</div>' : '') +
+    (extra ? '<div class="ped-card-sub" style="margin-top:4px">' + extra + '</div>' : '') +
+    acciones +
+  '</div>';
+}
+
+window.abrirNuevaReserva = function() {
+  if (!puedeReservas()) return;
+  const locs = getLocalesActivos().filter(function(l){ return !/transversal/i.test(l); });
+  document.getElementById('resLocal').innerHTML = locs.map(function(l){ return '<option value="' + esc(l) + '">' + esc(localLabel(l)) + '</option>'; }).join('');
+  document.getElementById('resCliente').innerHTML = '<option value="">— Elegí un cliente —</option>' +
+    RESERVAS_CLIENTES.map(function(c){ return '<option value="' + c.id + '">' + esc(c.nombre) + '</option>'; }).join('') +
+    '<option value="__nuevo__">+ Cargar cliente nuevo</option>';
+  document.getElementById('resNuevoClienteBox').style.display = 'none';
+  ['resFecha','resHora','resPax','resCortesias','resRestricciones','resOtros','resCliNombre','resCliEmail','resCliWa'].forEach(function(id){ const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('resPago').value = 'presencial';
+  document.getElementById('resError').textContent = '';
+  document.getElementById('modalNuevaReserva').classList.add('show');
+};
+window.closeNuevaReserva = function() { document.getElementById('modalNuevaReserva').classList.remove('show'); };
+window.resClienteChange = function() {
+  const v = document.getElementById('resCliente').value;
+  document.getElementById('resNuevoClienteBox').style.display = (v === '__nuevo__') ? '' : 'none';
+};
+window.guardarReserva = async function() {
+  const err = document.getElementById('resError'); err.textContent = '';
+  const local = document.getElementById('resLocal').value;
+  const fecha = document.getElementById('resFecha').value;
+  const hora = document.getElementById('resHora').value;
+  const pax = parseInt(document.getElementById('resPax').value, 10);
+  const pago = document.getElementById('resPago').value;
+  if (!local) { err.textContent = 'Elegí el punto de venta.'; return; }
+  if (!fecha) { err.textContent = 'Elegí la fecha.'; return; }
+  if (isNaN(pax) || pax <= 0) { err.textContent = 'Cargá la cantidad de personas.'; return; }
+  let clienteId = document.getElementById('resCliente').value;
+  const btn = document.getElementById('resGuardarBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Enviando...';
+  try {
+    if (clienteId === '__nuevo__' || !clienteId) {
+      const nom = document.getElementById('resCliNombre').value.trim();
+      if (!nom) { err.textContent = 'Cargá el nombre o razón social del cliente.'; btn.disabled = false; btn.textContent = t; return; }
+      const nuevo = { nombre: nom, email: document.getElementById('resCliEmail').value.trim() || null, whatsapp: document.getElementById('resCliWa').value.trim() || null, creado_por: currentUser ? currentUser.id : null };
+      const res = await api('reservas_clientes', { method: 'POST', body: JSON.stringify(nuevo) });
+      const c = Array.isArray(res) ? res[0] : res;
+      clienteId = c.id;
+    }
+    const rec = {
+      cliente_id: parseInt(clienteId, 10), local: local, fecha: fecha, hora: hora || null, pax: pax,
+      forma_pago: pago,
+      cortesias: document.getElementById('resCortesias').value.trim() || null,
+      restricciones: document.getElementById('resRestricciones').value.trim() || null,
+      otros: document.getElementById('resOtros').value.trim() || null,
+      estado: 'pendiente', solicitado_por: currentUser ? currentUser.id : null, creado_en: new Date().toISOString()
+    };
+    await api('reservas_solicitudes', { method: 'POST', body: JSON.stringify(rec) });
+    toast('✓ Solicitud enviada', 'success');
+    closeNuevaReserva();
+    await openMisReservas();
+  } catch (e) { err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e); }
+  finally { btn.disabled = false; btn.textContent = t; }
+};
+window.responderReserva = async function(id, estado) {
+  if (!puedeReservas()) return;
+  const s = RESERVAS_SOLIC.find(function(x){ return x.id === id; });
+  if (!s) return;
+  const cli = _clienteReserva(s.cliente_id);
+  const verbo = estado === 'disponible' ? 'marcar HAY DISPONIBILIDAD' : (estado === 'sin_lugar' ? 'marcar SIN LUGAR' : 'marcar CONFIRMADA');
+  const ok = await showConfirm({ title: 'Responder solicitud', msg: 'Vas a ' + verbo + ' la reserva de ' + (cli ? cli.nombre : 'el cliente') + '.\n\n¿Confirmás?', okLabel: 'Sí', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  try {
+    await api('reservas_solicitudes?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ estado: estado, respondido_por: currentUser ? currentUser.id : null, actualizado_en: new Date().toISOString() }) });
+    toast('✓ Reserva actualizada', 'success');
+    await openMisReservas();
+  } catch (e) { toast('No se pudo actualizar: ' + ((e && e.message) || e), 'error'); }
+};
 
 window.showDashboard = showDashboard;
 window.showChangePass = function() {
