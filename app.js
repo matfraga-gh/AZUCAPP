@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AV | ULTIMA | Reservas: hora en selectores (15min), Voucher, editar/eliminar cualquier estado, autolimpieza pasadas, fix cliente al editar, sin duplicado (+ AU/AT/AS) ===== */
+/* ===== BUILD 2026-08-17-AW | ULTIMA | Reservas: Aceptar vuelve (pendientes de mis locales, sin duplicar) + email como link mailto (+ AV/AU/AT) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -4690,8 +4690,9 @@ function renderReservas() {
   const body = document.getElementById('reservasBody');
   const misLoc = _misLocalesReservas();
   const soy = currentUser ? currentUser.id : null;
-  const paraResponder = RESERVAS_SOLIC.filter(function(s){ return s.estado === 'pendiente' && misLoc.indexOf(s.local) !== -1 && s.solicitado_por !== soy; });
-  const mias = RESERVAS_SOLIC.filter(function(s){ return s.solicitado_por === soy; });
+  const paraResponder = RESERVAS_SOLIC.filter(function(s){ return s.estado === 'pendiente' && misLoc.indexOf(s.local) !== -1; });
+  const _idsResp = {}; paraResponder.forEach(function(s){ _idsResp[s.id] = 1; });
+  const mias = RESERVAS_SOLIC.filter(function(s){ return s.solicitado_por === soy && !_idsResp[s.id]; });
 
   let html = '<button class="btn-primary" style="width:100%;margin-bottom:16px" onclick="abrirNuevaReserva()"><i class="ti ti-plus"></i> Nueva solicitud de reserva</button>';
   html += '<div class="est-section-title">Para responder (' + paraResponder.length + ')</div>';
@@ -4710,7 +4711,7 @@ function _reservaCard(s, puedeResponder) {
   const waDigits = (cli && cli.whatsapp) ? String(cli.whatsapp).replace(/[^0-9]/g, '') : '';
   const contacto = cli ? [
     waDigits ? '<a href="https://wa.me/' + waDigits + '" target="_blank" rel="noopener noreferrer" style="color:#25D366;text-decoration:none;font-weight:600"><i class="ti ti-brand-whatsapp"></i> ' + esc(cli.whatsapp) + '</a>' : '',
-    cli.email ? esc(cli.email) : ''
+    cli.email ? '<a href="mailto:' + esc(cli.email) + '" style="color:var(--c-sand);text-decoration:none;font-weight:600"><i class="ti ti-mail"></i> ' + esc(cli.email) + '</a>' : ''
   ].filter(Boolean).join(' · ') : '';
   const extra = [
     (s.cortesias ? 'Cortesías: ' + esc(s.cortesias) : ''),
