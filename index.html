@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817ax">
+<link rel="stylesheet" href="styles.css?v=20260817ay">
 </head>
 <body>
 
@@ -1860,10 +1860,14 @@
         </label>
       </div>
       <label class="field"><span class="field-label">Local</span><select id="evLocal"></select></label>
-      <div class="cierre-row2">
-        <label class="field"><span class="field-label">Fecha</span><input type="date" id="evFecha"></label>
-        <label class="field"><span class="field-label">Horario</span><input type="text" id="evHorario" placeholder="Ej: 20:00 a 01:00"></label>
-      </div>
+      <label class="field"><span class="field-label">Fecha</span><input type="date" id="evFecha"></label>
+      <label class="field"><span class="field-label">Horario (desde – hasta)</span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select id="evHorDH" style="flex:1"></select><select id="evHorDM" style="flex:1"><option value="00">00</option><option value="15">15</option><option value="30">30</option><option value="45">45</option></select>
+          <span style="opacity:.6;padding:0 2px">a</span>
+          <select id="evHorHH" style="flex:1"></select><select id="evHorHM" style="flex:1"><option value="00">00</option><option value="15">15</option><option value="30">30</option><option value="45">45</option></select>
+        </div>
+      </label>
       <div class="cierre-row2">
         <label class="field"><span class="field-label">Cant. de pax</span><input type="number" min="0" id="evPax"></label>
         <label class="field"><span class="field-label">Estado</span><select id="evEstado"><option value="pendiente">Pendiente</option><option value="confirmado">Confirmado</option></select></label>
@@ -1957,7 +1961,7 @@
       </div>
       <div class="cierre-row2">
         <label class="field"><span class="field-label">Personas (pax)</span><input type="number" min="1" id="resPax"></label>
-        <label class="field"><span class="field-label">Forma de pago</span><select id="resPago"><option value="presencial">Presencial</option><option value="cuenta_corriente">Cuenta corriente</option><option value="voucher">Voucher</option></select></label>
+        <label class="field"><span class="field-label">Forma de pago</span><select id="resPago"><option value="presencial">Presencial</option><option value="cuenta_corriente">Cuenta corriente</option><option value="voucher">Voucher</option><option value="pagado">Pagado (No cobrar)</option></select></label>
       </div>
       <label class="field"><span class="field-label">Cortesías</span><input type="text" id="resCortesias" placeholder="Opcional"></label>
       <label class="field"><span class="field-label">Restricciones</span><input type="text" id="resRestricciones" placeholder="Opcional (alergias, etc.)"></label>
@@ -2426,6 +2430,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817ax"></script>
+<script src="app.js?v=20260817ay"></script>
 </body>
 </html>

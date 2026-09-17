@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AX | ULTIMA | NUEVO modulo Mis Eventos (ver/editar): datos, propuesta, operativas y comerciales con moneda (+ AW/AV/AU) ===== */
+/* ===== BUILD 2026-08-17-AY | ULTIMA | Eventos: horario desde-hasta (15min) + fecha destacada; Reservas: forma de pago Pagado (No cobrar) (+ AX/AW/AV) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -4718,7 +4718,7 @@ function renderReservas() {
 function _reservaCard(s, puedeResponder) {
   const est = RESERVA_ESTADOS[s.estado] || { label: s.estado, color: '#888' };
   const cli = _clienteReserva(s.cliente_id);
-  const pago = s.forma_pago === 'cuenta_corriente' ? 'Cuenta corriente (NO COBRAR)' : (s.forma_pago === 'voucher' ? 'Voucher (NO COBRAR)' : 'Presencial');
+  const pago = ({ cuenta_corriente: 'Cuenta corriente (NO COBRAR)', voucher: 'Voucher (NO COBRAR)', pagado: 'Pagado (NO COBRAR)' })[s.forma_pago] || 'Presencial';
   const waDigits = (cli && cli.whatsapp) ? String(cli.whatsapp).replace(/[^0-9]/g, '') : '';
   const contacto = cli ? [
     waDigits ? '<a href="https://wa.me/' + waDigits + '" target="_blank" rel="noopener noreferrer" style="color:#25D366;text-decoration:none;font-weight:600"><i class="ti ti-brand-whatsapp"></i> ' + esc(cli.whatsapp) + '</a>' : '',
@@ -4939,7 +4939,7 @@ function renderEventos() {
         '<span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;background:' + estCol + ';color:#fff">' + estLbl + '</span>' +
       '</div>' +
       '<div style="font-size:14px;color:var(--c-cream);font-weight:600;margin-top:6px">' + esc(cli ? cli.nombre : '(sin cliente)') + '</div>' +
-      '<div class="ped-card-sub">' + (ev.fecha ? fmtFechaCorta(String(ev.fecha).slice(0,10)) : 'sin fecha') + (ev.horario ? ' · ' + esc(ev.horario) : '') + ' · ' + (ev.pax || 0) + ' pax · ' + (EVENTO_TIPOS[ev.tipo] || '—') + '</div>' +
+      '<div style="margin:8px 0 4px"><span style="display:inline-block;background:#2D7FC4;color:#fff;font-weight:700;padding:4px 11px;border-radius:8px;font-size:14px">' + (ev.fecha ? fmtFechaCorta(String(ev.fecha).slice(0,10)) : 'sin fecha') + (ev.horario ? ' · ' + esc(ev.horario) + ' hs' : '') + '</span><span style="font-size:13px;color:var(--c-cream)"> · ' + (ev.pax || 0) + ' pax · ' + (EVENTO_TIPOS[ev.tipo] || '—') + '</span></div>' +
       '<div class="ped-card-sub" style="margin-top:2px">Total: ' + _evMoney(ev.total_facturar, ev.total_mon) + '</div>' +
     '</div>';
   }).join('');
@@ -4992,6 +4992,29 @@ window.verEvento = function(id) {
 window.closeEventoDetalle = function() { document.getElementById('modalEventoDetalle').classList.remove('show'); };
 window.editarEventoDesdeDetalle = function() { const id = EVENTO_VIENDO_ID; closeEventoDetalle(); abrirEditarEvento(id); };
 window.eliminarEventoDesdeDetalle = function() { eliminarEvento(EVENTO_VIENDO_ID); };
+function _evLlenarHoras() {
+  let o = '<option value="">--</option>';
+  for (let i = 0; i < 24; i++) { const v = String(i).padStart(2, '0'); o += '<option value="' + v + '">' + v + '</option>'; }
+  ['evHorDH','evHorHH'].forEach(function(id){ const el = document.getElementById(id); if (el) el.innerHTML = o; });
+}
+function _evSetHorario(str) {
+  const parts = String(str || '').split(' a ');
+  const setPair = function(hId, mId, val) {
+    const m = /^(\d{1,2}):(\d{2})/.exec((val || '').trim());
+    document.getElementById(hId).value = m ? String(parseInt(m[1], 10)).padStart(2, '0') : '';
+    const mm = m ? m[2] : '00';
+    document.getElementById(mId).value = (['00','15','30','45'].indexOf(mm) !== -1 ? mm : '00');
+  };
+  setPair('evHorDH','evHorDM', parts[0]);
+  setPair('evHorHH','evHorHM', parts[1] || '');
+}
+function _evHorarioValor() {
+  const hd = document.getElementById('evHorDH').value;
+  const hh = document.getElementById('evHorHH').value;
+  const desde = hd ? (hd + ':' + document.getElementById('evHorDM').value) : '';
+  const hasta = hh ? (hh + ':' + document.getElementById('evHorHM').value) : '';
+  return desde ? (desde + (hasta ? ' a ' + hasta : '')) : (hasta || null);
+}
 function _evLlenarSelectores(clienteSel) {
   const locs = getLocalesActivos().filter(function(l){ return !/transversal/i.test(l); });
   document.getElementById('evLocal').innerHTML = locs.map(function(l){ return '<option value="' + esc(l) + '">' + esc(localLabel(l)) + '</option>'; }).join('');
@@ -5000,11 +5023,14 @@ function _evLlenarSelectores(clienteSel) {
     '<option value="__nuevo__">+ Cargar cliente nuevo</option>';
 }
 function _evReset() {
-  ['evCliNombre','evCliEmail','evCliWa','evCliCodigo','evFecha','evHorario','evPax','evMenu','evBebidas','evMaridaje','evPropObs','evAlqMobiliario','evAlqVajilla','evAlqCristaleria','evAlqTecnica','evAlqOtros','evPersonalAdic','evOpObs','evPrecioPax','evAlquileres','evTotal','evSena','evSaldo','evCondVenta','evComisiones','evComObs'].forEach(function(id){ const el = document.getElementById(id); if (el) el.value = ''; });
+  ['evCliNombre','evCliEmail','evCliWa','evCliCodigo','evFecha','evPax','evMenu','evBebidas','evMaridaje','evPropObs','evAlqMobiliario','evAlqVajilla','evAlqCristaleria','evAlqTecnica','evAlqOtros','evPersonalAdic','evOpObs','evPrecioPax','evAlquileres','evTotal','evSena','evSaldo','evCondVenta','evComisiones','evComObs'].forEach(function(id){ const el = document.getElementById(id); if (el) el.value = ''; });
   ['evPrecioPaxMon','evAlquileresMon','evTotalMon','evSenaMon','evSaldoMon'].forEach(function(id){ const el = document.getElementById(id); if (el) el.value = 'ARS'; });
   document.getElementById('evEstado').value = 'pendiente';
   document.getElementById('evTipo').value = 'cocktail';
   document.getElementById('evSenaEstado').value = 'pendiente';
+  _evLlenarHoras();
+  document.getElementById('evHorDH').value = ''; document.getElementById('evHorHH').value = '';
+  document.getElementById('evHorDM').value = '00'; document.getElementById('evHorHM').value = '00';
   const p = document.getElementById('evCliPais'); if (p) p.value = '+54';
   document.getElementById('evCliCodigo').style.display = 'none';
   document.getElementById('evNuevoClienteBox').style.display = 'none';
@@ -5030,7 +5056,7 @@ function abrirEditarEvento(id) {
   _evReset();
   const set = function(id2, v){ const el = document.getElementById(id2); if (el) el.value = (v != null ? v : ''); };
   document.getElementById('evLocal').value = ev.local || '';
-  set('evFecha', ev.fecha ? String(ev.fecha).slice(0,10) : ''); set('evHorario', ev.horario); set('evPax', ev.pax);
+  set('evFecha', ev.fecha ? String(ev.fecha).slice(0,10) : ''); _evSetHorario(ev.horario); set('evPax', ev.pax);
   document.getElementById('evEstado').value = ev.estado || 'pendiente';
   document.getElementById('evTipo').value = ev.tipo || 'cocktail';
   set('evMenu', ev.menu); set('evBebidas', ev.bebidas); set('evMaridaje', ev.maridaje); set('evPropObs', ev.prop_obs);
@@ -5068,7 +5094,7 @@ window.guardarEvento = async function() {
     }
     const rec = {
       cliente_id: clienteId ? parseInt(clienteId, 10) : null, local: local,
-      fecha: document.getElementById('evFecha').value || null, horario: txtOrNull('evHorario'),
+      fecha: document.getElementById('evFecha').value || null, horario: _evHorarioValor(),
       pax: (function(){ const v = parseInt(document.getElementById('evPax').value, 10); return isFinite(v) ? v : null; })(),
       estado: document.getElementById('evEstado').value, tipo: document.getElementById('evTipo').value,
       menu: txtOrNull('evMenu'), bebidas: txtOrNull('evBebidas'), maridaje: txtOrNull('evMaridaje'), prop_obs: txtOrNull('evPropObs'),
