@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AW | ULTIMA | Reservas: Aceptar vuelve (pendientes de mis locales, sin duplicar) + email como link mailto (+ AV/AU/AT) ===== */
+/* ===== BUILD 2026-08-17-AX | ULTIMA | NUEVO modulo Mis Eventos (ver/editar): datos, propuesta, operativas y comerciales con moneda (+ AW/AV/AU) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -509,6 +509,15 @@ const MODULES = [
     desc: 'Solicitudes de reserva por local',
     visible: () => isMaster() || isAdmin() || currentUser.editor_reservas,
     action: () => openMisReservas()
+  },
+  {
+    id: 'eventos',
+    icon: 'ti-confetti',
+    color: '#8E5AD8',
+    title: 'Mis Eventos',
+    desc: 'Eventos cotizados por local',
+    visible: () => isMaster() || isAdmin() || currentUser.editor_eventos || currentUser.eventos,
+    action: () => openMisEventos()
   },
   {
     id: 'stock',
@@ -4429,6 +4438,8 @@ const PERMISOS_DEF = [
   { key: 'editor_recetas',    label: 'Recetas',       icon: 'ti-chef-hat',       tipo: 'editor' },
   { key: 'editor_pedidos',    label: 'Pedidos',       icon: 'ti-shopping-cart',  tipo: 'editor' },
   { key: 'editor_reservas',   label: 'Reservas',      icon: 'ti-calendar-heart', tipo: 'editor' },
+  { key: 'eventos',           label: 'Eventos (ver)', icon: 'ti-confetti',       tipo: 'editor' },
+  { key: 'editor_eventos',    label: 'Editar eventos', icon: 'ti-confetti',      tipo: 'editor' },
   { key: 'editor_insumos',    label: 'Insumos / Compras', icon: 'ti-package',    tipo: 'editor' },
   { key: 'editor_stock',      label: 'Stock',         icon: 'ti-clipboard-check', tipo: 'editor' },
   { key: 'editor_cierres',    label: 'Cierres de caja', icon: 'ti-cash-register', tipo: 'editor' }
@@ -4883,6 +4894,212 @@ window.responderReserva = async function(id, estado) {
     toast('✓ Reserva actualizada', 'success');
     await openMisReservas();
   } catch (e) { toast('No se pudo actualizar: ' + ((e && e.message) || e), 'error'); }
+};
+
+// ============================================
+// MÓDULO: MIS EVENTOS
+// ============================================
+function puedeVerEventos() { return isMaster() || isAdmin() || (currentUser && (currentUser.editor_eventos === true || currentUser.eventos === true)); }
+function puedeEditarEventos() { return isMaster() || isAdmin() || (currentUser && currentUser.editor_eventos === true); }
+let EVENTOS_LISTA = [];
+let EVENTO_EDIT_ID = null;
+let EVENTO_VIENDO_ID = null;
+const EVENTO_TIPOS = { cocktail:'Cocktail', desayuno:'Desayuno', almuerzo:'Almuerzo', cena:'Cena', otro:'Otro' };
+function _evMoney(v, mon) {
+  if (v == null || v === '') return '—';
+  return ((mon === 'USD') ? 'US$ ' : '$ ') + formatNumber(Math.round(parseFloat(v) || 0));
+}
+async function openMisEventos() {
+  if (!puedeVerEventos()) { showDashboard(); return; }
+  showView('vEventos');
+  const body = document.getElementById('eventosBody');
+  body.innerHTML = '<div class="loading">Cargando...</div>';
+  try {
+    EVENTOS_LISTA = (await api('eventos?order=fecha.desc,id.desc')) || [];
+    RESERVAS_CLIENTES = (await api('reservas_clientes?order=nombre.asc')) || [];
+  } catch (e) {
+    body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los eventos.</div>';
+    return;
+  }
+  renderEventos();
+}
+window.openMisEventos = openMisEventos;
+function renderEventos() {
+  const body = document.getElementById('eventosBody');
+  let html = '';
+  if (puedeEditarEventos()) html += '<button class="btn-primary" style="width:100%;margin-bottom:16px" onclick="abrirNuevoEvento()"><i class="ti ti-plus"></i> Nuevo evento</button>';
+  if (!EVENTOS_LISTA.length) { html += '<div class="cierre-hint">Todavía no hay eventos cargados.</div>'; body.innerHTML = html; return; }
+  html += EVENTOS_LISTA.map(function(ev){
+    const cli = _clienteReserva(ev.cliente_id);
+    const estCol = ev.estado === 'confirmado' ? '#4CAF7A' : '#EF9F27';
+    const estLbl = ev.estado === 'confirmado' ? 'Confirmado' : 'Pendiente';
+    return '<div class="ped-card" style="margin-bottom:10px;cursor:pointer" onclick="verEvento(' + ev.id + ')">' +
+      '<div class="ped-card-top" style="align-items:flex-start">' +
+        '<span style="display:inline-block;background:var(--c-rust);color:#fff;font-weight:700;font-size:15px;padding:3px 11px;border-radius:8px">' + esc(localLabel(ev.local)) + '</span>' +
+        '<span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;background:' + estCol + ';color:#fff">' + estLbl + '</span>' +
+      '</div>' +
+      '<div style="font-size:14px;color:var(--c-cream);font-weight:600;margin-top:6px">' + esc(cli ? cli.nombre : '(sin cliente)') + '</div>' +
+      '<div class="ped-card-sub">' + (ev.fecha ? fmtFechaCorta(String(ev.fecha).slice(0,10)) : 'sin fecha') + (ev.horario ? ' · ' + esc(ev.horario) : '') + ' · ' + (ev.pax || 0) + ' pax · ' + (EVENTO_TIPOS[ev.tipo] || '—') + '</div>' +
+      '<div class="ped-card-sub" style="margin-top:2px">Total: ' + _evMoney(ev.total_facturar, ev.total_mon) + '</div>' +
+    '</div>';
+  }).join('');
+  body.innerHTML = html;
+}
+window.verEvento = function(id) {
+  const ev = EVENTOS_LISTA.find(function(x){ return x.id === id; });
+  if (!ev) return;
+  EVENTO_VIENDO_ID = id;
+  const cli = _clienteReserva(ev.cliente_id);
+  const row = function(k, v){ return (v !== '' && v != null) ? '<div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--c-cream-border)"><span style="color:var(--c-muted)">' + k + '</span><span style="text-align:right;font-weight:600">' + v + '</span></div>' : ''; };
+  const sec = function(t){ return '<div class="cierre-section-title" style="margin-top:14px">' + t + '</div>'; };
+  let h = '';
+  h += sec('Datos básicos');
+  h += row('Cliente', cli ? esc(cli.nombre) : '—');
+  h += row('Local', esc(localLabel(ev.local)));
+  h += row('Fecha', ev.fecha ? fmtFechaCorta(String(ev.fecha).slice(0,10)) : '');
+  h += row('Horario', esc(ev.horario || ''));
+  h += row('Pax', ev.pax != null ? ev.pax : '');
+  h += row('Estado', ev.estado === 'confirmado' ? 'Confirmado' : 'Pendiente');
+  h += sec('Propuesta');
+  h += row('Tipo', EVENTO_TIPOS[ev.tipo] || '');
+  h += row('Menú', esc(ev.menu || ''));
+  h += row('Bebidas', esc(ev.bebidas || ''));
+  h += row('Maridaje', esc(ev.maridaje || ''));
+  h += row('Observaciones', esc(ev.prop_obs || ''));
+  h += sec('Necesidades operativas');
+  h += row('Alq. mobiliario', esc(ev.alq_mobiliario || ''));
+  h += row('Alq. vajilla', esc(ev.alq_vajilla || ''));
+  h += row('Alq. cristalería', esc(ev.alq_cristaleria || ''));
+  h += row('Alq. técnica', esc(ev.alq_tecnica || ''));
+  h += row('Otros alquileres', esc(ev.alq_otros || ''));
+  h += row('Personal adicional', esc(ev.personal_adicional || ''));
+  h += row('Observaciones', esc(ev.op_obs || ''));
+  h += sec('Condiciones comerciales');
+  h += row('Precio por pax', _evMoney(ev.precio_pax, ev.precio_pax_mon));
+  h += row('Alquileres', _evMoney(ev.alquileres, ev.alquileres_mon));
+  h += row('Total a facturar', _evMoney(ev.total_facturar, ev.total_mon));
+  h += row('Seña', (ev.sena != null && ev.sena !== '') ? (_evMoney(ev.sena, ev.sena_mon) + ' (' + (ev.sena_estado === 'pagada' ? 'Pagada' : 'Pendiente') + ')') : '');
+  h += row('Saldo a pagar', _evMoney(ev.saldo, ev.saldo_mon));
+  h += row('Cond. de venta', esc(ev.cond_venta || ''));
+  h += row('Comisiones', esc(ev.comisiones || ''));
+  h += row('Observaciones', esc(ev.com_obs || ''));
+  document.getElementById('eventoDetalleBody').innerHTML = h;
+  const ed = puedeEditarEventos();
+  document.getElementById('eventoDetalleEditar').style.display = ed ? '' : 'none';
+  document.getElementById('eventoDetalleEliminar').style.display = ed ? '' : 'none';
+  document.getElementById('modalEventoDetalle').classList.add('show');
+};
+window.closeEventoDetalle = function() { document.getElementById('modalEventoDetalle').classList.remove('show'); };
+window.editarEventoDesdeDetalle = function() { const id = EVENTO_VIENDO_ID; closeEventoDetalle(); abrirEditarEvento(id); };
+window.eliminarEventoDesdeDetalle = function() { eliminarEvento(EVENTO_VIENDO_ID); };
+function _evLlenarSelectores(clienteSel) {
+  const locs = getLocalesActivos().filter(function(l){ return !/transversal/i.test(l); });
+  document.getElementById('evLocal').innerHTML = locs.map(function(l){ return '<option value="' + esc(l) + '">' + esc(localLabel(l)) + '</option>'; }).join('');
+  document.getElementById('evCliente').innerHTML = '<option value="">— Elegí un cliente —</option>' +
+    RESERVAS_CLIENTES.map(function(c){ return '<option value="' + c.id + '"' + (String(c.id) === String(clienteSel) ? ' selected' : '') + '>' + esc(c.nombre) + '</option>'; }).join('') +
+    '<option value="__nuevo__">+ Cargar cliente nuevo</option>';
+}
+function _evReset() {
+  ['evCliNombre','evCliEmail','evCliWa','evCliCodigo','evFecha','evHorario','evPax','evMenu','evBebidas','evMaridaje','evPropObs','evAlqMobiliario','evAlqVajilla','evAlqCristaleria','evAlqTecnica','evAlqOtros','evPersonalAdic','evOpObs','evPrecioPax','evAlquileres','evTotal','evSena','evSaldo','evCondVenta','evComisiones','evComObs'].forEach(function(id){ const el = document.getElementById(id); if (el) el.value = ''; });
+  ['evPrecioPaxMon','evAlquileresMon','evTotalMon','evSenaMon','evSaldoMon'].forEach(function(id){ const el = document.getElementById(id); if (el) el.value = 'ARS'; });
+  document.getElementById('evEstado').value = 'pendiente';
+  document.getElementById('evTipo').value = 'cocktail';
+  document.getElementById('evSenaEstado').value = 'pendiente';
+  const p = document.getElementById('evCliPais'); if (p) p.value = '+54';
+  document.getElementById('evCliCodigo').style.display = 'none';
+  document.getElementById('evNuevoClienteBox').style.display = 'none';
+  document.getElementById('evError').textContent = '';
+}
+window.abrirNuevoEvento = function() {
+  if (!puedeEditarEventos()) return;
+  EVENTO_EDIT_ID = null;
+  document.getElementById('evModalTitulo').textContent = 'Nuevo evento';
+  document.getElementById('evGuardarBtn').textContent = 'Guardar evento';
+  _evLlenarSelectores(null);
+  _evReset();
+  document.getElementById('modalEventoForm').classList.add('show');
+};
+function abrirEditarEvento(id) {
+  if (!puedeEditarEventos()) return;
+  const ev = EVENTOS_LISTA.find(function(x){ return x.id === id; });
+  if (!ev) return;
+  EVENTO_EDIT_ID = id;
+  document.getElementById('evModalTitulo').textContent = 'Editar evento';
+  document.getElementById('evGuardarBtn').textContent = 'Guardar cambios';
+  _evLlenarSelectores(ev.cliente_id);
+  _evReset();
+  const set = function(id2, v){ const el = document.getElementById(id2); if (el) el.value = (v != null ? v : ''); };
+  document.getElementById('evLocal').value = ev.local || '';
+  set('evFecha', ev.fecha ? String(ev.fecha).slice(0,10) : ''); set('evHorario', ev.horario); set('evPax', ev.pax);
+  document.getElementById('evEstado').value = ev.estado || 'pendiente';
+  document.getElementById('evTipo').value = ev.tipo || 'cocktail';
+  set('evMenu', ev.menu); set('evBebidas', ev.bebidas); set('evMaridaje', ev.maridaje); set('evPropObs', ev.prop_obs);
+  set('evAlqMobiliario', ev.alq_mobiliario); set('evAlqVajilla', ev.alq_vajilla); set('evAlqCristaleria', ev.alq_cristaleria); set('evAlqTecnica', ev.alq_tecnica); set('evAlqOtros', ev.alq_otros); set('evPersonalAdic', ev.personal_adicional); set('evOpObs', ev.op_obs);
+  set('evPrecioPax', ev.precio_pax); document.getElementById('evPrecioPaxMon').value = ev.precio_pax_mon || 'ARS';
+  set('evAlquileres', ev.alquileres); document.getElementById('evAlquileresMon').value = ev.alquileres_mon || 'ARS';
+  set('evTotal', ev.total_facturar); document.getElementById('evTotalMon').value = ev.total_mon || 'ARS';
+  set('evSena', ev.sena); document.getElementById('evSenaMon').value = ev.sena_mon || 'ARS'; document.getElementById('evSenaEstado').value = ev.sena_estado || 'pendiente';
+  set('evSaldo', ev.saldo); document.getElementById('evSaldoMon').value = ev.saldo_mon || 'ARS';
+  set('evCondVenta', ev.cond_venta); set('evComisiones', ev.comisiones); set('evComObs', ev.com_obs);
+  document.getElementById('modalEventoForm').classList.add('show');
+}
+window.closeEventoForm = function() { document.getElementById('modalEventoForm').classList.remove('show'); };
+window.evClienteChange = function() { document.getElementById('evNuevoClienteBox').style.display = (document.getElementById('evCliente').value === '__nuevo__') ? '' : 'none'; };
+window.evPaisChange = function() { document.getElementById('evCliCodigo').style.display = (document.getElementById('evCliPais').value === 'otro') ? '' : 'none'; };
+window.guardarEvento = async function() {
+  if (!puedeEditarEventos()) return;
+  const err = document.getElementById('evError'); err.textContent = '';
+  const local = document.getElementById('evLocal').value;
+  if (!local) { err.textContent = 'Elegí el local.'; return; }
+  let clienteId = document.getElementById('evCliente').value;
+  const numOrNull = function(id){ const v = parseFloat(document.getElementById(id).value); return isFinite(v) ? v : null; };
+  const txtOrNull = function(id){ const v = (document.getElementById(id).value || '').trim(); return v || null; };
+  const btn = document.getElementById('evGuardarBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
+  try {
+    if (clienteId === '__nuevo__' || !clienteId) {
+      const nom = document.getElementById('evCliNombre').value.trim();
+      if (!nom) { err.textContent = 'Elegí un cliente o cargá uno nuevo (nombre requerido).'; btn.disabled = false; btn.textContent = t; return; }
+      const pais = document.getElementById('evCliPais').value;
+      const cod = (pais === 'otro') ? (document.getElementById('evCliCodigo').value.trim() || '') : pais;
+      const numRaw = document.getElementById('evCliWa').value.trim();
+      const wa = numRaw ? (cod + numRaw.replace(/[^0-9]/g, '')) : null;
+      const res = await api('reservas_clientes', { method: 'POST', body: JSON.stringify({ nombre: nom, email: document.getElementById('evCliEmail').value.trim() || null, whatsapp: wa, creado_por: currentUser ? currentUser.id : null }) });
+      clienteId = (Array.isArray(res) ? res[0] : res).id;
+    }
+    const rec = {
+      cliente_id: clienteId ? parseInt(clienteId, 10) : null, local: local,
+      fecha: document.getElementById('evFecha').value || null, horario: txtOrNull('evHorario'),
+      pax: (function(){ const v = parseInt(document.getElementById('evPax').value, 10); return isFinite(v) ? v : null; })(),
+      estado: document.getElementById('evEstado').value, tipo: document.getElementById('evTipo').value,
+      menu: txtOrNull('evMenu'), bebidas: txtOrNull('evBebidas'), maridaje: txtOrNull('evMaridaje'), prop_obs: txtOrNull('evPropObs'),
+      alq_mobiliario: txtOrNull('evAlqMobiliario'), alq_vajilla: txtOrNull('evAlqVajilla'), alq_cristaleria: txtOrNull('evAlqCristaleria'), alq_tecnica: txtOrNull('evAlqTecnica'), alq_otros: txtOrNull('evAlqOtros'), personal_adicional: txtOrNull('evPersonalAdic'), op_obs: txtOrNull('evOpObs'),
+      precio_pax: numOrNull('evPrecioPax'), precio_pax_mon: document.getElementById('evPrecioPaxMon').value,
+      alquileres: numOrNull('evAlquileres'), alquileres_mon: document.getElementById('evAlquileresMon').value,
+      total_facturar: numOrNull('evTotal'), total_mon: document.getElementById('evTotalMon').value,
+      sena: numOrNull('evSena'), sena_mon: document.getElementById('evSenaMon').value, sena_estado: document.getElementById('evSenaEstado').value,
+      saldo: numOrNull('evSaldo'), saldo_mon: document.getElementById('evSaldoMon').value,
+      cond_venta: txtOrNull('evCondVenta'), comisiones: txtOrNull('evComisiones'), com_obs: txtOrNull('evComObs'),
+      actualizado_en: new Date().toISOString()
+    };
+    if (EVENTO_EDIT_ID) {
+      await api('eventos?id=eq.' + EVENTO_EDIT_ID, { method: 'PATCH', body: JSON.stringify(rec) });
+      toast('✓ Evento actualizado', 'success');
+    } else {
+      rec.creado_por = currentUser ? currentUser.id : null; rec.creado_en = new Date().toISOString();
+      await api('eventos', { method: 'POST', body: JSON.stringify(rec) });
+      toast('✓ Evento guardado', 'success');
+    }
+    closeEventoForm();
+    await openMisEventos();
+  } catch (e) { err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e); }
+  finally { btn.disabled = false; btn.textContent = t; }
+};
+window.eliminarEvento = async function(id) {
+  if (!puedeEditarEventos()) return;
+  const ok = await showConfirm({ title: 'Eliminar evento', msg: 'Vas a eliminar este evento. No se puede deshacer.\n\n¿Confirmás?', type: 'warning', okLabel: 'Sí, eliminar', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  try { await api('eventos?id=eq.' + id, { method: 'DELETE' }); toast('✓ Evento eliminado', 'success'); closeEventoDetalle(); await openMisEventos(); }
+  catch (e) { toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error'); }
 };
 
 window.showDashboard = showDashboard;

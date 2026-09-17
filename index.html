@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817aw">
+<link rel="stylesheet" href="styles.css?v=20260817ax">
 </head>
 <body>
 
@@ -1809,6 +1809,106 @@
 <!-- ============================================
      VISTA: MIS CIERRES
 ============================================ -->
+<div id="vEventos" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Mis Eventos</div>
+        <div class="module-subtitle">Eventos cotizados por punto de venta</div>
+      </div>
+    </div>
+    <div id="eventosBody"><div class="loading">Cargando...</div></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalEventoDetalle">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Detalle del evento</h2>
+      <button class="modal-close" onclick="closeEventoDetalle()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body" id="eventoDetalleBody"></div>
+    <div class="modal-actions">
+      <button id="eventoDetalleEditar" class="btn-ghost" style="display:none;margin-right:auto" onclick="editarEventoDesdeDetalle()"><i class="ti ti-pencil"></i> Editar</button>
+      <button id="eventoDetalleEliminar" class="btn-ghost" style="display:none;color:var(--c-error)" onclick="eliminarEventoDesdeDetalle()"><i class="ti ti-trash"></i> Eliminar</button>
+      <button class="btn-ghost" onclick="closeEventoDetalle()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalEventoForm">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title" id="evModalTitulo">Nuevo evento</h2>
+      <button class="modal-close" onclick="closeEventoForm()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+      <div class="cierre-section-title" style="margin-top:0"><i class="ti ti-info-circle"></i> Datos básicos</div>
+      <label class="field"><span class="field-label">Cliente</span><select id="evCliente" onchange="evClienteChange()"></select></label>
+      <div id="evNuevoClienteBox" style="display:none">
+        <label class="field"><span class="field-label">Nombre o Razón Social</span><input type="text" id="evCliNombre"></label>
+        <label class="field"><span class="field-label">Email</span><input type="email" id="evCliEmail"></label>
+        <label class="field"><span class="field-label">WhatsApp</span>
+          <div style="display:flex;gap:6px">
+            <select id="evCliPais" onchange="evPaisChange()" style="width:auto;flex:0 0 auto">
+              <option value="+54">Argentina +54</option><option value="+55">Brasil +55</option><option value="+598">Uruguay +598</option><option value="+56">Chile +56</option><option value="+595">Paraguay +595</option><option value="+1">EEUU/Canadá +1</option><option value="+34">España +34</option><option value="otro">Otro código…</option>
+            </select>
+            <input type="text" id="evCliCodigo" placeholder="+código" style="width:80px;flex:0 0 auto;display:none">
+            <input type="tel" id="evCliWa" placeholder="Número" style="flex:1;min-width:0">
+          </div>
+        </label>
+      </div>
+      <label class="field"><span class="field-label">Local</span><select id="evLocal"></select></label>
+      <div class="cierre-row2">
+        <label class="field"><span class="field-label">Fecha</span><input type="date" id="evFecha"></label>
+        <label class="field"><span class="field-label">Horario</span><input type="text" id="evHorario" placeholder="Ej: 20:00 a 01:00"></label>
+      </div>
+      <div class="cierre-row2">
+        <label class="field"><span class="field-label">Cant. de pax</span><input type="number" min="0" id="evPax"></label>
+        <label class="field"><span class="field-label">Estado</span><select id="evEstado"><option value="pendiente">Pendiente</option><option value="confirmado">Confirmado</option></select></label>
+      </div>
+
+      <div class="cierre-section-title"><i class="ti ti-clipboard-list"></i> Propuesta</div>
+      <label class="field"><span class="field-label">Tipo</span><select id="evTipo"><option value="cocktail">Cocktail</option><option value="desayuno">Desayuno</option><option value="almuerzo">Almuerzo</option><option value="cena">Cena</option><option value="otro">Otro</option></select></label>
+      <label class="field"><span class="field-label">Menú</span><textarea id="evMenu" rows="2"></textarea></label>
+      <label class="field"><span class="field-label">Bebidas</span><textarea id="evBebidas" rows="2"></textarea></label>
+      <label class="field"><span class="field-label">Maridaje</span><textarea id="evMaridaje" rows="2"></textarea></label>
+      <label class="field"><span class="field-label">Observaciones</span><textarea id="evPropObs" rows="2"></textarea></label>
+
+      <div class="cierre-section-title"><i class="ti ti-tools"></i> Necesidades operativas</div>
+      <label class="field"><span class="field-label">Alquiler mobiliario</span><input type="text" id="evAlqMobiliario"></label>
+      <label class="field"><span class="field-label">Alquiler vajilla</span><input type="text" id="evAlqVajilla"></label>
+      <label class="field"><span class="field-label">Alquiler cristalería</span><input type="text" id="evAlqCristaleria"></label>
+      <label class="field"><span class="field-label">Alquiler técnica</span><input type="text" id="evAlqTecnica"></label>
+      <label class="field"><span class="field-label">Otros alquileres</span><input type="text" id="evAlqOtros"></label>
+      <label class="field"><span class="field-label">Personal adicional</span><input type="text" id="evPersonalAdic"></label>
+      <label class="field"><span class="field-label">Observaciones</span><textarea id="evOpObs" rows="2"></textarea></label>
+
+      <div class="cierre-section-title"><i class="ti ti-cash"></i> Condiciones comerciales</div>
+      <label class="field"><span class="field-label">Precio por pax</span>
+        <div style="display:flex;gap:6px"><input type="number" step="any" min="0" id="evPrecioPax" style="flex:1;min-width:0"><select id="evPrecioPaxMon" style="width:auto"><option value="ARS">AR$</option><option value="USD">US$</option></select></div></label>
+      <label class="field"><span class="field-label">Alquileres</span>
+        <div style="display:flex;gap:6px"><input type="number" step="any" min="0" id="evAlquileres" style="flex:1;min-width:0"><select id="evAlquileresMon" style="width:auto"><option value="ARS">AR$</option><option value="USD">US$</option></select></div></label>
+      <label class="field"><span class="field-label">Total a facturar</span>
+        <div style="display:flex;gap:6px"><input type="number" step="any" min="0" id="evTotal" style="flex:1;min-width:0"><select id="evTotalMon" style="width:auto"><option value="ARS">AR$</option><option value="USD">US$</option></select></div></label>
+      <label class="field"><span class="field-label">Seña</span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap"><input type="number" step="any" min="0" id="evSena" style="flex:1;min-width:90px"><select id="evSenaMon" style="width:auto"><option value="ARS">AR$</option><option value="USD">US$</option></select><select id="evSenaEstado" style="width:auto"><option value="pendiente">Pendiente</option><option value="pagada">Pagada</option></select></div></label>
+      <label class="field"><span class="field-label">Saldo a pagar</span>
+        <div style="display:flex;gap:6px"><input type="number" step="any" min="0" id="evSaldo" style="flex:1;min-width:0"><select id="evSaldoMon" style="width:auto"><option value="ARS">AR$</option><option value="USD">US$</option></select></div></label>
+      <label class="field"><span class="field-label">Condiciones de venta</span><textarea id="evCondVenta" rows="2"></textarea></label>
+      <label class="field"><span class="field-label">Comisiones</span><input type="text" id="evComisiones"></label>
+      <label class="field"><span class="field-label">Observaciones</span><textarea id="evComObs" rows="2"></textarea></label>
+
+      <div class="login-error" id="evError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeEventoForm()">Cancelar</button>
+      <button class="btn-primary" id="evGuardarBtn" onclick="guardarEvento()">Guardar evento</button>
+    </div>
+  </div>
+</div>
+
 <div id="vReservas" class="view">
   <div class="module-wrap">
     <div class="module-header">
@@ -2326,6 +2426,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817aw"></script>
+<script src="app.js?v=20260817ax"></script>
 </body>
 </html>
