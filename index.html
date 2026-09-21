@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817ay">
+<link rel="stylesheet" href="styles.css?v=20260817az">
 </head>
 <body>
 
@@ -1774,28 +1774,12 @@
       <button type="button" class="btn-primary" onclick="guardarObjGest()" style="margin-top:10px"><i class="ti ti-check"></i> Guardar objetivos</button>
       <div class="field-hint" id="gestObjStatus" style="margin-top:6px"></div>
       <div style="height:1px;background:var(--c-cream-border);margin:16px 0"></div>
-      <div class="est-section-title">Gastos Operativos (GO)</div>
-      <p class="field-hint">Descargá la planilla, completá los rubros por local y volvé a subirla. Trae los valores del mes (o del último cargado como referencia).</p>
+      <div class="est-section-title">Planilla de resultados</div>
+      <p class="field-hint">Una sola planilla con todos los rubros (CM, CL, GO y GA) por local. Descargala, completá los totales de cada fila y volvé a subirla. La fila Ventas Netas viene de referencia (sale de los cierres, no se pisa). Los valores del mes ya vienen precargados.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-        <button type="button" class="btn-ghost" onclick="descargarPlanillaGO()"><i class="ti ti-download"></i> Descargar planilla GO</button>
-        <label class="btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px"><i class="ti ti-upload"></i> Subir planilla GO
-          <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="subirPlanillaGO(this)">
-        </label>
-      </div>
-      <div class="est-section-title" style="margin-top:16px">Cto Mercadería (CM)</div>
-      <p class="field-hint">Por local: Alimentos / Bebida / Extras.</p>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-        <button type="button" class="btn-ghost" onclick="descargarPlanillaCM()"><i class="ti ti-download"></i> Descargar planilla CM</button>
-        <label class="btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px"><i class="ti ti-upload"></i> Subir planilla CM
-          <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="subirPlanillaCM(this)">
-        </label>
-      </div>
-      <div class="est-section-title" style="margin-top:16px">Cto Laboral (CL)</div>
-      <p class="field-hint">Dos hojas: Sueldos (por empleado) y Aportes-Adic (por local). Se prorratea por roster.</p>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-        <button type="button" class="btn-ghost" onclick="descargarPlanillaCL()"><i class="ti ti-download"></i> Descargar planilla CL</button>
-        <label class="btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px"><i class="ti ti-upload"></i> Subir planilla CL
-          <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="subirPlanillaCL(this)">
+        <button type="button" class="btn-ghost" onclick="descargarPlanillaResultados()"><i class="ti ti-download"></i> Descargar planilla</button>
+        <label class="btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px"><i class="ti ti-upload"></i> Subir planilla
+          <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="subirPlanillaResultados(this)">
         </label>
       </div>
       <div class="field-hint" id="gestStatus" style="margin-top:10px"></div>
@@ -2430,6 +2414,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817ay"></script>
+<script src="app.js?v=20260817az"></script>
 </body>
 </html>

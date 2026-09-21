@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AY | ULTIMA | Eventos: horario desde-hasta (15min) + fecha destacada; Reservas: forma de pago Pagado (No cobrar) (+ AX/AW/AV) ===== */
+/* ===== BUILD 2026-08-17-AZ | ULTIMA | Panel Resultados nueva cascada VN>CM>CB>CL>GO>GA>EBITDA + planilla unica (resultados_mensuales) (+ AY/AX/AW) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -8735,7 +8735,6 @@ function _pvSemana(fechaStr) {
 async function cargarPanelResultados() {
   const body = document.getElementById('pvBody');
   body.innerHTML = '<div class="loading">Cargando...</div>';
-  await asegurarPropConfig();
   const loc = PV_LOCAL;
   if (!loc) { body.innerHTML = '<div class="empty-list">No ten\u00e9s un local asignado para ver.</div>'; return; }
   const agregado = esLocalAgregado(loc);
@@ -8747,160 +8746,59 @@ async function cargarPanelResultados() {
   try {
     const r = _pvRango(PV_MES);
     const cierres = await api('cierres_caja?' + locFilter + '&fecha=gte.' + r.desde + '&fecha=lte.' + r.hasta + '&select=*&order=fecha.asc,id.asc') || [];
-    let objNeto = 0, hayObj = false, objHer = false, cmPct = null, clPct = null, goPct = null;
-    const _pf = function(x){ const v = parseFloat(x); return isFinite(v) ? v : null; };
-    const objByLocal = {};
-    try {
-      if (agregado) {
-        const allObjs = await api('objetivos_ventas?local=in.(' + reales.map(encodeURIComponent).join(',') + ')&mes=lte.' + PV_MES + '&select=*&order=mes.desc') || [];
-        const seen = {};
-        allObjs.forEach(function(o){ if (!seen[o.local]) { seen[o.local] = 1; objNeto += parseFloat(o.objetivo) || 0; hayObj = true; if (o.mes !== PV_MES) objHer = true; objByLocal[o.local] = { clPct: _pf(o.obj_cl_pct), cmPct: _pf(o.obj_cm_pct), goPct: _pf(o.obj_go_pct) }; } });
-      } else {
-        let s = null;
-        const objs = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + PV_MES + '&select=*') || [];
-        if (objs.length) { s = objs[0]; }
-        else {
-          const prev = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=lt.' + PV_MES + '&select=*&order=mes.desc&limit=1') || [];
-          if (prev.length) { s = prev[0]; objHer = true; }
-        }
-        if (s) { objNeto = parseFloat(s.objetivo) || 0; hayObj = true; cmPct = _pf(s.obj_cm_pct); clPct = _pf(s.obj_cl_pct); goPct = _pf(s.obj_go_pct); }
-      }
-    } catch (e) {}
-    const goByLocal = {}; let goTotal = null;
-    try {
-      const goRows = agregado
-        ? (await api('gastos_operativos?local=in.(' + reales.map(encodeURIComponent).join(',') + ')&mes=eq.' + PV_MES + '&select=*') || [])
-        : (await api('gastos_operativos?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + PV_MES + '&select=*') || []);
-      if (goRows.length) {
-        goTotal = 0;
-        goRows.forEach(function(r){ const v = (parseFloat(r.alquileres)||0) + (parseFloat(r.servicios)||0) + (parseFloat(r.mantenimiento)||0) + (parseFloat(r.lavanderia)||0) + (parseFloat(r.marketing)||0) + (parseFloat(r.sistemas)||0) + (parseFloat(r.otros)||0); goByLocal[r.local] = (goByLocal[r.local]||0) + v; goTotal += v; });
-      }
-    } catch (e) {}
-    const cmByLocal = {}; let cmTotal = null;
-    try {
-      const cmRows = agregado
-        ? (await api('costos_mercaderia?local=in.(' + reales.map(encodeURIComponent).join(',') + ')&mes=eq.' + PV_MES + '&select=*') || [])
-        : (await api('costos_mercaderia?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + PV_MES + '&select=*') || []);
-      if (cmRows.length) { cmTotal = 0; cmRows.forEach(function(r){ const v = (parseFloat(r.alimentos)||0) + (parseFloat(r.bebida)||0) + (parseFloat(r.extras)||0); cmByLocal[r.local] = (cmByLocal[r.local]||0) + v; cmTotal += v; }); }
-    } catch (e) {}
-    const clByLocal = {}; let clTotal = null;
-    try {
-      const clData = await _fetchCLData(PV_MES);
-      if (Object.keys(clData.sueldos).length || Object.keys(clData.aportes).length) {
-        const perLocal = _computeCLPorLocal(PV_MES, clData);
-        if (agregado) { reales.forEach(function(l){ clByLocal[l] = perLocal[l] || 0; }); clTotal = reales.reduce(function(sm, l){ return sm + (perLocal[l]||0); }, 0); }
-        else { clTotal = perLocal[loc] || 0; }
-      }
-    } catch (e) {}
-    let pctProm = null;
-    if (agregado) {
-      const netoByLocal = {};
-      cierres.forEach(function(c){ netoByLocal[c.local] = (netoByLocal[c.local]||0) + netoPesos(c); });
-      const A = { cl:[], cm:[], go:[], cb:[] }, O = { cl:[], cm:[], go:[], cb:[] };
-      reales.forEach(function(l){
-        const nl = netoByLocal[l] || 0;
-        if (nl > 0) {
-          if (clByLocal[l] != null) A.cl.push(clByLocal[l]/nl*100);
-          if (cmByLocal[l] != null) A.cm.push(cmByLocal[l]/nl*100);
-          if (goByLocal[l] != null) A.go.push(goByLocal[l]/nl*100);
-          A.cb.push(100 - (clByLocal[l]||0)/nl*100 - (cmByLocal[l]||0)/nl*100 - (goByLocal[l]||0)/nl*100);
-        }
-        const ob = objByLocal[l] || {};
-        if (ob.clPct != null) O.cl.push(ob.clPct);
-        if (ob.cmPct != null) O.cm.push(ob.cmPct);
-        if (ob.goPct != null) O.go.push(ob.goPct);
-        if (ob.clPct != null || ob.cmPct != null || ob.goPct != null) O.cb.push(100 - (ob.clPct||0) - (ob.cmPct||0) - (ob.goPct||0));
-      });
-      const avg = function(a){ return a.length ? a.reduce(function(sm, x){ return sm + x; }, 0)/a.length : null; };
-      pctProm = { clAcum: avg(A.cl), cmAcum: avg(A.cm), goAcum: avg(A.go), cbAcum: avg(A.cb), clObj: avg(O.cl), cmObj: avg(O.cm), goObj: avg(O.go), cbObj: avg(O.cb) };
-    }
-    renderPanelResultados(cierres, { objNeto: objNeto, hayObj: hayObj, objHer: objHer, cmPct: cmPct, clPct: clPct, goPct: goPct }, agregado, { goTotal: goTotal, cmTotal: cmTotal, clTotal: clTotal }, pctProm);
+    const res = await api('resultados_mensuales?' + locFilter + '&mes=eq.' + PV_MES + '&select=*') || [];
+    const vnByLocal = {};
+    cierres.forEach(function(c){ vnByLocal[c.local] = (vnByLocal[c.local] || 0) + netoPesos(c); });
+    const resByLocal = {};
+    res.forEach(function(x){ resByLocal[x.local] = x; });
+    renderPanelResultados(agregado, agregado ? reales : [loc], vnByLocal, resByLocal);
   } catch (e) {
     body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los datos.</div>';
   }
 }
 
-function renderPanelResultados(cierres, obj, agregado, costos, pctProm) {
-  costos = costos || {};
+const RES_GO_SUBS = [
+  ['go_alquiler','Alquiler'], ['go_serv_imp','Serv e Impuestos'], ['go_lavanderia','Lavander\u00eda'],
+  ['go_mantenim','Mantenim, Rep y Rep'], ['go_imprenta','Imprenta y Librer\u00eda'], ['go_limpieza','Limpieza y Descartables'],
+  ['go_bienes_salon','Bienes de Uso Sal\u00f3n'], ['go_bienes_cocina','Bienes de Uso Cocina'], ['go_traslados','Traslados Personal'], ['go_otros','Otros']
+];
+function renderPanelResultados(agregado, locales, vnByLocal, resByLocal) {
   const body = document.getElementById('pvBody');
-  const brutoVentas = cierres.reduce(function(s, c){ return s + computablePesos(c); }, 0);
-  const netoVentas = cierres.reduce(function(s, c){ return s + netoPesos(c); }, 0);
-  const sem = { 1:0, 2:0, 3:0, 4:0, 5:0 };
-  cierres.forEach(function(c){ sem[_pvSemana(c.fecha)] += netoPesos(c); });
-
-  const pctOf = function(p){ return (p != null) ? (p/100)*netoVentas : null; };
-  const ventasObj = obj.hayObj ? obj.objNeto : null;
-  const hayCostoObj = (obj.cmPct != null || obj.clPct != null || obj.goPct != null);
-  const gbPct = hayCostoObj ? (100 - (obj.cmPct||0) - (obj.clPct||0) - (obj.goPct||0)) : null;
-  const cmAcum = (costos.cmTotal != null) ? costos.cmTotal : null;
-  const clAcum = (costos.clTotal != null) ? costos.clTotal : null;
-  const goAcum = (costos.goTotal != null) ? costos.goTotal : null;
-  const cbAcum = netoVentas - (goAcum||0) - (cmAcum||0) - (clAcum||0);
-
-  const _pAcum = function(x){ return (x != null && netoVentas > 0) ? (x/netoVentas*100) : null; };
-  let clPctA, cmPctA, goPctA, cbPctA, clPctO, cmPctO, goPctO, cbPctO;
-  if (agregado && pctProm) {
-    clPctA = pctProm.clAcum; cmPctA = pctProm.cmAcum; goPctA = pctProm.goAcum; cbPctA = pctProm.cbAcum;
-    clPctO = pctProm.clObj; cmPctO = pctProm.cmObj; goPctO = pctProm.goObj; cbPctO = pctProm.cbObj;
-  } else {
-    clPctA = _pAcum(clAcum); cmPctA = _pAcum(cmAcum); goPctA = _pAcum(goAcum); cbPctA = _pAcum(cbAcum);
-    clPctO = obj.clPct; cmPctO = obj.cmPct; goPctO = obj.goPct; cbPctO = gbPct;
-  }
-  const _pObj = function(p){ return (p != null && isFinite(p)) ? (p/100)*netoVentas : null; };
-  const clObj = _pObj(clPctO), cmObj = _pObj(cmPctO), goObj = _pObj(goPctO), cbObj = _pObj(cbPctO);
-
-  const card = function(titulo, code, acum, objv, tipo, color, pctAcum, pctObj){
-    const difV = (acum != null && objv != null) ? (acum - objv) : null;
-    let difExtra = '', difStr = '—';
-    if (difV != null) {
-      const bueno = (tipo === 'costo') ? (difV <= 0) : (difV >= 0);
-      difExtra = ';color:' + (bueno ? '#4CAF7A' : 'var(--c-error)');
-      difStr = (difV > 0 ? '+' : (difV < 0 ? '−' : '')) + _pvMoney(Math.round(Math.abs(difV)));
-    }
-    const cinco = (pctAcum !== undefined);
-    const fs = cinco ? 10 : 13;
-    const m = function(v){ return v != null ? _pvMoney(Math.round(v)) : '—'; };
-    const ps = function(p){ return (p != null && isFinite(p)) ? p.toFixed(0) + '%' : '—'; };
-    const cel = function(lbl, val, extra, first){ return '<div style="flex:1;min-width:0;text-align:center;padding:7px 1px' + (first ? '' : ';border-left:1px solid var(--c-cream-border)') + '"><div style="font-size:8px;opacity:.5;line-height:1.2">' + lbl + '</div><div style="font-weight:600;font-size:' + fs + 'px;margin-top:3px;white-space:nowrap' + (extra||'') + '">' + val + '</div></div>'; };
-    let cells;
-    if (cinco) {
-      cells = cel('$ ' + code + ' Acum', m(acum), '', true) + cel('% ' + code + ' Acum', ps(pctAcum)) + cel('$ ' + code + ' Obj', m(objv)) + cel('% ' + code + ' Obj', ps(pctObj)) + cel('$ ' + code + ' Dif', difStr, difExtra);
-    } else {
-      const pctV = (objv != null && objv !== 0 && acum != null) ? (acum/objv*100) : null;
-      cells = cel('$ ' + code + ' Acum', m(acum), '', true) + cel('% ' + code + ' Obj', ps(pctV)) + cel('$ ' + code + ' Obj', m(objv)) + cel('$ ' + code + ' Dif', difStr, difExtra);
-    }
-    return '<div style="border:1px solid var(--c-cream-border);border-radius:10px;overflow:hidden;margin-bottom:10px">' +
-      '<div style="text-align:center;font-weight:700;font-size:12px;letter-spacing:.6px;padding:7px;background:' + (color || 'rgba(255,255,255,.05)') + ';color:#fff">' + titulo + '</div>' +
-      '<div style="display:flex">' + cells + '</div>' +
-    '</div>';
-  };
-
-  const puedeEditObj = (isMaster() || isAdmin()) && !agregado;
-  let html = '';
-  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
-    '<span class="est-section-title" style="margin:0">Resultado del mes (acumulado, neto)</span>' +
-    (puedeEditObj ? '<button class="btn-ghost pv-obj-edit" onclick="abrirObjetivo()"><i class="ti ti-pencil"></i> Objetivos</button>' : '') + '</div>';
-  if (agregado) html += '<div class="cierre-hint" style="margin-bottom:12px">Vista consolidada: suma de todos los locales.</div>';
-  else if (obj.objHer) html += '<div class="cierre-hint" style="margin-bottom:12px">Objetivos heredados del mes anterior.</div>';
-
-  html += card('VENTAS NETAS', 'VN', netoVentas, ventasObj, 'vta', '#2E7D32');
-  html += card('CTO LABORAL', 'CL', clAcum, clObj, 'costo', '#C87A2C', clPctA, clPctO);
-  html += card('CTO MERCADERÍA', 'CM', cmAcum, cmObj, 'costo', '#7E57C2', cmPctA, cmPctO);
-  html += card('GASTOS OPERATIVOS', 'GO', goAcum, goObj, 'costo', '#2A9D8F', goPctA, goPctO);
-  html += card('CONTRIB. BRUTA', 'CB', cbAcum, cbObj, 'cb', '#3E86C7', cbPctA, cbPctO);
-
-  html += '<div class="cierre-hint" style="margin:8px 0 16px"><i class="ti ti-info-circle"></i> Todos los costos se cargan desde “Gestión de estadísticas”. El Laboral se prorratea por roster/ficha (fijo, multilocal, eventual).</div>';
-
-  html += '<div class="pv-obj">';
-  html += '<div class="est-section-title">Ventas semana a semana (neto)</div>';
-  let haySem = false;
-  for (let s = 1; s <= 5; s++) {
-    if (s === 5 && sem[5] <= 0) continue;
-    html += '<div style="display:flex;justify-content:space-between;padding:8px 2px;border-bottom:1px solid var(--c-cream-border)"><span>Semana ' + s + '</span><span style="font-weight:600">' + _pvMoney(Math.round(sem[s])) + '</span></div>';
-    haySem = true;
-  }
-  if (!haySem) html += '<div class="cierre-hint">No hay cierres cargados en este mes.</div>';
-  html += '</div>';
+  const sum = function(fld){ return locales.reduce(function(s2, l){ const rr = resByLocal[l]; return s2 + (rr ? (parseFloat(rr[fld]) || 0) : 0); }, 0); };
+  const VN = locales.reduce(function(s2, l){ return s2 + (vnByLocal[l] || 0); }, 0);
+  const cmA = sum('cm_alimentos'), cmB = sum('cm_bebidas'), cmO = sum('cm_otros');
+  const CM = cmA + cmB + cmO;
+  const CB = VN - CM;
+  const clS = sum('cl_sueldos_adic'), cl931 = sum('cl_931');
+  const CL = clS + cl931;
+  let GO = 0; const goVals = {};
+  RES_GO_SUBS.forEach(function(pp){ goVals[pp[0]] = sum(pp[0]); GO += goVals[pp[0]]; });
+  const GA = sum('ga');
+  const EBITDA = CB - CL - GO - GA;
+  const m = function(v){ return _pvMoney(Math.round(v)); };
+  const pc = function(v){ return VN > 0 ? (v / VN * 100).toFixed(1) + '%' : '\u2014'; };
+  const cat = function(label, val, color, dark){ return '<div style="display:flex;align-items:center;background:' + color + ';color:' + (dark ? '#1a1a1a' : '#fff') + ';font-weight:700;padding:8px 10px;border-radius:6px;margin-top:8px">' +
+    '<span style="flex:1;min-width:0;font-size:12.5px;letter-spacing:.3px">' + label + '</span>' +
+    '<span style="width:108px;text-align:right;white-space:nowrap">' + m(val) + '</span>' +
+    '<span style="width:52px;text-align:right">' + pc(val) + '</span></div>'; };
+  const sub = function(label, val){ return '<div style="display:flex;align-items:center;padding:4px 10px 4px 20px;border-bottom:1px solid var(--c-cream-border);font-size:12px;color:var(--c-cream)">' +
+    '<span style="flex:1;min-width:0;opacity:.85">' + esc(label) + '</span>' +
+    '<span style="width:108px;text-align:right;white-space:nowrap">' + m(val) + '</span>' +
+    '<span style="width:52px;text-align:right;opacity:.7">' + pc(val) + '</span></div>'; };
+  let html = '<div class="est-section-title" style="margin:0 0 8px">Resultado del mes (neto)</div>';
+  if (agregado) html += '<div class="cierre-hint" style="margin-bottom:8px">Vista consolidada: suma de todos los locales.</div>';
+  html += '<div style="display:flex;padding:0 10px 2px;font-size:9px;opacity:.5;font-weight:700"><span style="flex:1"></span><span style="width:108px;text-align:right">MONTO</span><span style="width:52px;text-align:right">% s/VN</span></div>';
+  html += cat('VENTAS NETAS', VN, '#2E7D32');
+  html += cat('COSTO DE MERCADER\u00cdA', CM, '#C77DAE');
+  html += sub('Alimentos', cmA) + sub('Bebidas', cmB) + sub('Otros', cmO);
+  html += cat('CONTRIBUCI\u00d3N BRUTA (VN \u2212 CM)', CB, '#3E86C7');
+  html += cat('COSTO LABORAL', CL, '#C87A2C');
+  html += sub('Sueldos + Adic', clS) + sub('931', cl931);
+  html += cat('GASTOS OPERATIVOS', GO, '#2D7FC4');
+  html += RES_GO_SUBS.map(function(pp){ return sub(pp[1], goVals[pp[0]]); }).join('');
+  html += cat('GASTOS AZUCA', GA, '#6FA8DC');
+  html += cat('EBITDA (CB \u2212 CL \u2212 GO \u2212 GA)', EBITDA, '#E8C400', true);
+  html += '<div class="cierre-hint" style="margin-top:12px"><i class="ti ti-info-circle"></i> Ventas Netas sale de los cierres. El resto se carga en Gesti\u00f3n de estad\u00edsticas con la planilla de resultados.</div>';
   body.innerHTML = html;
 }
 
@@ -9030,6 +8928,83 @@ window.guardarObjGest = async function() {
   } catch (e) { if (st) st.textContent = 'Error: ' + ((e && e.message) || e); }
 };
 
+const RES_ROWS = [
+  ['Ventas Netas (referencia)', null],
+  ['CM - Alimentos','cm_alimentos'], ['CM - Bebidas','cm_bebidas'], ['CM - Otros','cm_otros'],
+  ['CL - Sueldos + Adic','cl_sueldos_adic'], ['CL - 931','cl_931'],
+  ['GO - Alquiler','go_alquiler'], ['GO - Serv e Impuestos','go_serv_imp'], ['GO - Lavander\u00eda','go_lavanderia'], ['GO - Mantenim, Rep y Rep','go_mantenim'], ['GO - Imprenta y Librer\u00eda','go_imprenta'], ['GO - Limpieza y Descartables','go_limpieza'], ['GO - Bienes de Uso Sal\u00f3n','go_bienes_salon'], ['GO - Bienes de Uso Cocina','go_bienes_cocina'], ['GO - Traslados Personal','go_traslados'], ['GO - Otros','go_otros'],
+  ['GA - Gastos Azuca','ga']
+];
+window.descargarPlanillaResultados = async function() {
+  const st = document.getElementById('gestStatus'); st.textContent = 'Preparando...';
+  const mes = document.getElementById('gestMes').value;
+  try {
+    const XLSX = await ensureXLSX();
+    const locales = _goLocales();
+    const byLocal = {};
+    (await api('resultados_mensuales?mes=eq.' + mes + '&select=*') || []).forEach(function(r){ byLocal[r.local] = r; });
+    const rr = _pvRango(mes);
+    const cier = await apiAll('cierres_caja?fecha=gte.' + rr.desde + '&fecha=lte.' + rr.hasta + '&select=*') || [];
+    const vnByLocal = {};
+    cier.forEach(function(c){ vnByLocal[c.local] = (vnByLocal[c.local] || 0) + netoPesos(c); });
+    const header = ['Rubro'].concat(locales.map(function(l){ return localLabel(l); }));
+    const data = [header];
+    RES_ROWS.forEach(function(row){
+      const fila = [row[0]];
+      locales.forEach(function(l){
+        if (row[1] === null) fila.push(Math.round(vnByLocal[l] || 0));
+        else { const rec = byLocal[l]; fila.push(rec ? (parseFloat(rec[row[1]]) || 0) : 0); }
+      });
+      data.push(fila);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Resultados ' + mes);
+    XLSX.writeFile(wb, 'Planilla_Resultados_' + mes + '.xlsx');
+    st.textContent = 'Planilla descargada. Complet\u00e1 los valores y volv\u00e9 a subirla. La fila Ventas Netas es de referencia (no se sube).';
+  } catch (e) { st.textContent = 'Error: ' + ((e && e.message) || e); }
+};
+window.subirPlanillaResultados = async function(input) {
+  const file = input.files[0]; if (!file) return;
+  const st = document.getElementById('gestStatus'); st.textContent = 'Procesando...';
+  const mes = document.getElementById('gestMes').value;
+  try {
+    const XLSX = await ensureXLSX();
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+    if (!rows.length) { st.textContent = 'La planilla est\u00e1 vac\u00eda.'; input.value = ''; return; }
+    const header = rows[0];
+    const locales = _goLocales();
+    const labelToSlug = {}; locales.forEach(function(l){ labelToSlug[String(localLabel(l)).trim().toLowerCase()] = l; });
+    const colSlug = {};
+    for (let c = 1; c < header.length; c++) { const sl = labelToSlug[String(header[c] || '').trim().toLowerCase()]; if (sl) colSlug[c] = sl; }
+    const norm = function(x){ return String(x || '').trim().toLowerCase(); };
+    const rowFieldByLabel = {}; RES_ROWS.forEach(function(rw){ if (rw[1]) rowFieldByLabel[norm(rw[0])] = rw[1]; });
+    const dataByLocal = {};
+    Object.keys(colSlug).forEach(function(c){ dataByLocal[colSlug[c]] = {}; });
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i]; if (!row || row[0] == null) continue;
+      const field = rowFieldByLabel[norm(row[0])];
+      if (!field) continue;
+      Object.keys(colSlug).forEach(function(c){ const v = parseFloat(row[c]); dataByLocal[colSlug[c]][field] = isFinite(v) ? v : 0; });
+    }
+    let n = 0;
+    const slugs = Object.keys(dataByLocal);
+    for (let k = 0; k < slugs.length; k++) {
+      const slug = slugs[k];
+      const ex = await api('resultados_mensuales?local=eq.' + encodeURIComponent(slug) + '&mes=eq.' + mes + '&select=id') || [];
+      if (ex.length) await api('resultados_mensuales?id=eq.' + ex[0].id, { method: 'PATCH', body: JSON.stringify(Object.assign({ actualizado_en: new Date().toISOString() }, dataByLocal[slug])) });
+      else await api('resultados_mensuales', { method: 'POST', body: JSON.stringify(Object.assign({ local: slug, mes: mes, creado_por: currentUser.id }, dataByLocal[slug])) });
+      n++;
+    }
+    st.textContent = '\u2713 ' + n + ' locales cargados para ' + mes + '.';
+    toast('\u2713 Planilla de resultados cargada', 'success');
+    cargarPanelActivo();
+  } catch (e) { st.textContent = 'Error: ' + ((e && e.message) || e); }
+  finally { input.value = ''; }
+};
 window.descargarPlanillaGO = async function() {
   const st = document.getElementById('gestStatus'); st.textContent = 'Preparando...';
   const mes = document.getElementById('gestMes').value;
