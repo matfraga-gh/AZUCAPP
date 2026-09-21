@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-BA | ULTIMA | Panel Resultados: columnas separadas + $/%% Objetivo + CB color propio; obj_ga_pct (+ AZ/AY/AX) ===== */
+/* ===== BUILD 2026-08-17-BC | ULTIMA | Panel Resultados: CB/EBITDA con formula en linea unica (+ BB/BA/AZ) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -8745,21 +8745,32 @@ async function cargarPanelResultados() {
     const r = _pvRango(PV_MES);
     const cierres = await api('cierres_caja?' + locFilter + '&fecha=gte.' + r.desde + '&fecha=lte.' + r.hasta + '&select=*&order=fecha.asc,id.asc') || [];
     const res = await api('resultados_mensuales?' + locFilter + '&mes=eq.' + PV_MES + '&select=*') || [];
-    const objs = await api('objetivos_ventas?' + locFilter + '&mes=eq.' + PV_MES + '&select=*') || [];
     const vnByLocal = {};
     cierres.forEach(function(c){ vnByLocal[c.local] = (vnByLocal[c.local] || 0) + netoPesos(c); });
     const resByLocal = {};
     res.forEach(function(x){ resByLocal[x.local] = x; });
+    // Objetivos (con herencia del mes anterior si no hay del mes actual) — igual que Panel de Ventas
     const _pf = function(x){ const v = parseFloat(x); return isFinite(v) ? v : null; };
-    const acc = { cm:[], cl:[], go:[], ga:[] }; let objVN = 0;
-    objs.forEach(function(o){ objVN += parseFloat(o.objetivo) || 0;
-      if (_pf(o.obj_cm_pct) != null) acc.cm.push(_pf(o.obj_cm_pct));
-      if (_pf(o.obj_cl_pct) != null) acc.cl.push(_pf(o.obj_cl_pct));
-      if (_pf(o.obj_go_pct) != null) acc.go.push(_pf(o.obj_go_pct));
-      if (_pf(o.obj_ga_pct) != null) acc.ga.push(_pf(o.obj_ga_pct));
-    });
-    const avg = function(a){ return a.length ? a.reduce(function(s2, x){ return s2 + x; }, 0) / a.length : null; };
-    const objPct = { cm: avg(acc.cm), cl: avg(acc.cl), go: avg(acc.go), ga: avg(acc.ga) };
+    let objVN = 0; const objPct = { cm: null, cl: null, go: null, ga: null };
+    try {
+      if (agregado) {
+        const allObjs = await api('objetivos_ventas?local=in.(' + reales.map(encodeURIComponent).join(',') + ')&mes=lte.' + PV_MES + '&select=*&order=mes.desc') || [];
+        const seen = {}; const acc = { cm:[], cl:[], go:[], ga:[] };
+        allObjs.forEach(function(o){ if (!seen[o.local]) { seen[o.local] = 1; objVN += parseFloat(o.objetivo) || 0;
+          if (_pf(o.obj_cm_pct) != null) acc.cm.push(_pf(o.obj_cm_pct));
+          if (_pf(o.obj_cl_pct) != null) acc.cl.push(_pf(o.obj_cl_pct));
+          if (_pf(o.obj_go_pct) != null) acc.go.push(_pf(o.obj_go_pct));
+          if (_pf(o.obj_ga_pct) != null) acc.ga.push(_pf(o.obj_ga_pct)); } });
+        const avg = function(a){ return a.length ? a.reduce(function(s2, x){ return s2 + x; }, 0) / a.length : null; };
+        objPct.cm = avg(acc.cm); objPct.cl = avg(acc.cl); objPct.go = avg(acc.go); objPct.ga = avg(acc.ga);
+      } else {
+        let ob = null;
+        const oo = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + PV_MES + '&select=*') || [];
+        if (oo.length) ob = oo[0];
+        else { const prev = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=lt.' + PV_MES + '&select=*&order=mes.desc&limit=1') || []; if (prev.length) ob = prev[0]; }
+        if (ob) { objVN = parseFloat(ob.objetivo) || 0; objPct.cm = _pf(ob.obj_cm_pct); objPct.cl = _pf(ob.obj_cl_pct); objPct.go = _pf(ob.obj_go_pct); objPct.ga = _pf(ob.obj_ga_pct); }
+      }
+    } catch (e) {}
     renderPanelResultados(agregado, agregado ? reales : [loc], vnByLocal, resByLocal, objPct, objVN);
   } catch (e) {
     body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los datos.</div>';
@@ -8793,35 +8804,35 @@ function renderPanelResultados(agregado, locales, vnByLocal, resByLocal, objPct,
   const cat = function(label, val, objp, color, dark, objMontoFijo) {
     const objM = (objMontoFijo !== undefined) ? (objMontoFijo != null ? m(objMontoFijo) : '—') : od(objp);
     return '<div style="display:flex;align-items:center;gap:4px;background:' + color + ';color:' + (dark ? '#1a1a1a' : '#fff') + ';font-weight:700;padding:8px 10px;border-radius:6px;margin-top:8px">' +
-      '<span style="flex:1;min-width:0;font-size:12px">' + label + '</span>' +
-      '<span style="flex:0 0 116px;text-align:right;white-space:nowrap;font-size:12px">' + m(val) + '</span>' +
-      '<span style="flex:0 0 48px;text-align:right;font-size:12px">' + pc(val) + '</span>' +
-      '<span style="flex:0 0 116px;text-align:right;white-space:nowrap;font-size:11px;opacity:.85">' + objM + '</span>' +
-      '<span style="flex:0 0 48px;text-align:right;font-size:11px;opacity:.85">' + opct(objp) + '</span></div>';
+      '<span style="flex:1;min-width:0;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</span>' +
+      '<span style="flex:0 0 112px;text-align:right;white-space:nowrap;font-size:12px">' + m(val) + '</span>' +
+      '<span style="flex:0 0 46px;text-align:right;font-size:12px">' + pc(val) + '</span>' +
+      '<span style="flex:0 0 112px;text-align:right;white-space:nowrap;font-size:11px;opacity:.85">' + objM + '</span>' +
+      '<span style="flex:0 0 46px;text-align:right;font-size:11px;opacity:.85">' + opct(objp) + '</span></div>';
   };
   const sub = function(label, val) {
     return '<div style="display:flex;align-items:center;gap:4px;padding:4px 10px 4px 20px;border-bottom:1px solid var(--c-cream-border);font-size:12px;color:var(--c-cream)">' +
-      '<span style="flex:1;min-width:0;opacity:.85">' + esc(label) + '</span>' +
-      '<span style="flex:0 0 116px;text-align:right;white-space:nowrap">' + m(val) + '</span>' +
-      '<span style="flex:0 0 48px;text-align:right;opacity:.7">' + pc(val) + '</span>' +
-      '<span style="flex:0 0 116px"></span><span style="flex:0 0 48px"></span></div>';
+      '<span style="flex:1;min-width:0;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(label) + '</span>' +
+      '<span style="flex:0 0 112px;text-align:right;white-space:nowrap">' + m(val) + '</span>' +
+      '<span style="flex:0 0 46px;text-align:right;opacity:.7">' + pc(val) + '</span>' +
+      '<span style="flex:0 0 112px"></span><span style="flex:0 0 46px"></span></div>';
   };
   let html = '<div class="est-section-title" style="margin:0 0 8px">Resultado del mes (neto)</div>';
   if (agregado) html += '<div class="cierre-hint" style="margin-bottom:8px">Vista consolidada: suma de todos los locales.</div>';
   html += '<div style="display:flex;gap:4px;padding:0 10px 3px;font-size:9px;opacity:.5;font-weight:700">' +
-    '<span style="flex:1"></span><span style="flex:0 0 116px;text-align:right">MONTO</span><span style="flex:0 0 48px;text-align:right">%</span>' +
-    '<span style="flex:0 0 116px;text-align:right">$ OBJ</span><span style="flex:0 0 48px;text-align:right">% OBJ</span></div>';
+    '<span style="flex:1"></span><span style="flex:0 0 112px;text-align:right">MONTO</span><span style="flex:0 0 46px;text-align:right">%</span>' +
+    '<span style="flex:0 0 112px;text-align:right">$ OBJ</span><span style="flex:0 0 46px;text-align:right">% OBJ</span></div>';
   html += cat('VENTAS NETAS', VN, null, '#2E7D32', false, (objVN > 0 ? objVN : null));
   html += cat('COSTO DE MERCADERÍA', CM, oCM, '#C77DAE');
   html += sub('Alimentos', cmA) + sub('Bebidas', cmB) + sub('Otros', cmO);
-  html += cat('CONTRIBUCIÓN BRUTA (VN − CM)', CB, oCB, '#0E9AA7');
+  html += cat('CONTRIBUCIÓN BRUTA <span style="font-weight:400;font-size:10px;opacity:.8">(VN − CM)</span>', CB, oCB, '#0E9AA7');
   html += cat('COSTO LABORAL', CL, oCL, '#C87A2C');
   html += sub('Sueldos + Adic', clS) + sub('931', cl931);
   html += cat('GASTOS OPERATIVOS', GO, oGO, '#2D7FC4');
   html += RES_GO_SUBS.map(function(pp){ return sub(pp[1], goVals[pp[0]]); }).join('');
   html += cat('GASTOS AZUCA', GA, oGA, '#6FA8DC');
-  html += cat('EBITDA (CB − CL − GO − GA)', EBITDA, oEB, '#E8C400', true);
-  html += '<div class="cierre-hint" style="margin-top:12px"><i class="ti ti-info-circle"></i> Ventas Netas sale de los cierres. El resto se carga en Gestión de estadísticas con la planilla de resultados. Los objetivos % se configuran en Gestión de estadísticas.</div>';
+  html += cat('EBITDA <span style="font-weight:400;font-size:10px;opacity:.8">(CB − CL − GO − GA)</span>', EBITDA, oEB, '#E8C400', true);
+  html += '<div class="cierre-hint" style="margin-top:12px"><i class="ti ti-info-circle"></i> CB = Ventas Netas − CM. EBITDA = CB − CL − GO − GA. Las Ventas Netas y su objetivo salen del Panel de Ventas; los % objetivo, de Gestión de estadísticas. El resto se carga con la planilla de resultados.</div>';
   body.innerHTML = html;
 }
 
