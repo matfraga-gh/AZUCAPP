@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-AZ | ULTIMA | Panel Resultados nueva cascada VN>CM>CB>CL>GO>GA>EBITDA + planilla unica (resultados_mensuales) (+ AY/AX/AW) ===== */
+/* ===== BUILD 2026-08-17-BA | ULTIMA | Panel Resultados: columnas separadas + $/%% Objetivo + CB color propio; obj_ga_pct (+ AZ/AY/AX) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -8736,69 +8736,92 @@ async function cargarPanelResultados() {
   const body = document.getElementById('pvBody');
   body.innerHTML = '<div class="loading">Cargando...</div>';
   const loc = PV_LOCAL;
-  if (!loc) { body.innerHTML = '<div class="empty-list">No ten\u00e9s un local asignado para ver.</div>'; return; }
+  if (!loc) { body.innerHTML = '<div class="empty-list">No tenés un local asignado para ver.</div>'; return; }
   const agregado = esLocalAgregado(loc);
   const reales = panelLocalesReales();
   if (agregado && !reales.length) { body.innerHTML = '<div class="empty-list">No hay locales para consolidar.</div>'; return; }
-  const locFilter = agregado
-    ? 'local=in.(' + reales.map(encodeURIComponent).join(',') + ')'
-    : 'local=eq.' + encodeURIComponent(loc);
+  const locFilter = agregado ? 'local=in.(' + reales.map(encodeURIComponent).join(',') + ')' : 'local=eq.' + encodeURIComponent(loc);
   try {
     const r = _pvRango(PV_MES);
     const cierres = await api('cierres_caja?' + locFilter + '&fecha=gte.' + r.desde + '&fecha=lte.' + r.hasta + '&select=*&order=fecha.asc,id.asc') || [];
     const res = await api('resultados_mensuales?' + locFilter + '&mes=eq.' + PV_MES + '&select=*') || [];
+    const objs = await api('objetivos_ventas?' + locFilter + '&mes=eq.' + PV_MES + '&select=*') || [];
     const vnByLocal = {};
     cierres.forEach(function(c){ vnByLocal[c.local] = (vnByLocal[c.local] || 0) + netoPesos(c); });
     const resByLocal = {};
     res.forEach(function(x){ resByLocal[x.local] = x; });
-    renderPanelResultados(agregado, agregado ? reales : [loc], vnByLocal, resByLocal);
+    const _pf = function(x){ const v = parseFloat(x); return isFinite(v) ? v : null; };
+    const acc = { cm:[], cl:[], go:[], ga:[] }; let objVN = 0;
+    objs.forEach(function(o){ objVN += parseFloat(o.objetivo) || 0;
+      if (_pf(o.obj_cm_pct) != null) acc.cm.push(_pf(o.obj_cm_pct));
+      if (_pf(o.obj_cl_pct) != null) acc.cl.push(_pf(o.obj_cl_pct));
+      if (_pf(o.obj_go_pct) != null) acc.go.push(_pf(o.obj_go_pct));
+      if (_pf(o.obj_ga_pct) != null) acc.ga.push(_pf(o.obj_ga_pct));
+    });
+    const avg = function(a){ return a.length ? a.reduce(function(s2, x){ return s2 + x; }, 0) / a.length : null; };
+    const objPct = { cm: avg(acc.cm), cl: avg(acc.cl), go: avg(acc.go), ga: avg(acc.ga) };
+    renderPanelResultados(agregado, agregado ? reales : [loc], vnByLocal, resByLocal, objPct, objVN);
   } catch (e) {
     body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los datos.</div>';
   }
 }
 
 const RES_GO_SUBS = [
-  ['go_alquiler','Alquiler'], ['go_serv_imp','Serv e Impuestos'], ['go_lavanderia','Lavander\u00eda'],
-  ['go_mantenim','Mantenim, Rep y Rep'], ['go_imprenta','Imprenta y Librer\u00eda'], ['go_limpieza','Limpieza y Descartables'],
-  ['go_bienes_salon','Bienes de Uso Sal\u00f3n'], ['go_bienes_cocina','Bienes de Uso Cocina'], ['go_traslados','Traslados Personal'], ['go_otros','Otros']
+  ['go_alquiler','Alquiler'], ['go_serv_imp','Serv e Impuestos'], ['go_lavanderia','Lavandería'],
+  ['go_mantenim','Mantenim, Rep y Rep'], ['go_imprenta','Imprenta y Librería'], ['go_limpieza','Limpieza y Descartables'],
+  ['go_bienes_salon','Bienes de Uso Salón'], ['go_bienes_cocina','Bienes de Uso Cocina'], ['go_traslados','Traslados Personal'], ['go_otros','Otros']
 ];
-function renderPanelResultados(agregado, locales, vnByLocal, resByLocal) {
+function renderPanelResultados(agregado, locales, vnByLocal, resByLocal, objPct, objVN) {
+  objPct = objPct || {};
   const body = document.getElementById('pvBody');
   const sum = function(fld){ return locales.reduce(function(s2, l){ const rr = resByLocal[l]; return s2 + (rr ? (parseFloat(rr[fld]) || 0) : 0); }, 0); };
   const VN = locales.reduce(function(s2, l){ return s2 + (vnByLocal[l] || 0); }, 0);
-  const cmA = sum('cm_alimentos'), cmB = sum('cm_bebidas'), cmO = sum('cm_otros');
-  const CM = cmA + cmB + cmO;
+  const cmA = sum('cm_alimentos'), cmB = sum('cm_bebidas'), cmO = sum('cm_otros'); const CM = cmA + cmB + cmO;
   const CB = VN - CM;
-  const clS = sum('cl_sueldos_adic'), cl931 = sum('cl_931');
-  const CL = clS + cl931;
-  let GO = 0; const goVals = {};
-  RES_GO_SUBS.forEach(function(pp){ goVals[pp[0]] = sum(pp[0]); GO += goVals[pp[0]]; });
+  const clS = sum('cl_sueldos_adic'), cl931 = sum('cl_931'); const CL = clS + cl931;
+  let GO = 0; const goVals = {}; RES_GO_SUBS.forEach(function(pp){ goVals[pp[0]] = sum(pp[0]); GO += goVals[pp[0]]; });
   const GA = sum('ga');
   const EBITDA = CB - CL - GO - GA;
   const m = function(v){ return _pvMoney(Math.round(v)); };
-  const pc = function(v){ return VN > 0 ? (v / VN * 100).toFixed(1) + '%' : '\u2014'; };
-  const cat = function(label, val, color, dark){ return '<div style="display:flex;align-items:center;background:' + color + ';color:' + (dark ? '#1a1a1a' : '#fff') + ';font-weight:700;padding:8px 10px;border-radius:6px;margin-top:8px">' +
-    '<span style="flex:1;min-width:0;font-size:12.5px;letter-spacing:.3px">' + label + '</span>' +
-    '<span style="width:108px;text-align:right;white-space:nowrap">' + m(val) + '</span>' +
-    '<span style="width:52px;text-align:right">' + pc(val) + '</span></div>'; };
-  const sub = function(label, val){ return '<div style="display:flex;align-items:center;padding:4px 10px 4px 20px;border-bottom:1px solid var(--c-cream-border);font-size:12px;color:var(--c-cream)">' +
-    '<span style="flex:1;min-width:0;opacity:.85">' + esc(label) + '</span>' +
-    '<span style="width:108px;text-align:right;white-space:nowrap">' + m(val) + '</span>' +
-    '<span style="width:52px;text-align:right;opacity:.7">' + pc(val) + '</span></div>'; };
+  const pc = function(v){ return VN > 0 ? (v / VN * 100).toFixed(1) + '%' : '—'; };
+  const opct = function(x){ return (x != null) ? x.toFixed(1) + '%' : '—'; };
+  const od = function(x){ return (x != null && VN > 0) ? m(x / 100 * VN) : '—'; };
+  const oCM = objPct.cm, oCL = objPct.cl, oGO = objPct.go, oGA = objPct.ga;
+  const hayObj = (oCM != null || oCL != null || oGO != null || oGA != null);
+  const oCB = (oCM != null) ? (100 - oCM) : null;
+  const oEB = hayObj ? (100 - (oCM || 0) - (oCL || 0) - (oGO || 0) - (oGA || 0)) : null;
+  const cat = function(label, val, objp, color, dark, objMontoFijo) {
+    const objM = (objMontoFijo !== undefined) ? (objMontoFijo != null ? m(objMontoFijo) : '—') : od(objp);
+    return '<div style="display:flex;align-items:center;gap:4px;background:' + color + ';color:' + (dark ? '#1a1a1a' : '#fff') + ';font-weight:700;padding:8px 10px;border-radius:6px;margin-top:8px">' +
+      '<span style="flex:1;min-width:0;font-size:12px">' + label + '</span>' +
+      '<span style="flex:0 0 116px;text-align:right;white-space:nowrap;font-size:12px">' + m(val) + '</span>' +
+      '<span style="flex:0 0 48px;text-align:right;font-size:12px">' + pc(val) + '</span>' +
+      '<span style="flex:0 0 116px;text-align:right;white-space:nowrap;font-size:11px;opacity:.85">' + objM + '</span>' +
+      '<span style="flex:0 0 48px;text-align:right;font-size:11px;opacity:.85">' + opct(objp) + '</span></div>';
+  };
+  const sub = function(label, val) {
+    return '<div style="display:flex;align-items:center;gap:4px;padding:4px 10px 4px 20px;border-bottom:1px solid var(--c-cream-border);font-size:12px;color:var(--c-cream)">' +
+      '<span style="flex:1;min-width:0;opacity:.85">' + esc(label) + '</span>' +
+      '<span style="flex:0 0 116px;text-align:right;white-space:nowrap">' + m(val) + '</span>' +
+      '<span style="flex:0 0 48px;text-align:right;opacity:.7">' + pc(val) + '</span>' +
+      '<span style="flex:0 0 116px"></span><span style="flex:0 0 48px"></span></div>';
+  };
   let html = '<div class="est-section-title" style="margin:0 0 8px">Resultado del mes (neto)</div>';
   if (agregado) html += '<div class="cierre-hint" style="margin-bottom:8px">Vista consolidada: suma de todos los locales.</div>';
-  html += '<div style="display:flex;padding:0 10px 2px;font-size:9px;opacity:.5;font-weight:700"><span style="flex:1"></span><span style="width:108px;text-align:right">MONTO</span><span style="width:52px;text-align:right">% s/VN</span></div>';
-  html += cat('VENTAS NETAS', VN, '#2E7D32');
-  html += cat('COSTO DE MERCADER\u00cdA', CM, '#C77DAE');
+  html += '<div style="display:flex;gap:4px;padding:0 10px 3px;font-size:9px;opacity:.5;font-weight:700">' +
+    '<span style="flex:1"></span><span style="flex:0 0 116px;text-align:right">MONTO</span><span style="flex:0 0 48px;text-align:right">%</span>' +
+    '<span style="flex:0 0 116px;text-align:right">$ OBJ</span><span style="flex:0 0 48px;text-align:right">% OBJ</span></div>';
+  html += cat('VENTAS NETAS', VN, null, '#2E7D32', false, (objVN > 0 ? objVN : null));
+  html += cat('COSTO DE MERCADERÍA', CM, oCM, '#C77DAE');
   html += sub('Alimentos', cmA) + sub('Bebidas', cmB) + sub('Otros', cmO);
-  html += cat('CONTRIBUCI\u00d3N BRUTA (VN \u2212 CM)', CB, '#3E86C7');
-  html += cat('COSTO LABORAL', CL, '#C87A2C');
+  html += cat('CONTRIBUCIÓN BRUTA (VN − CM)', CB, oCB, '#0E9AA7');
+  html += cat('COSTO LABORAL', CL, oCL, '#C87A2C');
   html += sub('Sueldos + Adic', clS) + sub('931', cl931);
-  html += cat('GASTOS OPERATIVOS', GO, '#2D7FC4');
+  html += cat('GASTOS OPERATIVOS', GO, oGO, '#2D7FC4');
   html += RES_GO_SUBS.map(function(pp){ return sub(pp[1], goVals[pp[0]]); }).join('');
-  html += cat('GASTOS AZUCA', GA, '#6FA8DC');
-  html += cat('EBITDA (CB \u2212 CL \u2212 GO \u2212 GA)', EBITDA, '#E8C400', true);
-  html += '<div class="cierre-hint" style="margin-top:12px"><i class="ti ti-info-circle"></i> Ventas Netas sale de los cierres. El resto se carga en Gesti\u00f3n de estad\u00edsticas con la planilla de resultados.</div>';
+  html += cat('GASTOS AZUCA', GA, oGA, '#6FA8DC');
+  html += cat('EBITDA (CB − CL − GO − GA)', EBITDA, oEB, '#E8C400', true);
+  html += '<div class="cierre-hint" style="margin-top:12px"><i class="ti ti-info-circle"></i> Ventas Netas sale de los cierres. El resto se carga en Gestión de estadísticas con la planilla de resultados. Los objetivos % se configuran en Gestión de estadísticas.</div>';
   body.innerHTML = html;
 }
 
@@ -8907,6 +8930,7 @@ window.cargarObjGest = async function() {
       if (src.obj_cm_pct != null) document.getElementById('gestObjCm').value = src.obj_cm_pct;
       if (src.obj_cl_pct != null) document.getElementById('gestObjCl').value = src.obj_cl_pct;
       if (src.obj_go_pct != null) document.getElementById('gestObjGo').value = src.obj_go_pct;
+      if (src.obj_ga_pct != null) { const _g = document.getElementById('gestObjGa'); if (_g) _g.value = src.obj_ga_pct; }
     }
   } catch (e) {}
 };
@@ -8917,7 +8941,7 @@ window.guardarObjGest = async function() {
   if (!loc) { if (st) st.textContent = 'Elegí un local.'; return; }
   const val = parseMiles(document.getElementById('gestObjVta').value);
   const gp = function(id){ const v = parseFloat(String(document.getElementById(id).value || '').replace(',', '.')); return (isFinite(v) && v >= 0) ? v : null; };
-  const rec = { objetivo: (val > 0 ? val : 0), obj_cm_pct: gp('gestObjCm'), obj_cl_pct: gp('gestObjCl'), obj_go_pct: gp('gestObjGo'), creado_por: currentUser.id };
+  const rec = { objetivo: (val > 0 ? val : 0), obj_cm_pct: gp('gestObjCm'), obj_cl_pct: gp('gestObjCl'), obj_go_pct: gp('gestObjGo'), obj_ga_pct: gp('gestObjGa'), creado_por: currentUser.id };
   try {
     const ex = await api('objetivos_ventas?local=eq.' + encodeURIComponent(loc) + '&mes=eq.' + mes + '&select=id') || [];
     if (ex.length) await api('objetivos_ventas?id=eq.' + ex[0].id, { method: 'PATCH', body: JSON.stringify(rec) });
