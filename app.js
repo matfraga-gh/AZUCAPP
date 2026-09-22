@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-BD | ULTIMA | Cierres: local+turno default por local; Reservas: Cortesia, Menu, Confirmada, motivo, editor ve sus locales; propina sin_propina (+ BC/BB/BA) ===== */
+/* ===== BUILD 2026-08-17-BE | ULTIMA | Menu/Otros 1 linea; 2da eliminacion borra; modulo Clientes en Administracion (CUIT, contacto) (+ BD/BC/BB) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -3470,6 +3470,15 @@ const ADMIN_SECTIONS = [
     action: () => openPlantillasRosters()
   },
   {
+    id: 'clientes',
+    icon: 'ti-address-book',
+    color: '#C64E8B',
+    title: 'Clientes',
+    desc: 'Directorio de clientes (reservas y eventos)',
+    activa: true,
+    action: () => openAdminClientes()
+  },
+  {
     id: 'historial',
     icon: 'ti-history',
     color: '#B4B2A9',
@@ -4764,6 +4773,17 @@ window.eliminarReserva = async function(id) {
   const s = RESERVAS_SOLIC.find(function(x){ return x.id === id; });
   if (!s) return;
   const cli = _clienteReserva(s.cliente_id);
+  // Si ya está eliminada (cancelada), la segunda eliminación la borra definitivamente
+  if (s.estado === 'cancelada') {
+    const ok2 = await showConfirm({ title: 'Borrar definitivamente', msg: 'Esta reserva ya está eliminada. ¿Borrarla definitivamente de la pantalla? No se puede deshacer.', type: 'warning', okLabel: 'Sí, borrar', cancelLabel: 'Cancelar' });
+    if (!ok2) return;
+    try {
+      await api('reservas_solicitudes?id=eq.' + id, { method: 'DELETE' });
+      toast('✓ Reserva borrada', 'success');
+      await openMisReservas();
+    } catch (e) { toast('No se pudo borrar: ' + ((e && e.message) || e), 'error'); }
+    return;
+  }
   const ok = await showConfirm({ title: 'Eliminar reserva', msg: 'Vas a eliminar la reserva de ' + (cli ? cli.nombre : 'el cliente') + ' en ' + localLabel(s.local) + '.\n\nQueda registrada como Eliminada con el motivo. ¿Confirmás?', type: 'warning', okLabel: 'Sí, eliminar', cancelLabel: 'Cancelar' });
   if (!ok) return;
   const motivo = window.prompt('Motivo de la eliminación (opcional):', '');
@@ -5142,6 +5162,94 @@ window.eliminarEvento = async function(id) {
   const ok = await showConfirm({ title: 'Eliminar evento', msg: 'Vas a eliminar este evento. No se puede deshacer.\n\n¿Confirmás?', type: 'warning', okLabel: 'Sí, eliminar', cancelLabel: 'Cancelar' });
   if (!ok) return;
   try { await api('eventos?id=eq.' + id, { method: 'DELETE' }); toast('✓ Evento eliminado', 'success'); closeEventoDetalle(); await openMisEventos(); }
+  catch (e) { toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error'); }
+};
+
+// ============================================
+// MÓDULO: CLIENTES (Administración)
+// ============================================
+let CLIENTES_LISTA = [];
+let CLIENTE_EDIT_ID = null;
+async function openAdminClientes() {
+  if (!isMaster() && !isAdmin()) { showDashboard(); return; }
+  showView('vClientes');
+  const cont = document.getElementById('clientesLista');
+  cont.innerHTML = '<div class="loading">Cargando...</div>';
+  try { CLIENTES_LISTA = await api('reservas_clientes?order=nombre.asc') || []; }
+  catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los clientes.</div>'; return; }
+  renderClientes();
+}
+window.openAdminClientes = openAdminClientes;
+function renderClientes() {
+  const cont = document.getElementById('clientesLista');
+  if (!cont) return;
+  const q = normalizar((document.getElementById('clienteSearch') || {}).value || '');
+  const list = CLIENTES_LISTA.filter(function(c){ return !q || normalizar(c.nombre || '').indexOf(q) !== -1; });
+  if (!list.length) { cont.innerHTML = '<div class="empty-list">No hay clientes' + (q ? ' con ese nombre' : '') + '.</div>'; return; }
+  cont.innerHTML = list.map(function(c){
+    const wa = c.whatsapp ? String(c.whatsapp).replace(/[^0-9]/g, '') : '';
+    const sub1 = [ (c.cuit ? 'CUIT/CUIL: ' + esc(c.cuit) : ''), (c.contacto ? 'Contacto: ' + esc(c.contacto) : '') ].filter(Boolean).join(' · ');
+    const sub2 = [
+      wa ? '<a href="https://wa.me/' + wa + '" target="_blank" rel="noopener" style="color:#25D366;text-decoration:none"><i class="ti ti-brand-whatsapp"></i> ' + esc(c.whatsapp) + '</a>' : '',
+      c.email ? '<a href="mailto:' + esc(c.email) + '" style="color:var(--c-sand);text-decoration:none"><i class="ti ti-mail"></i> ' + esc(c.email) + '</a>' : ''
+    ].filter(Boolean).join(' · ');
+    return '<div class="ped-card" style="margin-bottom:8px">' +
+      '<div class="ped-card-top" style="align-items:center"><span class="ped-local">' + esc(c.nombre) + '</span>' +
+      '<span style="display:flex;gap:4px"><button class="btn-ghost" style="padding:5px 9px" onclick="abrirEditarCliente(' + c.id + ')"><i class="ti ti-pencil"></i></button>' +
+      '<button class="btn-ghost" style="padding:5px 9px;color:var(--c-error)" onclick="eliminarCliente(' + c.id + ')"><i class="ti ti-trash"></i></button></span></div>' +
+      (sub1 ? '<div class="ped-card-sub">' + sub1 + '</div>' : '') +
+      (sub2 ? '<div class="ped-card-sub" style="margin-top:2px">' + sub2 + '</div>' : '') +
+    '</div>';
+  }).join('');
+}
+window.renderClientes = renderClientes;
+window.abrirNuevoCliente = function() {
+  CLIENTE_EDIT_ID = null;
+  document.getElementById('cliModalTitulo').textContent = 'Nuevo cliente';
+  ['cliNombre','cliCuit','cliContacto','cliEmail','cliWhatsapp'].forEach(function(id){ document.getElementById(id).value = ''; });
+  document.getElementById('cliError').textContent = '';
+  document.getElementById('modalCliente').classList.add('show');
+};
+window.abrirEditarCliente = function(id) {
+  const c = CLIENTES_LISTA.find(function(x){ return x.id === id; });
+  if (!c) return;
+  CLIENTE_EDIT_ID = id;
+  document.getElementById('cliModalTitulo').textContent = 'Editar cliente';
+  document.getElementById('cliNombre').value = c.nombre || '';
+  document.getElementById('cliCuit').value = c.cuit || '';
+  document.getElementById('cliContacto').value = c.contacto || '';
+  document.getElementById('cliEmail').value = c.email || '';
+  document.getElementById('cliWhatsapp').value = c.whatsapp || '';
+  document.getElementById('cliError').textContent = '';
+  document.getElementById('modalCliente').classList.add('show');
+};
+window.closeCliente = function() { document.getElementById('modalCliente').classList.remove('show'); };
+window.guardarCliente = async function() {
+  const err = document.getElementById('cliError'); err.textContent = '';
+  const nombre = document.getElementById('cliNombre').value.trim();
+  if (!nombre) { err.textContent = 'Cargá el nombre o razón social.'; return; }
+  const rec = {
+    nombre: nombre,
+    cuit: document.getElementById('cliCuit').value.trim() || null,
+    contacto: document.getElementById('cliContacto').value.trim() || null,
+    email: document.getElementById('cliEmail').value.trim() || null,
+    whatsapp: document.getElementById('cliWhatsapp').value.trim() || null
+  };
+  const btn = document.getElementById('cliGuardarBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
+  try {
+    if (CLIENTE_EDIT_ID) { await api('reservas_clientes?id=eq.' + CLIENTE_EDIT_ID, { method: 'PATCH', body: JSON.stringify(rec) }); toast('✓ Cliente actualizado', 'success'); }
+    else { rec.creado_por = currentUser ? currentUser.id : null; await api('reservas_clientes', { method: 'POST', body: JSON.stringify(rec) }); toast('✓ Cliente creado', 'success'); }
+    closeCliente();
+    await openAdminClientes();
+  } catch (e) { err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e); }
+  finally { btn.disabled = false; btn.textContent = t; }
+};
+window.eliminarCliente = async function(id) {
+  const c = CLIENTES_LISTA.find(function(x){ return x.id === id; });
+  if (!c) return;
+  const ok = await showConfirm({ title: 'Eliminar cliente', msg: 'Vas a eliminar a "' + c.nombre + '". Las reservas o eventos asociados quedan sin cliente.\n\n¿Confirmás?', type: 'warning', okLabel: 'Sí, eliminar', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  try { await api('reservas_clientes?id=eq.' + id, { method: 'DELETE' }); toast('✓ Cliente eliminado', 'success'); await openAdminClientes(); }
   catch (e) { toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error'); }
 };
 
