@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-BC | ULTIMA | Panel Resultados: CB/EBITDA con formula en linea unica (+ BB/BA/AZ) ===== */
+/* ===== BUILD 2026-08-17-BD | ULTIMA | Cierres: local+turno default por local; Reservas: Cortesia, Menu, Confirmada, motivo, editor ve sus locales; propina sin_propina (+ BC/BB/BA) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -1867,7 +1867,7 @@ async function cargarColabsCierre(localSlug) {
   const cont = document.getElementById('cierreColabs');
   try {
     // Solo la gente del local (los multilocales se agregan a mano con el buscador de abajo)
-    const filtro = 'empleados?activo=eq.true&local=eq.' + encodeURIComponent(loc) +
+    const filtro = 'empleados?activo=eq.true&sin_propina=neq.true&local=eq.' + encodeURIComponent(loc) +
       '&select=id,nombre,apellido,nombre_p,local,es_multilocal&order=apellido.asc';
     const emps = await api(filtro) || [];
     CIERRE_COLABS = emps.map(function(e){ return colabDesdeEmp(e, loc); });
@@ -1884,7 +1884,7 @@ async function cargarColabsCierre(localSlug) {
 
     // Candidatos multilocales para el boton "+ Agregar persona multilocal"
     try {
-      const multi = await api('empleados?activo=eq.true&es_multilocal=eq.true&select=id,nombre,apellido,nombre_p,local,es_multilocal&order=apellido.asc') || [];
+      const multi = await api('empleados?activo=eq.true&sin_propina=neq.true&es_multilocal=eq.true&select=id,nombre,apellido,nombre_p,local,es_multilocal&order=apellido.asc') || [];
       CIERRE_MULTI = multi.map(function(e){ return colabDesdeEmp(e, loc); });
     } catch (e2) { CIERRE_MULTI = []; }
     renderColabsCierre();
@@ -4665,10 +4665,11 @@ let RESERVAS_CLIENTES = [];
 let RESERVAS_SOLIC = [];
 let RESERVA_EDIT_ID = null;
 const RESERVA_ESTADOS = {
-  pendiente: { label: 'Pendiente', color: '#EF9F27' },
-  aceptada:  { label: 'Aceptada', color: '#4CAF7A' },
-  rechazada: { label: 'Rechazada', color: 'var(--c-error)' },
-  cancelada: { label: 'Cancelada', color: '#888' }
+  pendiente:  { label: 'Pendiente', color: '#EF9F27' },
+  aceptada:   { label: 'Aceptada', color: '#3E86C7' },
+  confirmada: { label: 'Confirmada', color: '#4CAF7A' },
+  rechazada:  { label: 'Rechazada', color: 'var(--c-error)' },
+  cancelada:  { label: 'Eliminada', color: '#888' }
 };
 
 async function openMisReservas() {
@@ -4701,14 +4702,14 @@ function renderReservas() {
   const body = document.getElementById('reservasBody');
   const misLoc = _misLocalesReservas();
   const soy = currentUser ? currentUser.id : null;
-  const paraResponder = RESERVAS_SOLIC.filter(function(s){ return s.estado === 'pendiente' && misLoc.indexOf(s.local) !== -1; });
+  const paraResponder = RESERVAS_SOLIC.filter(function(s){ return misLoc.indexOf(s.local) !== -1; });
   const _idsResp = {}; paraResponder.forEach(function(s){ _idsResp[s.id] = 1; });
   const mias = RESERVAS_SOLIC.filter(function(s){ return s.solicitado_por === soy && !_idsResp[s.id]; });
 
   let html = '<button class="btn-primary" style="width:100%;margin-bottom:16px" onclick="abrirNuevaReserva()"><i class="ti ti-plus"></i> Nueva solicitud de reserva</button>';
-  html += '<div class="est-section-title">Para responder (' + paraResponder.length + ')</div>';
+  html += '<div class="est-section-title">Reservas de mis locales (' + paraResponder.length + ')</div>';
   html += paraResponder.length ? paraResponder.map(function(s){ return _reservaCard(s, true); }).join('')
-    : '<div class="cierre-hint" style="margin-bottom:14px">No tenés solicitudes pendientes en tus locales.</div>';
+    : '<div class="cierre-hint" style="margin-bottom:14px">No hay reservas en tus locales.</div>';
   html += '<div class="est-section-title" style="margin-top:18px">Mis solicitudes (' + mias.length + ')</div>';
   html += mias.length ? mias.map(function(s){ return _reservaCard(s, false); }).join('')
     : '<div class="cierre-hint">Todavía no cargaste solicitudes.</div>';
@@ -4718,16 +4719,18 @@ function renderReservas() {
 function _reservaCard(s, puedeResponder) {
   const est = RESERVA_ESTADOS[s.estado] || { label: s.estado, color: '#888' };
   const cli = _clienteReserva(s.cliente_id);
-  const pago = ({ cuenta_corriente: 'Cuenta corriente (NO COBRAR)', voucher: 'Voucher (NO COBRAR)', pagado: 'Pagado (NO COBRAR)' })[s.forma_pago] || 'Presencial';
+  const pago = ({ cuenta_corriente: 'Cuenta corriente (NO COBRAR)', voucher: 'Voucher (NO COBRAR)', pagado: 'Pagado (NO COBRAR)', cortesia: 'Cortesía (NO COBRAR)' })[s.forma_pago] || 'Presencial';
   const waDigits = (cli && cli.whatsapp) ? String(cli.whatsapp).replace(/[^0-9]/g, '') : '';
   const contacto = cli ? [
     waDigits ? '<a href="https://wa.me/' + waDigits + '" target="_blank" rel="noopener noreferrer" style="color:#25D366;text-decoration:none;font-weight:600"><i class="ti ti-brand-whatsapp"></i> ' + esc(cli.whatsapp) + '</a>' : '',
     cli.email ? '<a href="mailto:' + esc(cli.email) + '" style="color:var(--c-sand);text-decoration:none;font-weight:600"><i class="ti ti-mail"></i> ' + esc(cli.email) + '</a>' : ''
   ].filter(Boolean).join(' · ') : '';
   const extra = [
+    (s.menu ? 'Menú: ' + esc(s.menu) : ''),
     (s.cortesias ? 'Cortesías: ' + esc(s.cortesias) : ''),
     (s.restricciones ? 'Restricciones: ' + esc(s.restricciones) : ''),
-    (s.otros ? 'Otros: ' + esc(s.otros) : '')
+    (s.otros ? 'Otros: ' + esc(s.otros) : ''),
+    (s.respuesta_comentario ? 'Nota: ' + esc(s.respuesta_comentario) : '')
   ].filter(Boolean).join(' · ');
   const localPill = '<span style="display:inline-block;background:var(--c-rust);color:#fff;font-weight:700;font-size:15px;padding:3px 11px;border-radius:8px">' + esc(localLabel(s.local)) + '</span>';
   const fechaChip = '<span style="display:inline-block;background:#2D7FC4;color:#fff;font-weight:700;padding:4px 11px;border-radius:8px;font-size:14px">' +
@@ -4739,7 +4742,10 @@ function _reservaCard(s, puedeResponder) {
     btns.push('<button class="btn-primary" style="flex:1;min-width:110px" onclick="responderReserva(' + s.id + ', \'aceptada\')"><i class="ti ti-check"></i> Aceptar</button>');
     btns.push('<button class="btn-ghost" style="flex:1;min-width:100px;color:var(--c-error)" onclick="responderReserva(' + s.id + ', \'rechazada\')"><i class="ti ti-x"></i> Rechazar</button>');
   }
-  if (puedeGestionar && s.estado !== 'rechazada') btns.push('<button class="btn-ghost" style="flex:0 0 auto" onclick="abrirEditarReserva(' + s.id + ')"><i class="ti ti-pencil"></i> Editar</button>');
+  if (puedeResponder && s.estado === 'aceptada') {
+    btns.push('<button class="btn-primary" style="flex:1;min-width:120px" onclick="responderReserva(' + s.id + ', \'confirmada\')"><i class="ti ti-calendar-check"></i> Confirmar</button>');
+  }
+  if (puedeGestionar && s.estado !== 'rechazada' && s.estado !== 'cancelada') btns.push('<button class="btn-ghost" style="flex:0 0 auto" onclick="abrirEditarReserva(' + s.id + ')"><i class="ti ti-pencil"></i> Editar</button>');
   if (puedeGestionar) btns.push('<button class="btn-ghost" style="flex:0 0 auto;color:var(--c-error)" onclick="eliminarReserva(' + s.id + ')"><i class="ti ti-trash"></i> Eliminar</button>');
   const acciones = btns.length ? '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' + btns.join('') + '</div>' : '';
   return '<div class="ped-card" style="margin-bottom:10px">' +
@@ -4758,10 +4764,12 @@ window.eliminarReserva = async function(id) {
   const s = RESERVAS_SOLIC.find(function(x){ return x.id === id; });
   if (!s) return;
   const cli = _clienteReserva(s.cliente_id);
-  const ok = await showConfirm({ title: 'Eliminar reserva', msg: 'Vas a eliminar la reserva de ' + (cli ? cli.nombre : 'el cliente') + ' en ' + localLabel(s.local) + '.\n\nEsta acción no se puede deshacer. ¿Confirmás?', type: 'warning', okLabel: 'Sí, eliminar', cancelLabel: 'Cancelar' });
+  const ok = await showConfirm({ title: 'Eliminar reserva', msg: 'Vas a eliminar la reserva de ' + (cli ? cli.nombre : 'el cliente') + ' en ' + localLabel(s.local) + '.\n\nQueda registrada como Eliminada con el motivo. ¿Confirmás?', type: 'warning', okLabel: 'Sí, eliminar', cancelLabel: 'Cancelar' });
   if (!ok) return;
+  const motivo = window.prompt('Motivo de la eliminación (opcional):', '');
+  if (motivo === null) return;
   try {
-    await api('reservas_solicitudes?id=eq.' + id, { method: 'DELETE' });
+    await api('reservas_solicitudes?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ estado: 'cancelada', respuesta_comentario: (motivo.trim() || null), respondido_por: currentUser ? currentUser.id : null, actualizado_en: new Date().toISOString() }) });
     toast('✓ Reserva eliminada', 'success');
     await openMisReservas();
   } catch (e) { toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error'); }
@@ -4789,7 +4797,7 @@ window.abrirNuevaReserva = function() {
   _resLlenarSelectores(null);
   _resLlenarHoras();
   document.getElementById('resNuevoClienteBox').style.display = 'none';
-  ['resFecha','resPax','resCortesias','resRestricciones','resOtros','resCliNombre','resCliEmail','resCliWa','resCliCodigo'].forEach(function(id){ const el = document.getElementById(id); if (el) el.value = ''; });
+  ['resFecha','resPax','resMenu','resCortesias','resRestricciones','resOtros','resCliNombre','resCliEmail','resCliWa','resCliCodigo'].forEach(function(id){ const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('resHoraH').value = ''; document.getElementById('resHoraM').value = '00';
   const pais = document.getElementById('resCliPais'); if (pais) pais.value = '+54';
   document.getElementById('resCliCodigo').style.display = 'none';
@@ -4818,6 +4826,7 @@ window.abrirEditarReserva = function(id) {
   ['resCliNombre','resCliEmail','resCliWa','resCliCodigo'].forEach(function(id){ const el = document.getElementById(id); if (el) el.value = ''; });
   const _p = document.getElementById('resCliPais'); if (_p) _p.value = '+54';
   document.getElementById('resCliCodigo').style.display = 'none';
+  document.getElementById('resMenu').value = s.menu || '';
   document.getElementById('resCortesias').value = s.cortesias || '';
   document.getElementById('resRestricciones').value = s.restricciones || '';
   document.getElementById('resOtros').value = s.otros || '';
@@ -4862,6 +4871,7 @@ window.guardarReserva = async function() {
     const campos = {
       cliente_id: parseInt(clienteId, 10), local: local, fecha: fecha, hora: hora || null, pax: pax,
       forma_pago: pago,
+      menu: document.getElementById('resMenu').value.trim() || null,
       cortesias: document.getElementById('resCortesias').value.trim() || null,
       restricciones: document.getElementById('resRestricciones').value.trim() || null,
       otros: document.getElementById('resOtros').value.trim() || null,
@@ -4885,12 +4895,19 @@ window.responderReserva = async function(id, estado) {
   const s = RESERVAS_SOLIC.find(function(x){ return x.id === id; });
   if (!s) return;
   const cli = _clienteReserva(s.cliente_id);
-  const nota = estado === 'aceptada' ? '\n\nAl aceptar, te ponés en contacto con el cliente para confirmar la reserva.' : '';
-  const verbo = estado === 'aceptada' ? 'ACEPTAR' : 'RECHAZAR';
-  const ok = await showConfirm({ title: verbo === 'ACEPTAR' ? 'Aceptar solicitud' : 'Rechazar solicitud', msg: 'Vas a marcar como ' + (estado === 'aceptada' ? 'ACEPTADA' : 'RECHAZADA') + ' la reserva de ' + (cli ? cli.nombre : 'el cliente') + '.' + nota + '\n\n¿Confirmás?', okLabel: 'Sí', cancelLabel: 'Cancelar' });
+  const LBL = { aceptada: 'ACEPTADA', confirmada: 'CONFIRMADA', rechazada: 'RECHAZADA' };
+  const nota = estado === 'aceptada' ? '\n\n(Indica que el encargado del local recibió la solicitud y se pone en contacto con el cliente.)'
+    : (estado === 'confirmada' ? '\n\n(La reserva queda confirmada / OK.)' : '');
+  const ok = await showConfirm({ title: 'Reserva', msg: 'Vas a marcar como ' + (LBL[estado] || estado) + ' la reserva de ' + (cli ? cli.nombre : 'el cliente') + '.' + nota + '\n\n¿Confirmás?', okLabel: 'Sí', cancelLabel: 'Cancelar' });
   if (!ok) return;
+  const patch = { estado: estado, respondido_por: currentUser ? currentUser.id : null, actualizado_en: new Date().toISOString() };
+  if (estado === 'rechazada') {
+    const motivo = window.prompt('Motivo del rechazo (opcional):', '');
+    if (motivo === null) return;
+    patch.respuesta_comentario = motivo.trim() || null;
+  }
   try {
-    await api('reservas_solicitudes?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ estado: estado, respondido_por: currentUser ? currentUser.id : null, actualizado_en: new Date().toISOString() }) });
+    await api('reservas_solicitudes?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(patch) });
     toast('✓ Reserva actualizada', 'success');
     await openMisReservas();
   } catch (e) { toast('No se pudo actualizar: ' + ((e && e.message) || e), 'error'); }
@@ -8279,6 +8296,17 @@ function renderCierres() {
   }).join('');
 }
 
+function _ccLocalUsuario(locs) {
+  const la = (currentUser && currentUser.locales_asignados) || [];
+  for (let i = 0; i < la.length; i++) { if (locs.indexOf(la[i]) !== -1) return la[i]; }
+  return null;
+}
+function _ccTurnoDefault(loc) {
+  const n = normalizar(localLabel(loc) || loc || '');
+  if (n.indexOf('azafran') !== -1) return 'noche';
+  if (n.indexOf('trapiche') !== -1 || n.indexOf('nieto') !== -1 || n.indexOf('cobos') !== -1) return 'mediodia';
+  return 'noche';
+}
 window.abrirNuevoCierreCaja = function() {
   const locs = cierresLocalesPermitidos();
   if (!locs.length) return;
@@ -8286,10 +8314,13 @@ window.abrirNuevoCierreCaja = function() {
   document.getElementById('ccModalTitulo').textContent = 'Nuevo cierre';
   document.getElementById('ccLocal').innerHTML = locs.map(l => '<option value="' + esc(l) + '">' + esc(LOCAL_LABELS[l] || l) + '</option>').join('');
   document.getElementById('ccLocal').disabled = false;
-  document.getElementById('ccLocal').onchange = function() { document.getElementById('ccMoneda').value = esLocalUSD(this.value) ? 'USD' : 'ARS'; ccCalcProm(); };
-  document.getElementById('ccMoneda').value = esLocalUSD(document.getElementById('ccLocal').value) ? 'USD' : 'ARS';
+  const _defLoc = (CC_LOCAL_FILTRO && locs.indexOf(CC_LOCAL_FILTRO) !== -1) ? CC_LOCAL_FILTRO : (_ccLocalUsuario(locs) || locs[0]);
+  document.getElementById('ccLocal').value = _defLoc;
+  document.getElementById('ccLocal').onchange = function() { document.getElementById('ccMoneda').value = esLocalUSD(this.value) ? 'USD' : 'ARS'; document.getElementById('ccTurno').value = _ccTurnoDefault(this.value); ccCalcProm(); };
+  document.getElementById('ccMoneda').value = esLocalUSD(_defLoc) ? 'USD' : 'ARS';
   document.getElementById('ccFecha').value = hoyStr();
-  document.getElementById('ccTurno').innerHTML = CIERRE_CAJA_TURNOS.map(t => '<option value="' + t[0] + '"' + (t[0] === 'noche' ? ' selected' : '') + '>' + t[1] + '</option>').join('');
+  document.getElementById('ccTurno').innerHTML = CIERRE_CAJA_TURNOS.map(t => '<option value="' + t[0] + '">' + t[1] + '</option>').join('');
+  document.getElementById('ccTurno').value = _ccTurnoDefault(_defLoc);
   document.getElementById('ccVentas').value = '';
   document.getElementById('ccMostrador').value = '';
   if (document.getElementById('ccVentaNeta')) document.getElementById('ccVentaNeta').checked = false;

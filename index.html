@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817bc">
+<link rel="stylesheet" href="styles.css?v=20260817bd">
 </head>
 <body>
 
@@ -1946,8 +1946,9 @@
       </div>
       <div class="cierre-row2">
         <label class="field"><span class="field-label">Personas (pax)</span><input type="number" min="1" id="resPax"></label>
-        <label class="field"><span class="field-label">Forma de pago</span><select id="resPago"><option value="presencial">Presencial</option><option value="cuenta_corriente">Cuenta corriente</option><option value="voucher">Voucher</option><option value="pagado">Pagado (No cobrar)</option></select></label>
+        <label class="field"><span class="field-label">Forma de pago</span><select id="resPago"><option value="presencial">Presencial</option><option value="cuenta_corriente">Cuenta corriente</option><option value="voucher">Voucher</option><option value="pagado">Pagado (No cobrar)</option><option value="cortesia">Cortesía (No cobrar)</option></select></label>
       </div>
+      <label class="field"><span class="field-label">Menú</span><textarea id="resMenu" rows="2" placeholder="Opcional"></textarea></label>
       <label class="field"><span class="field-label">Cortesías</span><input type="text" id="resCortesias" placeholder="Opcional"></label>
       <label class="field"><span class="field-label">Restricciones</span><input type="text" id="resRestricciones" placeholder="Opcional (alergias, etc.)"></label>
       <label class="field"><span class="field-label">Otros</span><textarea id="resOtros" rows="2" placeholder="Opcional"></textarea></label>
@@ -2415,6 +2416,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817bc"></script>
+<script src="app.js?v=20260817bd"></script>
 </body>
 </html>
