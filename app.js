@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-08-17-BE | ULTIMA | Menu/Otros 1 linea; 2da eliminacion borra; modulo Clientes en Administracion (CUIT, contacto) (+ BD/BC/BB) ===== */
+/* ===== BUILD 2026-09-23-BG | ULTIMA | Estadisticas: opcion YTD (acumulado del anio) en el selector de mes, por local y consolidado (+ BF/BE/BD) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -7183,7 +7183,7 @@ window.abrirEditarTurnosEmp = function(empId) {
       '<div class="rost-estados">' + btns + '</div>' +
       '<div class="rost-dia-extra">' +
         '<input type="time" class="rost-hora" value="' + hora + '"' + (showHora ? '' : ' style="display:none;"') + '>' +
-        '<input type="text" class="rost-coment" placeholder="Comentario (opcional)" value="' + esc(coment) + '">' +
+        '<input type="text" class="rost-coment" placeholder="Nota solo para esta persona (opcional)" value="' + esc(coment) + '">' +
       '</div></div>';
   }).join('');
 
@@ -8692,6 +8692,8 @@ function poblarFiltrosPanel() {
   const hoy = new Date();
   if (!PV_MES) PV_MES = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
   const opsMes = [];
+  const ytdVal = hoy.getFullYear() + '-YTD';
+  opsMes.push('<option value="' + ytdVal + '"' + (PV_MES === ytdVal ? ' selected' : '') + '>Acumulado ' + hoy.getFullYear() + ' (YTD)</option>');
   for (let i = 0; i < 18; i++) {
     const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
     const val = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
@@ -8720,10 +8722,46 @@ window.onFiltroPanel = function() {
   cargarPanelActivo();
 };
 
+function _pvEsYTD(mes) { return typeof mes === 'string' && mes.indexOf('YTD') !== -1; }
+function _pvAnioYTD(mes) { return mes.slice(0, 4); }
 function _pvRango(mes) {
+  if (_pvEsYTD(mes)) { const y = _pvAnioYTD(mes); return { desde: y + '-01-01', hasta: y + '-12-31' }; }
   const p = mes.split('-'); const y = parseInt(p[0], 10), m = parseInt(p[1], 10);
   const last = new Date(y, m, 0).getDate();
   return { desde: mes + '-01', hasta: mes + '-' + String(last).padStart(2, '0') };
+}
+// Objetivos acumulados del año (YTD): suma por mes (con arrastre del ultimo objetivo cargado) y promedia los % objetivo.
+async function _ytdObjetivos(locales, anioY) {
+  const _pf = function(x){ const v = parseFloat(x); return isFinite(v) ? v : null; };
+  const hoy = new Date();
+  const curNum = (hoy.getFullYear() === parseInt(anioY, 10)) ? (hoy.getMonth() + 1) : 12;
+  const allObjs = await api('objetivos_ventas?local=in.(' + locales.map(encodeURIComponent).join(',') +
+    ')&mes=lte.' + anioY + '-' + String(curNum).padStart(2, '0') + '&select=*&order=mes.asc') || [];
+  const byLoc = {}; locales.forEach(function(l){ byLoc[l] = []; });
+  allObjs.forEach(function(o){ if (byLoc[o.local]) byLoc[o.local].push(o); });
+  let objVN = 0; const pctAcc = { cm: [], cl: [], go: [], ga: [] };
+  locales.forEach(function(l){
+    const list = byLoc[l]; let last = null, lp = { cm: null, cl: null, go: null, ga: null }, idx = 0;
+    for (let mm = 1; mm <= curNum; mm++) {
+      const mk = anioY + '-' + String(mm).padStart(2, '0');
+      while (idx < list.length && list[idx].mes <= mk) {
+        const o = list[idx];
+        const ov = parseFloat(o.objetivo); if (isFinite(ov)) last = ov;
+        if (_pf(o.obj_cm_pct) != null) lp.cm = _pf(o.obj_cm_pct);
+        if (_pf(o.obj_cl_pct) != null) lp.cl = _pf(o.obj_cl_pct);
+        if (_pf(o.obj_go_pct) != null) lp.go = _pf(o.obj_go_pct);
+        if (_pf(o.obj_ga_pct) != null) lp.ga = _pf(o.obj_ga_pct);
+        idx++;
+      }
+      if (last != null) objVN += last;
+    }
+    if (lp.cm != null) pctAcc.cm.push(lp.cm);
+    if (lp.cl != null) pctAcc.cl.push(lp.cl);
+    if (lp.go != null) pctAcc.go.push(lp.go);
+    if (lp.ga != null) pctAcc.ga.push(lp.ga);
+  });
+  const avg = function(a){ return a.length ? a.reduce(function(s, x){ return s + x; }, 0) / a.length : null; };
+  return { objVN: objVN, objPct: { cm: avg(pctAcc.cm), cl: avg(pctAcc.cl), go: avg(pctAcc.go), ga: avg(pctAcc.ga) } };
 }
 
 async function cargarPanelVentas() {
@@ -8742,9 +8780,13 @@ async function cargarPanelVentas() {
     const r = _pvRango(PV_MES);
     const cierres = await api('cierres_caja?' + locFilter +
       '&fecha=gte.' + r.desde + '&fecha=lte.' + r.hasta + '&select=*&order=fecha.desc,id.desc') || [];
+    const esYTD = _pvEsYTD(PV_MES);
     let objetivo = null, objetivoHeredado = false;
     try {
-      if (agregado) {
+      if (esYTD) {
+        const yv = await _ytdObjetivos(agregado ? reales : [loc], _pvAnioYTD(PV_MES));
+        if (yv.objVN > 0) objetivo = { objetivo: yv.objVN, mes: PV_MES };
+      } else if (agregado) {
         const allObjs = await api('objetivos_ventas?local=in.(' + reales.map(encodeURIComponent).join(',') + ')&mes=lte.' + PV_MES + '&select=*&order=mes.desc') || [];
         const seen = {}; let sum = 0, count = 0, anyHer = false;
         allObjs.forEach(function(o) { if (!seen[o.local]) { seen[o.local] = 1; sum += parseFloat(o.objetivo) || 0; count++; if (o.mes !== PV_MES) anyHer = true; } });
@@ -8763,7 +8805,7 @@ async function cargarPanelVentas() {
     const evolDesde = sd.getFullYear() + '-' + String(sd.getMonth() + 1).padStart(2, '0') + '-01';
     const evolData = await api('cierres_caja?' + locFilter +
       '&fecha=gte.' + evolDesde + '&select=fecha,ventas_total,ventas_mostrador,moneda&order=fecha.asc') || [];
-    renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agregado);
+    renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agregado, esYTD);
   } catch (e) {
     body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los datos.<br><span style="font-size:11px;opacity:.7">' + esc(String((e && e.message) || e)) + '</span></div>';
   }
@@ -8771,7 +8813,9 @@ async function cargarPanelVentas() {
 
 function _pvMoney(n) { return '$' + formatNumber(n); }
 
-function renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agregado) {
+function renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agregado, esYTD) {
+  const perLbl = esYTD ? 'del año' : 'del mes';
+  const perLbl2 = esYTD ? 'este año' : 'este mes';
   const body = document.getElementById('pvBody');
   const brutoVentas = cierres.reduce(function(s, c) { return s + computablePesos(c); }, 0);
   const salonVentas = cierres.reduce(function(s, c) { return s + salonPesos(c); }, 0);
@@ -8799,7 +8843,7 @@ function renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agrega
   '</div>';
 
   html += '<div class="pv-obj">';
-  html += '<div class="pv-obj-head"><span class="est-section-title">Objetivo del mes</span>';
+  html += '<div class="pv-obj-head"><span class="est-section-title">Objetivo ' + perLbl + '</span>';
   if ((isMaster() || isAdmin()) && !agregado) {
     html += '<button class="btn-ghost pv-obj-edit" onclick="abrirObjetivo()"><i class="ti ti-pencil"></i> ' + ((objetivo && !objetivoHeredado) ? 'Editar' : 'Cargar') + '</button>';
   }
@@ -8821,7 +8865,7 @@ function renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agrega
       '<div class="est-tabla-fila"><span>' + (cumplido ? 'Excedente' : 'Falta') + '</span><span>' + _pvMoney(Math.abs(objBruto - brutoVentas)) + '</span><span>' + _pvMoney(Math.abs(objNeto - netoVentas)) + '</span></div>' +
     '</div>';
   } else {
-    html += '<div class="cierre-hint">Todavía no hay objetivo cargado para este mes.</div>';
+    html += '<div class="cierre-hint">Todavía no hay objetivo cargado para ' + perLbl2 + '.</div>';
   }
   html += '</div>';
 
@@ -8845,9 +8889,9 @@ function renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agrega
     '</div>';
   }).join('') + '</div>';
 
-  html += '<div class="est-section-title">Detalle del mes</div>';
+  html += '<div class="est-section-title">Detalle ' + perLbl + '</div>';
   if (!cierres.length) {
-    html += '<div class="empty-list">No hay cierres cargados en este mes.</div>';
+    html += '<div class="empty-list">No hay cierres cargados en ' + perLbl2 + '.</div>';
   } else {
     html += '<div class="pv-detalle">' + cierres.map(function(c) {
       const v = computablePesos(c);
@@ -8880,19 +8924,34 @@ async function cargarPanelResultados() {
   const reales = panelLocalesReales();
   if (agregado && !reales.length) { body.innerHTML = '<div class="empty-list">No hay locales para consolidar.</div>'; return; }
   const locFilter = agregado ? 'local=in.(' + reales.map(encodeURIComponent).join(',') + ')' : 'local=eq.' + encodeURIComponent(loc);
+  const esYTD = _pvEsYTD(PV_MES);
   try {
     const r = _pvRango(PV_MES);
     const cierres = await api('cierres_caja?' + locFilter + '&fecha=gte.' + r.desde + '&fecha=lte.' + r.hasta + '&select=*&order=fecha.asc,id.asc') || [];
-    const res = await api('resultados_mensuales?' + locFilter + '&mes=eq.' + PV_MES + '&select=*') || [];
+    const res = esYTD
+      ? (await api('resultados_mensuales?' + locFilter + '&mes=gte.' + _pvAnioYTD(PV_MES) + '-01&mes=lte.' + _pvAnioYTD(PV_MES) + '-12&select=*') || [])
+      : (await api('resultados_mensuales?' + locFilter + '&mes=eq.' + PV_MES + '&select=*') || []);
     const vnByLocal = {};
     cierres.forEach(function(c){ vnByLocal[c.local] = (vnByLocal[c.local] || 0) + netoPesos(c); });
     const resByLocal = {};
-    res.forEach(function(x){ resByLocal[x.local] = x; });
+    if (esYTD) {
+      // Sumar todos los meses del año por local
+      res.forEach(function(x){
+        let acc = resByLocal[x.local];
+        if (!acc) { acc = { local: x.local }; resByLocal[x.local] = acc; }
+        RES_NUM_FIELDS.forEach(function(f){ acc[f] = (parseFloat(acc[f]) || 0) + (parseFloat(x[f]) || 0); });
+      });
+    } else {
+      res.forEach(function(x){ resByLocal[x.local] = x; });
+    }
     // Objetivos (con herencia del mes anterior si no hay del mes actual) — igual que Panel de Ventas
     const _pf = function(x){ const v = parseFloat(x); return isFinite(v) ? v : null; };
     let objVN = 0; const objPct = { cm: null, cl: null, go: null, ga: null };
     try {
-      if (agregado) {
+      if (esYTD) {
+        const yobj = await _ytdObjetivos(agregado ? reales : [loc], _pvAnioYTD(PV_MES));
+        objVN = yobj.objVN; objPct.cm = yobj.objPct.cm; objPct.cl = yobj.objPct.cl; objPct.go = yobj.objPct.go; objPct.ga = yobj.objPct.ga;
+      } else if (agregado) {
         const allObjs = await api('objetivos_ventas?local=in.(' + reales.map(encodeURIComponent).join(',') + ')&mes=lte.' + PV_MES + '&select=*&order=mes.desc') || [];
         const seen = {}; const acc = { cm:[], cl:[], go:[], ga:[] };
         allObjs.forEach(function(o){ if (!seen[o.local]) { seen[o.local] = 1; objVN += parseFloat(o.objetivo) || 0;
@@ -8910,7 +8969,7 @@ async function cargarPanelResultados() {
         if (ob) { objVN = parseFloat(ob.objetivo) || 0; objPct.cm = _pf(ob.obj_cm_pct); objPct.cl = _pf(ob.obj_cl_pct); objPct.go = _pf(ob.obj_go_pct); objPct.ga = _pf(ob.obj_ga_pct); }
       }
     } catch (e) {}
-    renderPanelResultados(agregado, agregado ? reales : [loc], vnByLocal, resByLocal, objPct, objVN);
+    renderPanelResultados(agregado, agregado ? reales : [loc], vnByLocal, resByLocal, objPct, objVN, esYTD);
   } catch (e) {
     body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los datos.</div>';
   }
@@ -8921,7 +8980,8 @@ const RES_GO_SUBS = [
   ['go_mantenim','Mantenim, Rep y Rep'], ['go_imprenta','Imprenta y Librería'], ['go_limpieza','Limpieza y Descartables'],
   ['go_bienes_salon','Bienes de Uso Salón'], ['go_bienes_cocina','Bienes de Uso Cocina'], ['go_traslados','Traslados Personal'], ['go_otros','Otros']
 ];
-function renderPanelResultados(agregado, locales, vnByLocal, resByLocal, objPct, objVN) {
+const RES_NUM_FIELDS = ['cm_alimentos', 'cm_bebidas', 'cm_otros', 'cl_sueldos_adic', 'cl_931', 'ga'].concat(RES_GO_SUBS.map(function(p){ return p[0]; }));
+function renderPanelResultados(agregado, locales, vnByLocal, resByLocal, objPct, objVN, esYTD) {
   objPct = objPct || {};
   const body = document.getElementById('pvBody');
   const sum = function(fld){ return locales.reduce(function(s2, l){ const rr = resByLocal[l]; return s2 + (rr ? (parseFloat(rr[fld]) || 0) : 0); }, 0); };
@@ -8956,8 +9016,9 @@ function renderPanelResultados(agregado, locales, vnByLocal, resByLocal, objPct,
       '<span style="flex:0 0 46px;text-align:right;opacity:.7">' + pc(val) + '</span>' +
       '<span style="flex:0 0 112px"></span><span style="flex:0 0 46px"></span></div>';
   };
-  let html = '<div class="est-section-title" style="margin:0 0 8px">Resultado del mes (neto)</div>';
+  let html = '<div class="est-section-title" style="margin:0 0 8px">' + (esYTD ? 'Acumulado del año (neto)' : 'Resultado del mes (neto)') + '</div>';
   if (agregado) html += '<div class="cierre-hint" style="margin-bottom:8px">Vista consolidada: suma de todos los locales.</div>';
+  if (esYTD) html += '<div class="cierre-hint" style="margin-bottom:8px"><i class="ti ti-calendar-stats"></i> Suma de todos los meses cargados del año.</div>';
   html += '<div style="display:flex;gap:4px;padding:0 10px 3px;font-size:9px;opacity:.5;font-weight:700">' +
     '<span style="flex:1"></span><span style="flex:0 0 112px;text-align:right">MONTO</span><span style="flex:0 0 46px;text-align:right">%</span>' +
     '<span style="flex:0 0 112px;text-align:right">$ OBJ</span><span style="flex:0 0 46px;text-align:right">% OBJ</span></div>';

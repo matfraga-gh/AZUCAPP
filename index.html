@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20260817be">
+<link rel="stylesheet" href="styles.css?v=20260923bg">
 </head>
 <body>
 
@@ -2132,8 +2132,8 @@
     </div>
 
     <div class="rost-nota">
-      <label class="field"><span class="field-label">Nota general de la semana (la ve todo el local)</span>
-        <textarea id="rostNota" rows="2" placeholder="Opcional"></textarea></label>
+      <label class="field"><span class="field-label" style="color:var(--c-warning,#c47f00);font-weight:700;"><i class="ti ti-alert-triangle"></i> Nota general — la ven TODAS las personas del local</span>
+        <textarea id="rostNota" rows="2" placeholder="Ej: feriado, evento del día. Para una sola persona, usá su comentario dentro del día."></textarea></label>
       <button class="btn-ghost rost-nota-btn" onclick="guardarNotaSemana()"><i class="ti ti-device-floppy"></i> Guardar nota</button>
     </div>
 
@@ -2452,6 +2452,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20260817be"></script>
+<script src="app.js?v=20260923bg"></script>
 </body>
 </html>
