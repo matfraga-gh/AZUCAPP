@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-09-23-BG | ULTIMA | Estadisticas: opcion YTD (acumulado del anio) en el selector de mes, por local y consolidado (+ BF/BE/BD) ===== */
+/* ===== BUILD 2026-09-23-BH | ULTIMA | Panel Resultados: cada renglon arranca con la sigla (VN, CM, CB, CL, GO, GA) para que no se corte en el cel (+ BG/BF/BE) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -9022,15 +9022,15 @@ function renderPanelResultados(agregado, locales, vnByLocal, resByLocal, objPct,
   html += '<div style="display:flex;gap:4px;padding:0 10px 3px;font-size:9px;opacity:.5;font-weight:700">' +
     '<span style="flex:1"></span><span style="flex:0 0 112px;text-align:right">MONTO</span><span style="flex:0 0 46px;text-align:right">%</span>' +
     '<span style="flex:0 0 112px;text-align:right">$ OBJ</span><span style="flex:0 0 46px;text-align:right">% OBJ</span></div>';
-  html += cat('VENTAS NETAS', VN, null, '#2E7D32', false, (objVN > 0 ? objVN : null));
-  html += cat('COSTO DE MERCADERÍA', CM, oCM, '#C77DAE');
+  html += cat('VN - Ventas Netas', VN, null, '#2E7D32', false, (objVN > 0 ? objVN : null));
+  html += cat('CM - Costo de Mercadería', CM, oCM, '#C77DAE');
   html += sub('Alimentos', cmA) + sub('Bebidas', cmB) + sub('Otros', cmO);
-  html += cat('CONTRIBUCIÓN BRUTA <span style="font-weight:400;font-size:10px;opacity:.8">(VN − CM)</span>', CB, oCB, '#0E9AA7');
-  html += cat('COSTO LABORAL', CL, oCL, '#C87A2C');
+  html += cat('CB - Contribución Bruta <span style="font-weight:400;font-size:10px;opacity:.8">(VN − CM)</span>', CB, oCB, '#0E9AA7');
+  html += cat('CL - Costo Laboral', CL, oCL, '#C87A2C');
   html += sub('Sueldos + Adic', clS) + sub('931', cl931);
-  html += cat('GASTOS OPERATIVOS', GO, oGO, '#2D7FC4');
+  html += cat('GO - Gastos Operativos', GO, oGO, '#2D7FC4');
   html += RES_GO_SUBS.map(function(pp){ return sub(pp[1], goVals[pp[0]]); }).join('');
-  html += cat('GASTOS AZUCA', GA, oGA, '#6FA8DC');
+  html += cat('GA - Gastos Azuca', GA, oGA, '#6FA8DC');
   html += cat('EBITDA <span style="font-weight:400;font-size:10px;opacity:.8">(CB − CL − GO − GA)</span>', EBITDA, oEB, '#E8C400', true);
   html += '<div class="cierre-hint" style="margin-top:12px"><i class="ti ti-info-circle"></i> CB = Ventas Netas − CM. EBITDA = CB − CL − GO − GA. Las Ventas Netas y su objetivo salen del Panel de Ventas; los % objetivo, de Gestión de estadísticas. El resto se carga con la planilla de resultados.</div>';
   body.innerHTML = html;
