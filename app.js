@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-09-24-BI | ULTIMA | Planilla resultados: VN - Ventas Netas editable (incluye mostrador, compensaciones, apoyo comercial); si se carga manda sobre los cierres (+ BH/BG/BF) ===== */
+/* ===== BUILD 2026-09-24-BJ | ULTIMA | Ventas por tipo: ticket promedio solo salon MD/noche; P&L separa VN (Resto/Mostrador/Eventos/Especiales de cierres + Dif Fact min y Apoyo Comercial de planilla); CM% sobre ventas con mercaderia, resto sobre VN total (+ BI/BH/BG) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -8347,6 +8347,21 @@ function computablePesos(c) { return ventasPesos(c) + mostradorPesos(c); } // to
 function salonPesos(c) { return ventasPesos(c); } // solo salon (para promedio por comensal)
 function netoPesos(c) { return (c && c.venta_neta) ? computablePesos(c) : computablePesos(c) / IVA_COEF; } // neto: si es venta neta no descuenta IVA
 function salonNetoPesos(c) { return (c && c.venta_neta) ? salonPesos(c) : salonPesos(c) / IVA_COEF; }
+function mostradorNetoPesos(c) { return (c && c.venta_neta) ? mostradorPesos(c) : mostradorPesos(c) / IVA_COEF; }
+function esRestoTurno(c) { const t = c && c.turno; return t === 'mediodia' || t === 'mediodía' || t === 'noche'; }
+// Descompone un conjunto de cierres en los tipos de venta netos (para el Panel de Resultados)
+function _vnComp(cierres) {
+  let resto = 0, most = 0, eventos = 0, especiales = 0;
+  (cierres || []).forEach(function(c) {
+    const salonN = salonNetoPesos(c);
+    most += mostradorNetoPesos(c);
+    const t = c.turno;
+    if (t === 'evento') eventos += salonN;
+    else if (t === 'especial') especiales += salonN;
+    else resto += salonN; // mediodia / noche
+  });
+  return { resto: resto, most: most, eventos: eventos, especiales: especiales };
+}
 async function asegurarPropConfig() {
   if (PROP_CONFIG) return;
   try { const d = await api('propinas_config?id=eq.1'); PROP_CONFIG = (d && d[0]) ? d[0] : {}; }
@@ -8818,13 +8833,16 @@ function renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agrega
   const perLbl2 = esYTD ? 'este año' : 'este mes';
   const body = document.getElementById('pvBody');
   const brutoVentas = cierres.reduce(function(s, c) { return s + computablePesos(c); }, 0);
-  const salonVentas = cierres.reduce(function(s, c) { return s + salonPesos(c); }, 0);
   const netoVentas = cierres.reduce(function(s, c) { return s + netoPesos(c); }, 0);
-  const salonNeto = cierres.reduce(function(s, c) { return s + salonNetoPesos(c); }, 0);
   const mostradorTotal = cierres.reduce(function(s, c) { return s + mostradorPesos(c); }, 0);
   const pax = cierres.reduce(function(s, c) { return s + (parseInt(c.pax, 10) || 0); }, 0);
-  const promBruto = pax > 0 ? salonVentas / pax : null;
-  const promNeto = pax > 0 ? salonNeto / pax : null;
+  // Ticket promedio: SOLO ventas de salón mediodía/noche ("Resto"). Eventos, especiales y mostrador no cuentan.
+  const restoC = cierres.filter(esRestoTurno);
+  const salonVentasResto = restoC.reduce(function(s, c) { return s + salonPesos(c); }, 0);
+  const salonNetoResto = restoC.reduce(function(s, c) { return s + salonNetoPesos(c); }, 0);
+  const paxResto = restoC.reduce(function(s, c) { return s + (parseInt(c.pax, 10) || 0); }, 0);
+  const promBruto = paxResto > 0 ? salonVentasResto / paxResto : null;
+  const promNeto = paxResto > 0 ? salonNetoResto / paxResto : null;
   const nTurnos = cierres.length;
   const promPaxTurno = nTurnos > 0 ? pax / nTurnos : null;
   const promVtaBrutoTurno = nTurnos > 0 ? brutoVentas / nTurnos : null;
@@ -8836,7 +8854,7 @@ function renderPanelVentas(cierres, objetivo, evolData, objetivoHeredado, agrega
     '<div class="pv-card"><div class="pv-card-label">Ventas (bruto)</div><div class="pv-card-valor">' + _pvMoney(brutoVentas) + '</div><div class="pv-sub">Neto ' + _pvMoney(netoVentas) + '</div></div>' +
     '<div class="pv-card"><div class="pv-card-label">Comensales</div><div class="pv-card-valor">' + formatNumber(pax) + '</div></div>' +
     '<div class="pv-card"><div class="pv-card-label">Turnos cargados</div><div class="pv-card-valor">' + nTurnos + '</div></div>' +
-    '<div class="pv-card"><div class="pv-card-label">Prom. x comensal</div><div class="pv-card-valor">' + (promBruto != null ? _pvMoney(promBruto) : '—') + '</div><div class="pv-sub">' + (promNeto != null ? 'Neto ' + _pvMoney(promNeto) : '') + '</div></div>' +
+    '<div class="pv-card"><div class="pv-card-label">Prom. x comensal</div><div class="pv-card-valor">' + (promBruto != null ? _pvMoney(promBruto) : '—') + '</div><div class="pv-sub">' + (promNeto != null ? 'Neto ' + _pvMoney(promNeto) + ' · solo salón MD/noche' : 'solo salón MD/noche') + '</div></div>' +
     '<div class="pv-card"><div class="pv-card-label">Prom. pax x turno</div><div class="pv-card-valor">' + (promPaxTurno != null ? formatNumber(Math.round(promPaxTurno)) : '—') + '</div></div>' +
     '<div class="pv-card"><div class="pv-card-label">Prom. vtas x turno</div><div class="pv-card-valor">' + (promVtaBrutoTurno != null ? _pvMoney(promVtaBrutoTurno) : '—') + '</div><div class="pv-sub">' + (promVtaNetoTurno != null ? 'Neto ' + _pvMoney(promVtaNetoTurno) : '') + '</div></div>' +
     (mostradorTotal > 0 ? '<div class="pv-card"><div class="pv-card-label">Ventas mostrador</div><div class="pv-card-valor">' + _pvMoney(mostradorTotal) + '</div><div class="pv-sub">Incluidas en el total. No computan en el promedio por comensal</div></div>' : '') +
@@ -8931,27 +8949,10 @@ async function cargarPanelResultados() {
     const res = esYTD
       ? (await api('resultados_mensuales?' + locFilter + '&mes=gte.' + _pvAnioYTD(PV_MES) + '-01&mes=lte.' + _pvAnioYTD(PV_MES) + '-12&select=*') || [])
       : (await api('resultados_mensuales?' + locFilter + '&mes=eq.' + PV_MES + '&select=*') || []);
-    // Ventas Netas por local: si la planilla trae vn_neto (>0) usa ese; si no, el neto de los cierres. Mes a mes (así el YTD mezcla bien).
-    const cierVNByLM = {};
-    cierres.forEach(function(c){ const mk = c.local + '|' + String(c.fecha).slice(0, 7); cierVNByLM[mk] = (cierVNByLM[mk] || 0) + netoPesos(c); });
-    const resVNByLM = {};
-    res.forEach(function(x){ const v = parseFloat(x.vn_neto); if (isFinite(v) && v > 0) resVNByLM[x.local + '|' + x.mes] = v; });
-    const mesesSet = {};
-    if (esYTD) { Object.keys(cierVNByLM).forEach(function(k){ mesesSet[k.split('|')[1]] = 1; }); res.forEach(function(x){ mesesSet[x.mes] = 1; }); }
-    else { mesesSet[PV_MES] = 1; }
     const localesArr = agregado ? reales : [loc];
-    const vnByLocal = {};
-    localesArr.forEach(function(l){
-      let tot = 0;
-      Object.keys(mesesSet).forEach(function(mk){
-        const manual = resVNByLM[l + '|' + mk];
-        tot += (manual != null) ? manual : (cierVNByLM[l + '|' + mk] || 0);
-      });
-      vnByLocal[l] = tot;
-    });
+    // Costos + conceptos manuales (vn_dif_fact, vn_apoyo) por local. En YTD se suman los meses.
     const resByLocal = {};
     if (esYTD) {
-      // Sumar todos los meses del año por local
       res.forEach(function(x){
         let acc = resByLocal[x.local];
         if (!acc) { acc = { local: x.local }; resByLocal[x.local] = acc; }
@@ -8960,6 +8961,17 @@ async function cargarPanelResultados() {
     } else {
       res.forEach(function(x){ resByLocal[x.local] = x; });
     }
+    // Componentes de venta por local (desde los cierres) + conceptos manuales de la planilla
+    const cierByLocal = {};
+    cierres.forEach(function(c){ (cierByLocal[c.local] = cierByLocal[c.local] || []).push(c); });
+    const salesByLocal = {};
+    localesArr.forEach(function(l){
+      const comp = _vnComp(cierByLocal[l] || []);
+      const rec = resByLocal[l] || {};
+      comp.difFact = parseFloat(rec.vn_dif_fact) || 0;
+      comp.apoyo = parseFloat(rec.vn_apoyo) || 0;
+      salesByLocal[l] = comp;
+    });
     // Objetivos (con herencia del mes anterior si no hay del mes actual) — igual que Panel de Ventas
     const _pf = function(x){ const v = parseFloat(x); return isFinite(v) ? v : null; };
     let objVN = 0; const objPct = { cm: null, cl: null, go: null, ga: null };
@@ -8985,7 +8997,7 @@ async function cargarPanelResultados() {
         if (ob) { objVN = parseFloat(ob.objetivo) || 0; objPct.cm = _pf(ob.obj_cm_pct); objPct.cl = _pf(ob.obj_cl_pct); objPct.go = _pf(ob.obj_go_pct); objPct.ga = _pf(ob.obj_ga_pct); }
       }
     } catch (e) {}
-    renderPanelResultados(agregado, agregado ? reales : [loc], vnByLocal, resByLocal, objPct, objVN, esYTD);
+    renderPanelResultados(agregado, localesArr, salesByLocal, resByLocal, objPct, objVN, esYTD);
   } catch (e) {
     body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los datos.</div>';
   }
@@ -8996,12 +9008,16 @@ const RES_GO_SUBS = [
   ['go_mantenim','Mantenim, Rep y Rep'], ['go_imprenta','Imprenta y Librería'], ['go_limpieza','Limpieza y Descartables'],
   ['go_bienes_salon','Bienes de Uso Salón'], ['go_bienes_cocina','Bienes de Uso Cocina'], ['go_traslados','Traslados Personal'], ['go_otros','Otros']
 ];
-const RES_NUM_FIELDS = ['cm_alimentos', 'cm_bebidas', 'cm_otros', 'cl_sueldos_adic', 'cl_931', 'ga'].concat(RES_GO_SUBS.map(function(p){ return p[0]; }));
-function renderPanelResultados(agregado, locales, vnByLocal, resByLocal, objPct, objVN, esYTD) {
+const RES_NUM_FIELDS = ['cm_alimentos', 'cm_bebidas', 'cm_otros', 'cl_sueldos_adic', 'cl_931', 'ga', 'vn_dif_fact', 'vn_apoyo'].concat(RES_GO_SUBS.map(function(p){ return p[0]; }));
+function renderPanelResultados(agregado, locales, salesByLocal, resByLocal, objPct, objVN, esYTD) {
   objPct = objPct || {};
   const body = document.getElementById('pvBody');
   const sum = function(fld){ return locales.reduce(function(s2, l){ const rr = resByLocal[l]; return s2 + (rr ? (parseFloat(rr[fld]) || 0) : 0); }, 0); };
-  const VN = locales.reduce(function(s2, l){ return s2 + (vnByLocal[l] || 0); }, 0);
+  const sumC = function(k){ return locales.reduce(function(s2, l){ const c = salesByLocal[l]; return s2 + (c ? (c[k] || 0) : 0); }, 0); };
+  const vResto = sumC('resto'), vMost = sumC('most'), vEventos = sumC('eventos'), vEspeciales = sumC('especiales');
+  const vDif = sumC('difFact'), vApoyo = sumC('apoyo');
+  const VN_CM = vResto + vMost + vEventos + vEspeciales;   // base para CM (ventas que generan mercadería)
+  const VN = VN_CM + vDif + vApoyo;                         // Ventas Netas totales (base para CB, CL, GO, GA)
   const cmA = sum('cm_alimentos'), cmB = sum('cm_bebidas'), cmO = sum('cm_otros'); const CM = cmA + cmB + cmO;
   const CB = VN - CM;
   const clS = sum('cl_sueldos_adic'), cl931 = sum('cl_931'); const CL = clS + cl931;
@@ -9009,27 +9025,32 @@ function renderPanelResultados(agregado, locales, vnByLocal, resByLocal, objPct,
   const GA = sum('ga');
   const EBITDA = CB - CL - GO - GA;
   const m = function(v){ return _pvMoney(Math.round(v)); };
-  const pc = function(v){ return VN > 0 ? (v / VN * 100).toFixed(1) + '%' : '—'; };
+  const pcB = function(v, base){ return base > 0 ? (v / base * 100).toFixed(1) + '%' : '—'; };
   const opct = function(x){ return (x != null) ? x.toFixed(1) + '%' : '—'; };
-  const od = function(x){ return (x != null && VN > 0) ? m(x / 100 * VN) : '—'; };
   const oCM = objPct.cm, oCL = objPct.cl, oGO = objPct.go, oGA = objPct.ga;
   const hayObj = (oCM != null || oCL != null || oGO != null || oGA != null);
-  const oCB = (oCM != null) ? (100 - oCM) : null;
-  const oEB = hayObj ? (100 - (oCM || 0) - (oCL || 0) - (oGO || 0) - (oGA || 0)) : null;
-  const cat = function(label, val, objp, color, dark, objMontoFijo) {
-    const objM = (objMontoFijo !== undefined) ? (objMontoFijo != null ? m(objMontoFijo) : '—') : od(objp);
+  // Montos objetivo: CM sobre la base VN_CM; CL/GO/GA sobre VN total
+  const cmObjM = (oCM != null) ? oCM / 100 * VN_CM : null;
+  const clObjM = (oCL != null) ? oCL / 100 * VN : null;
+  const goObjM = (oGO != null) ? oGO / 100 * VN : null;
+  const gaObjM = (oGA != null) ? oGA / 100 * VN : null;
+  const cbObjM = (cmObjM != null) ? (VN - cmObjM) : null;
+  const cbObjPct = (cbObjM != null && VN > 0) ? (cbObjM / VN * 100) : null;
+  const ebObjM = hayObj ? ((cbObjM != null ? cbObjM : VN) - (clObjM || 0) - (goObjM || 0) - (gaObjM || 0)) : null;
+  const ebObjPct = (ebObjM != null && VN > 0) ? (ebObjM / VN * 100) : null;
+  const cat = function(label, val, base, color, dark, objMonto, objPctVal) {
     return '<div style="display:flex;align-items:center;gap:4px;background:' + color + ';color:' + (dark ? '#1a1a1a' : '#fff') + ';font-weight:700;padding:8px 10px;border-radius:6px;margin-top:8px">' +
       '<span style="flex:1;min-width:0;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</span>' +
       '<span style="flex:0 0 112px;text-align:right;white-space:nowrap;font-size:12px">' + m(val) + '</span>' +
-      '<span style="flex:0 0 46px;text-align:right;font-size:12px">' + pc(val) + '</span>' +
-      '<span style="flex:0 0 112px;text-align:right;white-space:nowrap;font-size:11px;opacity:.85">' + objM + '</span>' +
-      '<span style="flex:0 0 46px;text-align:right;font-size:11px;opacity:.85">' + opct(objp) + '</span></div>';
+      '<span style="flex:0 0 46px;text-align:right;font-size:12px">' + pcB(val, base) + '</span>' +
+      '<span style="flex:0 0 112px;text-align:right;white-space:nowrap;font-size:11px;opacity:.85">' + (objMonto != null ? m(objMonto) : '—') + '</span>' +
+      '<span style="flex:0 0 46px;text-align:right;font-size:11px;opacity:.85">' + opct(objPctVal) + '</span></div>';
   };
   const sub = function(label, val) {
     return '<div style="display:flex;align-items:center;gap:4px;padding:4px 10px 4px 20px;border-bottom:1px solid var(--c-cream-border);font-size:12px;color:var(--c-cream)">' +
       '<span style="flex:1;min-width:0;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(label) + '</span>' +
       '<span style="flex:0 0 112px;text-align:right;white-space:nowrap">' + m(val) + '</span>' +
-      '<span style="flex:0 0 46px;text-align:right;opacity:.7">' + pc(val) + '</span>' +
+      '<span style="flex:0 0 46px;text-align:right;opacity:.7">' + pcB(val, VN) + '</span>' +
       '<span style="flex:0 0 112px"></span><span style="flex:0 0 46px"></span></div>';
   };
   let html = '<div class="est-section-title" style="margin:0 0 8px">' + (esYTD ? 'Acumulado del año (neto)' : 'Resultado del mes (neto)') + '</div>';
@@ -9038,17 +9059,18 @@ function renderPanelResultados(agregado, locales, vnByLocal, resByLocal, objPct,
   html += '<div style="display:flex;gap:4px;padding:0 10px 3px;font-size:9px;opacity:.5;font-weight:700">' +
     '<span style="flex:1"></span><span style="flex:0 0 112px;text-align:right">MONTO</span><span style="flex:0 0 46px;text-align:right">%</span>' +
     '<span style="flex:0 0 112px;text-align:right">$ OBJ</span><span style="flex:0 0 46px;text-align:right">% OBJ</span></div>';
-  html += cat('VN - Ventas Netas', VN, null, '#2E7D32', false, (objVN > 0 ? objVN : null));
-  html += cat('CM - Costo de Mercadería', CM, oCM, '#C77DAE');
+  html += cat('VN - Ventas Netas', VN, VN, '#2E7D32', false, (objVN > 0 ? objVN : null), null);
+  html += sub('Resto (MD/noche)', vResto) + sub('Mostrador', vMost) + sub('Eventos', vEventos) + sub('Especiales', vEspeciales) + sub('Dif. facturación mínima', vDif) + sub('Apoyo comercial', vApoyo);
+  html += cat('CM - Costo de Mercadería', CM, VN_CM, '#C77DAE', false, cmObjM, oCM);
   html += sub('Alimentos', cmA) + sub('Bebidas', cmB) + sub('Otros', cmO);
-  html += cat('CB - Contribución Bruta <span style="font-weight:400;font-size:10px;opacity:.8">(VN − CM)</span>', CB, oCB, '#0E9AA7');
-  html += cat('CL - Costo Laboral', CL, oCL, '#C87A2C');
+  html += cat('CB - Contribución Bruta <span style="font-weight:400;font-size:10px;opacity:.8">(VN − CM)</span>', CB, VN, '#0E9AA7', false, cbObjM, cbObjPct);
+  html += cat('CL - Costo Laboral', CL, VN, '#C87A2C', false, clObjM, oCL);
   html += sub('Sueldos + Adic', clS) + sub('931', cl931);
-  html += cat('GO - Gastos Operativos', GO, oGO, '#2D7FC4');
+  html += cat('GO - Gastos Operativos', GO, VN, '#2D7FC4', false, goObjM, oGO);
   html += RES_GO_SUBS.map(function(pp){ return sub(pp[1], goVals[pp[0]]); }).join('');
-  html += cat('GA - Gastos Azuca', GA, oGA, '#6FA8DC');
-  html += cat('EBITDA <span style="font-weight:400;font-size:10px;opacity:.8">(CB − CL − GO − GA)</span>', EBITDA, oEB, '#E8C400', true);
-  html += '<div class="cierre-hint" style="margin-top:12px"><i class="ti ti-info-circle"></i> CB = Ventas Netas − CM. EBITDA = CB − CL − GO − GA. Las Ventas Netas salen de la planilla de resultados si las cargás ahí (VN - Ventas Netas), o del neto de los cierres si no. El objetivo de ventas sale del Panel de Ventas y los % objetivo, de Gestión de estadísticas. El resto se carga con la planilla.</div>';
+  html += cat('GA - Gastos Azuca', GA, VN, '#6FA8DC', false, gaObjM, oGA);
+  html += cat('EBITDA <span style="font-weight:400;font-size:10px;opacity:.8">(CB − CL − GO − GA)</span>', EBITDA, VN, '#E8C400', true, ebObjM, ebObjPct);
+  html += '<div class="cierre-hint" style="margin-top:12px"><i class="ti ti-info-circle"></i> El % de CM es sobre las ventas con mercadería (Resto + Mostrador + Eventos + Especiales). El % de CB, CL, GO, GA y EBITDA es sobre las Ventas Netas totales (que además suman Dif. facturación mínima y Apoyo comercial). Resto, Mostrador, Eventos y Especiales salen de los cierres; Dif. facturación mínima y Apoyo comercial se cargan en la planilla de resultados.</div>';
   body.innerHTML = html;
 }
 
@@ -9180,7 +9202,12 @@ window.guardarObjGest = async function() {
 };
 
 const RES_ROWS = [
-  ['VN - Ventas Netas', 'vn_neto'],
+  ['VN - Resto (MD o noche)', null, 'resto'],
+  ['VN - Mostrador', null, 'most'],
+  ['VN - Eventos', null, 'eventos'],
+  ['VN - Especiales', null, 'especiales'],
+  ['VN - Dif Fact mínima', 'vn_dif_fact'],
+  ['VN - Apoyo Comercial', 'vn_apoyo'],
   ['CM - Alimentos','cm_alimentos'], ['CM - Bebidas','cm_bebidas'], ['CM - Otros','cm_otros'],
   ['CL - Sueldos + Adic','cl_sueldos_adic'], ['CL - 931','cl_931'],
   ['GO - Alquiler','go_alquiler'], ['GO - Serv e Impuestos','go_serv_imp'], ['GO - Lavander\u00eda','go_lavanderia'], ['GO - Mantenim, Rep y Rep','go_mantenim'], ['GO - Imprenta y Librer\u00eda','go_imprenta'], ['GO - Limpieza y Descartables','go_limpieza'], ['GO - Bienes de Uso Sal\u00f3n','go_bienes_salon'], ['GO - Bienes de Uso Cocina','go_bienes_cocina'], ['GO - Traslados Personal','go_traslados'], ['GO - Otros','go_otros'],
@@ -9196,16 +9223,18 @@ window.descargarPlanillaResultados = async function() {
     (await api('resultados_mensuales?mes=eq.' + mes + '&select=*') || []).forEach(function(r){ byLocal[r.local] = r; });
     const rr = _pvRango(mes);
     const cier = await apiAll('cierres_caja?fecha=gte.' + rr.desde + '&fecha=lte.' + rr.hasta + '&select=*') || [];
-    const vnByLocal = {};
-    cier.forEach(function(c){ vnByLocal[c.local] = (vnByLocal[c.local] || 0) + netoPesos(c); });
+    const cierByL = {};
+    cier.forEach(function(c){ (cierByL[c.local] = cierByL[c.local] || []).push(c); });
+    const compByLocal = {};
+    locales.forEach(function(l){ compByLocal[l] = _vnComp(cierByL[l] || []); });
     const header = ['Rubro'].concat(locales.map(function(l){ return localLabel(l); }));
     const data = [header];
     RES_ROWS.forEach(function(row){
       const fila = [row[0]];
       locales.forEach(function(l){
-        if (row[1] === 'vn_neto') {
-          const rec = byLocal[l]; const mv = rec ? parseFloat(rec.vn_neto) : NaN;
-          fila.push((isFinite(mv) && mv > 0) ? Math.round(mv) : Math.round(vnByLocal[l] || 0));
+        if (row[1] === null) { // fila de referencia (sale de los cierres, no se sube)
+          const comp = compByLocal[l] || {};
+          fila.push(Math.round(comp[row[2]] || 0));
         } else { const rec = byLocal[l]; fila.push(rec ? (parseFloat(rec[row[1]]) || 0) : 0); }
       });
       data.push(fila);
@@ -9214,7 +9243,7 @@ window.descargarPlanillaResultados = async function() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Resultados ' + mes);
     XLSX.writeFile(wb, 'Planilla_Resultados_' + mes + '.xlsx');
-    st.textContent = 'Planilla descargada. La fila VN - Ventas Netas viene sugerida con el neto de los cierres: ajustala si tiene conceptos extra (mostrador, compensaciones, apoyo comercial). Complet\u00e1 el resto y volv\u00e9 a subirla.';
+    st.textContent = 'Planilla descargada. Las filas VN - Resto/Mostrador/Eventos/Especiales son de referencia (salen de los cierres, no se suben). Complet\u00e1 solo Dif Fact m\u00ednima, Apoyo Comercial y los costos, y volv\u00e9 a subirla.';
   } catch (e) { st.textContent = 'Error: ' + ((e && e.message) || e); }
 };
 window.subirPlanillaResultados = async function(input) {
