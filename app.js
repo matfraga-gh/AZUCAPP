@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-09-23-BH | ULTIMA | Panel Resultados: cada renglon arranca con la sigla (VN, CM, CB, CL, GO, GA) para que no se corte en el cel (+ BG/BF/BE) ===== */
+/* ===== BUILD 2026-09-24-BI | ULTIMA | Planilla resultados: VN - Ventas Netas editable (incluye mostrador, compensaciones, apoyo comercial); si se carga manda sobre los cierres (+ BH/BG/BF) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -8931,8 +8931,24 @@ async function cargarPanelResultados() {
     const res = esYTD
       ? (await api('resultados_mensuales?' + locFilter + '&mes=gte.' + _pvAnioYTD(PV_MES) + '-01&mes=lte.' + _pvAnioYTD(PV_MES) + '-12&select=*') || [])
       : (await api('resultados_mensuales?' + locFilter + '&mes=eq.' + PV_MES + '&select=*') || []);
+    // Ventas Netas por local: si la planilla trae vn_neto (>0) usa ese; si no, el neto de los cierres. Mes a mes (así el YTD mezcla bien).
+    const cierVNByLM = {};
+    cierres.forEach(function(c){ const mk = c.local + '|' + String(c.fecha).slice(0, 7); cierVNByLM[mk] = (cierVNByLM[mk] || 0) + netoPesos(c); });
+    const resVNByLM = {};
+    res.forEach(function(x){ const v = parseFloat(x.vn_neto); if (isFinite(v) && v > 0) resVNByLM[x.local + '|' + x.mes] = v; });
+    const mesesSet = {};
+    if (esYTD) { Object.keys(cierVNByLM).forEach(function(k){ mesesSet[k.split('|')[1]] = 1; }); res.forEach(function(x){ mesesSet[x.mes] = 1; }); }
+    else { mesesSet[PV_MES] = 1; }
+    const localesArr = agregado ? reales : [loc];
     const vnByLocal = {};
-    cierres.forEach(function(c){ vnByLocal[c.local] = (vnByLocal[c.local] || 0) + netoPesos(c); });
+    localesArr.forEach(function(l){
+      let tot = 0;
+      Object.keys(mesesSet).forEach(function(mk){
+        const manual = resVNByLM[l + '|' + mk];
+        tot += (manual != null) ? manual : (cierVNByLM[l + '|' + mk] || 0);
+      });
+      vnByLocal[l] = tot;
+    });
     const resByLocal = {};
     if (esYTD) {
       // Sumar todos los meses del año por local
@@ -9032,7 +9048,7 @@ function renderPanelResultados(agregado, locales, vnByLocal, resByLocal, objPct,
   html += RES_GO_SUBS.map(function(pp){ return sub(pp[1], goVals[pp[0]]); }).join('');
   html += cat('GA - Gastos Azuca', GA, oGA, '#6FA8DC');
   html += cat('EBITDA <span style="font-weight:400;font-size:10px;opacity:.8">(CB − CL − GO − GA)</span>', EBITDA, oEB, '#E8C400', true);
-  html += '<div class="cierre-hint" style="margin-top:12px"><i class="ti ti-info-circle"></i> CB = Ventas Netas − CM. EBITDA = CB − CL − GO − GA. Las Ventas Netas y su objetivo salen del Panel de Ventas; los % objetivo, de Gestión de estadísticas. El resto se carga con la planilla de resultados.</div>';
+  html += '<div class="cierre-hint" style="margin-top:12px"><i class="ti ti-info-circle"></i> CB = Ventas Netas − CM. EBITDA = CB − CL − GO − GA. Las Ventas Netas salen de la planilla de resultados si las cargás ahí (VN - Ventas Netas), o del neto de los cierres si no. El objetivo de ventas sale del Panel de Ventas y los % objetivo, de Gestión de estadísticas. El resto se carga con la planilla.</div>';
   body.innerHTML = html;
 }
 
@@ -9164,7 +9180,7 @@ window.guardarObjGest = async function() {
 };
 
 const RES_ROWS = [
-  ['Ventas Netas (referencia)', null],
+  ['VN - Ventas Netas', 'vn_neto'],
   ['CM - Alimentos','cm_alimentos'], ['CM - Bebidas','cm_bebidas'], ['CM - Otros','cm_otros'],
   ['CL - Sueldos + Adic','cl_sueldos_adic'], ['CL - 931','cl_931'],
   ['GO - Alquiler','go_alquiler'], ['GO - Serv e Impuestos','go_serv_imp'], ['GO - Lavander\u00eda','go_lavanderia'], ['GO - Mantenim, Rep y Rep','go_mantenim'], ['GO - Imprenta y Librer\u00eda','go_imprenta'], ['GO - Limpieza y Descartables','go_limpieza'], ['GO - Bienes de Uso Sal\u00f3n','go_bienes_salon'], ['GO - Bienes de Uso Cocina','go_bienes_cocina'], ['GO - Traslados Personal','go_traslados'], ['GO - Otros','go_otros'],
@@ -9187,8 +9203,10 @@ window.descargarPlanillaResultados = async function() {
     RES_ROWS.forEach(function(row){
       const fila = [row[0]];
       locales.forEach(function(l){
-        if (row[1] === null) fila.push(Math.round(vnByLocal[l] || 0));
-        else { const rec = byLocal[l]; fila.push(rec ? (parseFloat(rec[row[1]]) || 0) : 0); }
+        if (row[1] === 'vn_neto') {
+          const rec = byLocal[l]; const mv = rec ? parseFloat(rec.vn_neto) : NaN;
+          fila.push((isFinite(mv) && mv > 0) ? Math.round(mv) : Math.round(vnByLocal[l] || 0));
+        } else { const rec = byLocal[l]; fila.push(rec ? (parseFloat(rec[row[1]]) || 0) : 0); }
       });
       data.push(fila);
     });
@@ -9196,7 +9214,7 @@ window.descargarPlanillaResultados = async function() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Resultados ' + mes);
     XLSX.writeFile(wb, 'Planilla_Resultados_' + mes + '.xlsx');
-    st.textContent = 'Planilla descargada. Complet\u00e1 los valores y volv\u00e9 a subirla. La fila Ventas Netas es de referencia (no se sube).';
+    st.textContent = 'Planilla descargada. La fila VN - Ventas Netas viene sugerida con el neto de los cierres: ajustala si tiene conceptos extra (mostrador, compensaciones, apoyo comercial). Complet\u00e1 el resto y volv\u00e9 a subirla.';
   } catch (e) { st.textContent = 'Error: ' + ((e && e.message) || e); }
 };
 window.subirPlanillaResultados = async function(input) {
