@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-09-24-BJ | ULTIMA | Ventas por tipo: ticket promedio solo salon MD/noche; P&L separa VN (Resto/Mostrador/Eventos/Especiales de cierres + Dif Fact min y Apoyo Comercial de planilla); CM% sobre ventas con mercaderia, resto sobre VN total (+ BI/BH/BG) ===== */
+/* ===== BUILD 2026-09-24-BK | ULTIMA | PR: Mostrador/Eventos/Especiales en una sola linea (mismo tratamiento) (+ BJ/BI/BH) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -9060,7 +9060,7 @@ function renderPanelResultados(agregado, locales, salesByLocal, resByLocal, objP
     '<span style="flex:1"></span><span style="flex:0 0 112px;text-align:right">MONTO</span><span style="flex:0 0 46px;text-align:right">%</span>' +
     '<span style="flex:0 0 112px;text-align:right">$ OBJ</span><span style="flex:0 0 46px;text-align:right">% OBJ</span></div>';
   html += cat('VN - Ventas Netas', VN, VN, '#2E7D32', false, (objVN > 0 ? objVN : null), null);
-  html += sub('Resto (MD/noche)', vResto) + sub('Mostrador', vMost) + sub('Eventos', vEventos) + sub('Especiales', vEspeciales) + sub('Dif. facturación mínima', vDif) + sub('Apoyo comercial', vApoyo);
+  html += sub('Resto (MD/noche)', vResto) + sub('Mostrador / Eventos / Especiales', vMost + vEventos + vEspeciales) + sub('Dif. facturación mínima', vDif) + sub('Apoyo comercial', vApoyo);
   html += cat('CM - Costo de Mercadería', CM, VN_CM, '#C77DAE', false, cmObjM, oCM);
   html += sub('Alimentos', cmA) + sub('Bebidas', cmB) + sub('Otros', cmO);
   html += cat('CB - Contribución Bruta <span style="font-weight:400;font-size:10px;opacity:.8">(VN − CM)</span>', CB, VN, '#0E9AA7', false, cbObjM, cbObjPct);
