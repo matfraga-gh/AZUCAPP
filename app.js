@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-09-24-BK | ULTIMA | PR: Mostrador/Eventos/Especiales en una sola linea (mismo tratamiento) (+ BJ/BI/BH) ===== */
+/* ===== BUILD 2026-09-29-BL | ULTIMA | Reservas: cada tarjeta muestra quien cargo (y quien respondio) la reserva (+ BK/BJ/BI) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -4672,7 +4672,9 @@ function showView(viewId) {
 function puedeReservas() { return isMaster() || isAdmin() || (currentUser && currentUser.editor_reservas === true); }
 let RESERVAS_CLIENTES = [];
 let RESERVAS_SOLIC = [];
+let RESERVAS_USUARIOS = {};
 let RESERVA_EDIT_ID = null;
+function _nombreUsuarioReserva(id) { return (id != null && RESERVAS_USUARIOS[id]) ? RESERVAS_USUARIOS[id] : null; }
 const RESERVA_ESTADOS = {
   pendiente:  { label: 'Pendiente', color: '#EF9F27' },
   aceptada:   { label: 'Aceptada', color: '#3E86C7' },
@@ -4689,6 +4691,7 @@ async function openMisReservas() {
   try {
     const cli = await api('reservas_clientes?order=nombre.asc');
     const sol = await api('reservas_solicitudes?order=fecha.desc,id.desc');
+    try { const usus = await api('roster_usuarios?select=id,nombre,usuario'); RESERVAS_USUARIOS = {}; (usus || []).forEach(function(u){ RESERVAS_USUARIOS[u.id] = u.nombre || u.usuario; }); } catch (e) {}
     RESERVAS_CLIENTES = cli || [];
     const hoy = hoyStr();
     RESERVAS_SOLIC = (sol || []).filter(function(s){ return String(s.fecha).slice(0,10) >= hoy; });
@@ -4757,6 +4760,9 @@ function _reservaCard(s, puedeResponder) {
   if (puedeGestionar && s.estado !== 'rechazada' && s.estado !== 'cancelada') btns.push('<button class="btn-ghost" style="flex:0 0 auto" onclick="abrirEditarReserva(' + s.id + ')"><i class="ti ti-pencil"></i> Editar</button>');
   if (puedeGestionar) btns.push('<button class="btn-ghost" style="flex:0 0 auto;color:var(--c-error)" onclick="eliminarReserva(' + s.id + ')"><i class="ti ti-trash"></i> Eliminar</button>');
   const acciones = btns.length ? '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' + btns.join('') + '</div>' : '';
+  const quienCargo = _nombreUsuarioReserva(s.solicitado_por);
+  const quienResp = (s.respondido_por != null && s.estado !== 'pendiente') ? _nombreUsuarioReserva(s.respondido_por) : null;
+  const autoria = (quienCargo || quienResp) ? '<div class="ped-card-sub" style="margin-top:4px;opacity:.75;font-size:11px"><i class="ti ti-user"></i> Cargó: ' + esc(quienCargo || 'desconocido') + (quienResp ? ' · Respondió: ' + esc(quienResp) : '') + '</div>' : '';
   return '<div class="ped-card" style="margin-bottom:10px">' +
     '<div class="ped-card-top" style="align-items:flex-start">' + localPill +
       '<span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;background:' + est.color + ';color:#fff;white-space:nowrap">' + est.label + '</span>' +
@@ -4765,6 +4771,7 @@ function _reservaCard(s, puedeResponder) {
     '<div style="margin:8px 0 4px">' + fechaChip + ' <span style="font-size:13px;color:var(--c-cream)"> · ' + (s.pax || 0) + ' pax · ' + pago + '</span></div>' +
     (contacto ? '<div class="ped-card-sub">' + contacto + '</div>' : '') +
     (extra ? '<div class="ped-card-sub" style="margin-top:4px">' + extra + '</div>' : '') +
+    autoria +
     acciones +
   '</div>';
 }
