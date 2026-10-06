@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-09-29-BL | ULTIMA | Reservas: cada tarjeta muestra quien cargo (y quien respondio) la reserva (+ BK/BJ/BI) ===== */
+/* ===== BUILD 2026-10-06-BM | ULTIMA | Permiso editor "Estadisticas" (Panel de Ventas; Resultados solo Admin/Master) + Propinas: eventuales con campo de nombre/evento por liquidacion (Extra Somme) (+ BL/BK/BJ) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -543,7 +543,7 @@ const MODULES = [
     color: '#2D7FC4',
     title: 'Estadísticas',
     desc: 'Ventas y resultados por local',
-    visible: () => isMaster() || isAdmin() || isAuditor(),
+    visible: () => isMaster() || isAdmin() || isAuditor() || !!(currentUser && currentUser.editor_estadisticas),
     action: () => openPanelVentas()
   },
   {
@@ -1716,6 +1716,7 @@ const BILLETES_DENOM = [100, 200, 500, 1000, 2000, 10000, 20000];
 let CIERRE_COLABS = [];
 let CIERRE_EDITANDO = null;       // id del cierre en edición (null = nuevo)
 let CIERRE_EDIT_PUNTOS = {};      // empleado_id -> puntos (pre-carga al editar)
+let CIERRE_EDIT_NOTAS = {};       // empleado_id -> nota (para eventuales: nombre/evento real)
 let CIERRE_LOCAL_ACTUAL = null;   // local del cierre que se está cargando/editando
 
 function billeteVal(d) {
@@ -1762,6 +1763,7 @@ function abrirNuevoCierre() {
   if (!PROP_LOCAL_SEL || PROP_LOCAL_SEL === getSlugTransversal()) { toast('Elegí un local para cargar el cierre', 'error'); return; }
   CIERRE_EDITANDO = null;
   CIERRE_EDIT_PUNTOS = {};
+  CIERRE_EDIT_NOTAS = {};
   CIERRE_LOCAL_ACTUAL = PROP_LOCAL_SEL;
   const tit = document.getElementById('cierreModalTitulo'); if (tit) tit.textContent = 'Nuevo cierre';
   { const _be = document.getElementById('btnEliminarPropina'); if (_be) _be.style.display = 'none'; }
@@ -1814,6 +1816,7 @@ async function abrirEditarCierre(cierreId) {
 
   CIERRE_EDITANDO = cierreId;
   CIERRE_EDIT_PUNTOS = {};
+  CIERRE_EDIT_NOTAS = {};
   CIERRE_LOCAL_ACTUAL = c.local;
   const tit = document.getElementById('cierreModalTitulo'); if (tit) tit.textContent = 'Editar cierre';
   { const _be = document.getElementById('btnEliminarPropina'); if (_be) _be.style.display = (isMaster() || isAdmin()) ? '' : 'none'; }
@@ -1845,8 +1848,8 @@ async function abrirEditarCierre(cierreId) {
   document.getElementById('modalNuevoCierre').classList.add('show');
 
   try {
-    const asigs = await api('propinas_asignaciones?cierre_id=eq.' + cierreId + '&select=empleado_id,puntos') || [];
-    asigs.forEach(a => { CIERRE_EDIT_PUNTOS[a.empleado_id] = parseFloat(a.puntos) || 0; });
+    const asigs = await api('propinas_asignaciones?cierre_id=eq.' + cierreId + '&select=empleado_id,puntos,nota') || [];
+    asigs.forEach(a => { CIERRE_EDIT_PUNTOS[a.empleado_id] = parseFloat(a.puntos) || 0; if (a.nota) CIERRE_EDIT_NOTAS[a.empleado_id] = a.nota; });
   } catch (e) { /* si falla, arrancan en 0 */ }
 
   await cargarColabsCierre(c.local);
@@ -1860,7 +1863,8 @@ function colabDesdeEmp(e, loc) {
   const pila = e.nombre_p || e.nombre || '';
   const nombre = (ap && pila) ? (ap + ', ' + pila) : (ap || pila || ('Empleado #' + e.id));
   const pts = CIERRE_EDITANDO ? (CIERRE_EDIT_PUNTOS[e.id] != null ? CIERRE_EDIT_PUNTOS[e.id] : 0) : 0;
-  return { id: e.id, nombre: nombre, multi: !!e.es_multilocal && e.local !== loc, puntos: pts };
+  const nota = (CIERRE_EDIT_NOTAS[e.id] != null) ? CIERRE_EDIT_NOTAS[e.id] : '';
+  return { id: e.id, nombre: nombre, multi: !!e.es_multilocal && e.local !== loc, puntos: pts, eventual: !!e.eventual, nota: nota };
 }
 async function cargarColabsCierre(localSlug) {
   const loc = localSlug || PROP_LOCAL_SEL;
@@ -1868,7 +1872,7 @@ async function cargarColabsCierre(localSlug) {
   try {
     // Solo la gente del local (los multilocales se agregan a mano con el buscador de abajo)
     const filtro = 'empleados?activo=eq.true&sin_propina=neq.true&local=eq.' + encodeURIComponent(loc) +
-      '&select=id,nombre,apellido,nombre_p,local,es_multilocal&order=apellido.asc';
+      '&select=id,nombre,apellido,nombre_p,local,es_multilocal,eventual&order=apellido.asc';
     const emps = await api(filtro) || [];
     CIERRE_COLABS = emps.map(function(e){ return colabDesdeEmp(e, loc); });
 
@@ -1877,14 +1881,14 @@ async function cargarColabsCierre(localSlug) {
       const yaIds = CIERRE_COLABS.map(function(c){ return c.id; });
       const faltan = Object.keys(CIERRE_EDIT_PUNTOS).map(Number).filter(function(id){ return yaIds.indexOf(id) === -1; });
       if (faltan.length) {
-        const extra = await api('empleados?id=in.(' + faltan.join(',') + ')&select=id,nombre,apellido,nombre_p,local,es_multilocal') || [];
+        const extra = await api('empleados?id=in.(' + faltan.join(',') + ')&select=id,nombre,apellido,nombre_p,local,es_multilocal,eventual') || [];
         extra.forEach(function(e){ CIERRE_COLABS.push(colabDesdeEmp(e, loc)); });
       }
     }
 
     // Candidatos multilocales para el boton "+ Agregar persona multilocal"
     try {
-      const multi = await api('empleados?activo=eq.true&sin_propina=neq.true&es_multilocal=eq.true&select=id,nombre,apellido,nombre_p,local,es_multilocal&order=apellido.asc') || [];
+      const multi = await api('empleados?activo=eq.true&sin_propina=neq.true&es_multilocal=eq.true&select=id,nombre,apellido,nombre_p,local,es_multilocal,eventual&order=apellido.asc') || [];
       CIERRE_MULTI = multi.map(function(e){ return colabDesdeEmp(e, loc); });
     } catch (e2) { CIERRE_MULTI = []; }
     renderColabsCierre();
@@ -1906,9 +1910,13 @@ function renderColabsCierre() {
         return '<button type="button" class="puntos-btn' + (String(c.puntos) === o[0] ? ' active' : '') +
           '" onclick="setPuntoColab(' + idx + ',' + o[0] + ')">' + o[1] + '</button>';
       }).join('');
-      return '<div class="colab-row">' +
-        '<span class="colab-nombre">' + esc(c.nombre) + (c.multi ? ' <span class="colab-multi">multi</span>' : '') + '</span>' +
+      const notaInput = c.eventual
+        ? '<input type="text" class="colab-nota-input" style="width:100%;margin-top:4px;font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--c-cream-border);background:transparent;color:var(--c-cream)" placeholder="Nombre / evento (ej: Evento 2/9)" value="' + esc(c.nota || '') + '" oninput="setNotaColab(' + idx + ', this.value)">'
+        : '';
+      return '<div class="colab-row" style="' + (c.eventual ? 'flex-wrap:wrap' : '') + '">' +
+        '<span class="colab-nombre">' + esc(c.nombre) + (c.eventual ? ' <span class="colab-multi" style="background:#C87A2C">eventual</span>' : '') + (c.multi ? ' <span class="colab-multi">multi</span>' : '') + '</span>' +
         '<div class="puntos-seg">' + seg + '</div>' +
+        notaInput +
         '</div>';
     }).join('');
   }
@@ -1958,6 +1966,9 @@ window.setPuntoColab = function(idx, val) {
   if (CIERRE_COLABS[idx]) CIERRE_COLABS[idx].puntos = val;
   renderColabsCierre();
   recalcCierre();
+};
+window.setNotaColab = function(idx, val) {
+  if (CIERRE_COLABS[idx]) CIERRE_COLABS[idx].nota = val; // sin re-render: no perder el foco del input
 };
 
 function resumenRow(k, v, hi) {
@@ -2073,7 +2084,8 @@ async function guardarCierre() {
       cierre_id: cierreId,
       empleado_id: c.id,
       puntos: c.puntos,
-      monto: Math.round((neto * c.puntos / puntos) * 100) / 100
+      monto: Math.round((neto * c.puntos / puntos) * 100) / 100,
+      nota: (c.nota && String(c.nota).trim()) ? String(c.nota).trim() : null
     }));
     if (asigs.length) {
       await api('propinas_asignaciones', { method: 'POST', body: JSON.stringify(asigs) });
@@ -2209,7 +2221,7 @@ window.generarLiquidacion = async function() {
     const detalleColabs = asigs.map(a => {
       const c = cierreMap[a.cierre_id] || {};
       return {
-        'Empleado': nombreEmp(a.empleado_id),
+        'Empleado': nombreEmp(a.empleado_id) + (a.nota ? ' (' + a.nota + ')' : ''),
         'Local': localLabel(c.local) || c.local || '',
         'Fecha': fmtFechaDDMM(c.fecha),
         'Turno': TURNOS_LIQ[(c.turno || '').toLowerCase()] || c.turno || '',
@@ -4451,7 +4463,8 @@ const PERMISOS_DEF = [
   { key: 'editor_eventos',    label: 'Editar eventos', icon: 'ti-confetti',      tipo: 'editor' },
   { key: 'editor_insumos',    label: 'Insumos / Compras', icon: 'ti-package',    tipo: 'editor' },
   { key: 'editor_stock',      label: 'Stock',         icon: 'ti-clipboard-check', tipo: 'editor' },
-  { key: 'editor_cierres',    label: 'Cierres de caja', icon: 'ti-cash-register', tipo: 'editor' }
+  { key: 'editor_cierres',    label: 'Cierres de caja', icon: 'ti-cash-register', tipo: 'editor' },
+  { key: 'editor_estadisticas', label: 'Estadísticas', icon: 'ti-chart-line',   tipo: 'editor' }
 ];
 
 async function openAdminEditores() {
@@ -8680,7 +8693,7 @@ function panelLocalesReales() {
 }
 
 function openPanelVentas() {
-  if (!isMaster() && !isAdmin() && !isAuditor()) { showDashboard(); return; }
+  if (!isMaster() && !isAdmin() && !isAuditor() && !(currentUser && currentUser.editor_estadisticas)) { showDashboard(); return; }
   showView('vPanelVentas');
   const puedeResultados = isMaster() || isAdmin();
   const tabRes = document.getElementById('pvTabResultados');
