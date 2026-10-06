@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-10-06-BM | ULTIMA | Permiso editor "Estadisticas" (Panel de Ventas; Resultados solo Admin/Master) + Propinas: eventuales con campo de nombre/evento por liquidacion (Extra Somme) (+ BL/BK/BJ) ===== */
+/* ===== BUILD 2026-10-06-BN | ULTIMA | Reservas: el borrado automatico ahora recien limpia reservas de hace mas de 2 dias (antes borraba lo de ayer segun el reloj del celular y podia borrar reservas de hoy para todos) (+ BM/BL/BK) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -4707,8 +4707,11 @@ async function openMisReservas() {
     try { const usus = await api('roster_usuarios?select=id,nombre,usuario'); RESERVAS_USUARIOS = {}; (usus || []).forEach(function(u){ RESERVAS_USUARIOS[u.id] = u.nombre || u.usuario; }); } catch (e) {}
     RESERVAS_CLIENTES = cli || [];
     const hoy = hoyStr();
+    // Las reservas pasadas se ocultan de la lista. El borrado automático recién limpia lo que tenga más de 2 días
+    // (antes borraba lo de "ayer" según el reloj de cada celular, y un dispositivo con la fecha adelantada borraba reservas de hoy para todos).
     RESERVAS_SOLIC = (sol || []).filter(function(s){ return String(s.fecha).slice(0,10) >= hoy; });
-    api('reservas_solicitudes?fecha=lt.' + hoy, { method: 'DELETE' }).catch(function(){}); // auto-limpieza de reservas pasadas
+    const limite = addDays(hoy, -2);
+    api('reservas_solicitudes?fecha=lt.' + limite, { method: 'DELETE' }).catch(function(){}); // limpieza: solo reservas de hace más de 2 días
   } catch (e) {
     body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar las reservas.</div>';
     return;
