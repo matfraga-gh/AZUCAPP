@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-10-07-BO | ULTIMA | Reservas: ahora SE VEN y se conservan hasta 2 dias despues de su fecha; recien despues se ocultan y se borran (antes el borrado del dia siguiente podia eliminar reservas de hoy segun el reloj del celular) (+ BN/BM/BL) ===== */
+/* ===== BUILD 2026-10-07-BP | ULTIMA | Pedidos: el listado y el Excel cargaban solo 1000 items en total (se cortaban los pedidos de mas abajo). Ahora se paginan todos (+ BO/BN/BM) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -7580,7 +7580,7 @@ async function cargarPedidos() {
     const _ids = PED_LISTA.map(p => p.id);
     if (_ids.length) {
       try {
-        const _its = await api('requerimiento_items?requerimiento_id=in.(' + _ids.join(',') + ')&select=requerimiento_id,ingrediente_id,cantidad_pedida,unidad,orden&order=orden.asc') || [];
+        const _its = await apiAll('requerimiento_items?requerimiento_id=in.(' + _ids.join(',') + ')&select=requerimiento_id,ingrediente_id,cantidad_pedida,unidad,orden&order=requerimiento_id.asc,orden.asc,id.asc') || [];
         const _by = {};
         _its.forEach(it => { (_by[it.requerimiento_id] = _by[it.requerimiento_id] || []).push(it); });
         PED_LISTA.forEach(p => { p._items = _by[p.id] || []; });
@@ -7605,7 +7605,7 @@ window.exportarPedidosExcel = async function() {
     const ids = pedidos.map(function(p){ return p.id; });
     let items = [];
     if (ids.length) {
-      items = await api('requerimiento_items?requerimiento_id=in.(' + ids.join(',') + ')&select=requerimiento_id,ingrediente_id,cantidad_pedida,unidad,stock_actual,comentario_pedido,orden&order=orden.asc') || [];
+      items = await apiAll('requerimiento_items?requerimiento_id=in.(' + ids.join(',') + ')&select=requerimiento_id,ingrediente_id,cantidad_pedida,unidad,stock_actual,comentario_pedido,orden&order=requerimiento_id.asc,orden.asc,id.asc') || [];
     }
     const porPedido = {};
     items.forEach(function(it){ (porPedido[it.requerimiento_id] = porPedido[it.requerimiento_id] || []).push(it); });
