@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-10-07-BP | ULTIMA | Pedidos: el listado y el Excel cargaban solo 1000 items en total (se cortaban los pedidos de mas abajo). Ahora se paginan todos (+ BO/BN/BM) ===== */
+/* ===== BUILD 2026-10-13-BQ | ULTIMA | Panel Resultados: dos subrubros nuevos de GO (Bcos y Tjtas, IIBB) + primera columna mas ancha y legible en el cel (etiquetas en 2 lineas, sin scroll lateral) (+ BP/BO/BN) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -9029,7 +9029,7 @@ async function cargarPanelResultados() {
 const RES_GO_SUBS = [
   ['go_alquiler','Alquiler'], ['go_serv_imp','Serv e Impuestos'], ['go_lavanderia','Lavandería'],
   ['go_mantenim','Mantenim, Rep y Rep'], ['go_imprenta','Imprenta y Librería'], ['go_limpieza','Limpieza y Descartables'],
-  ['go_bienes_salon','Bienes de Uso Salón'], ['go_bienes_cocina','Bienes de Uso Cocina'], ['go_traslados','Traslados Personal'], ['go_otros','Otros']
+  ['go_bienes_salon','Bienes de Uso Salón'], ['go_bienes_cocina','Bienes de Uso Cocina'], ['go_traslados','Traslados Personal'], ['go_bancos_tjtas','Bcos y Tjtas'], ['go_iibb','IIBB'], ['go_otros','Otros']
 ];
 const RES_NUM_FIELDS = ['cm_alimentos', 'cm_bebidas', 'cm_otros', 'cl_sueldos_adic', 'cl_931', 'ga', 'vn_dif_fact', 'vn_apoyo'].concat(RES_GO_SUBS.map(function(p){ return p[0]; }));
 function renderPanelResultados(agregado, locales, salesByLocal, resByLocal, objPct, objVN, esYTD) {
@@ -9063,25 +9063,25 @@ function renderPanelResultados(agregado, locales, salesByLocal, resByLocal, objP
   const ebObjPct = (ebObjM != null && VN > 0) ? (ebObjM / VN * 100) : null;
   const cat = function(label, val, base, color, dark, objMonto, objPctVal) {
     return '<div style="display:flex;align-items:center;gap:4px;background:' + color + ';color:' + (dark ? '#1a1a1a' : '#fff') + ';font-weight:700;padding:8px 10px;border-radius:6px;margin-top:8px">' +
-      '<span style="flex:1;min-width:0;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</span>' +
-      '<span style="flex:0 0 112px;text-align:right;white-space:nowrap;font-size:12px">' + m(val) + '</span>' +
-      '<span style="flex:0 0 46px;text-align:right;font-size:12px">' + pcB(val, base) + '</span>' +
-      '<span style="flex:0 0 112px;text-align:right;white-space:nowrap;font-size:11px;opacity:.85">' + (objMonto != null ? m(objMonto) : '—') + '</span>' +
-      '<span style="flex:0 0 46px;text-align:right;font-size:11px;opacity:.85">' + opct(objPctVal) + '</span></div>';
+      '<span style="flex:1;min-width:0;font-size:11.5px;line-height:1.15">' + label + '</span>' +
+      '<span style="flex:0 0 90px;text-align:right;white-space:nowrap;font-size:11px">' + m(val) + '</span>' +
+      '<span style="flex:0 0 38px;text-align:right;font-size:11px">' + pcB(val, base) + '</span>' +
+      '<span style="flex:0 0 84px;text-align:right;white-space:nowrap;font-size:10px;opacity:.85">' + (objMonto != null ? m(objMonto) : '—') + '</span>' +
+      '<span style="flex:0 0 38px;text-align:right;font-size:10px;opacity:.85">' + opct(objPctVal) + '</span></div>';
   };
   const sub = function(label, val) {
-    return '<div style="display:flex;align-items:center;gap:4px;padding:4px 10px 4px 20px;border-bottom:1px solid var(--c-cream-border);font-size:12px;color:var(--c-cream)">' +
-      '<span style="flex:1;min-width:0;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(label) + '</span>' +
-      '<span style="flex:0 0 112px;text-align:right;white-space:nowrap">' + m(val) + '</span>' +
-      '<span style="flex:0 0 46px;text-align:right;opacity:.7">' + pcB(val, VN) + '</span>' +
-      '<span style="flex:0 0 112px"></span><span style="flex:0 0 46px"></span></div>';
+    return '<div style="display:flex;align-items:center;gap:4px;padding:4px 10px 4px 18px;border-bottom:1px solid var(--c-cream-border);font-size:12px;color:var(--c-cream)">' +
+      '<span style="flex:1;min-width:0;opacity:.85;line-height:1.15">' + esc(label) + '</span>' +
+      '<span style="flex:0 0 90px;text-align:right;white-space:nowrap;font-size:11px">' + m(val) + '</span>' +
+      '<span style="flex:0 0 38px;text-align:right;opacity:.7;font-size:11px">' + pcB(val, VN) + '</span>' +
+      '<span style="flex:0 0 84px"></span><span style="flex:0 0 38px"></span></div>';
   };
   let html = '<div class="est-section-title" style="margin:0 0 8px">' + (esYTD ? 'Acumulado del año (neto)' : 'Resultado del mes (neto)') + '</div>';
   if (agregado) html += '<div class="cierre-hint" style="margin-bottom:8px">Vista consolidada: suma de todos los locales.</div>';
   if (esYTD) html += '<div class="cierre-hint" style="margin-bottom:8px"><i class="ti ti-calendar-stats"></i> Suma de todos los meses cargados del año.</div>';
   html += '<div style="display:flex;gap:4px;padding:0 10px 3px;font-size:9px;opacity:.5;font-weight:700">' +
-    '<span style="flex:1"></span><span style="flex:0 0 112px;text-align:right">MONTO</span><span style="flex:0 0 46px;text-align:right">%</span>' +
-    '<span style="flex:0 0 112px;text-align:right">$ OBJ</span><span style="flex:0 0 46px;text-align:right">% OBJ</span></div>';
+    '<span style="flex:1"></span><span style="flex:0 0 90px;text-align:right">MONTO</span><span style="flex:0 0 38px;text-align:right">%</span>' +
+    '<span style="flex:0 0 84px;text-align:right">$ OBJ</span><span style="flex:0 0 38px;text-align:right">% OBJ</span></div>';
   html += cat('VN - Ventas Netas', VN, VN, '#2E7D32', false, (objVN > 0 ? objVN : null), null);
   html += sub('Resto (MD/noche)', vResto) + sub('Mostrador / Eventos / Especiales', vMost + vEventos + vEspeciales) + sub('Dif. facturación mínima', vDif) + sub('Apoyo comercial', vApoyo);
   html += cat('CM - Costo de Mercadería', CM, VN_CM, '#C77DAE', false, cmObjM, oCM);
@@ -9233,7 +9233,7 @@ const RES_ROWS = [
   ['VN - Apoyo Comercial', 'vn_apoyo'],
   ['CM - Alimentos','cm_alimentos'], ['CM - Bebidas','cm_bebidas'], ['CM - Otros','cm_otros'],
   ['CL - Sueldos + Adic','cl_sueldos_adic'], ['CL - 931','cl_931'],
-  ['GO - Alquiler','go_alquiler'], ['GO - Serv e Impuestos','go_serv_imp'], ['GO - Lavander\u00eda','go_lavanderia'], ['GO - Mantenim, Rep y Rep','go_mantenim'], ['GO - Imprenta y Librer\u00eda','go_imprenta'], ['GO - Limpieza y Descartables','go_limpieza'], ['GO - Bienes de Uso Sal\u00f3n','go_bienes_salon'], ['GO - Bienes de Uso Cocina','go_bienes_cocina'], ['GO - Traslados Personal','go_traslados'], ['GO - Otros','go_otros'],
+  ['GO - Alquiler','go_alquiler'], ['GO - Serv e Impuestos','go_serv_imp'], ['GO - Lavander\u00eda','go_lavanderia'], ['GO - Mantenim, Rep y Rep','go_mantenim'], ['GO - Imprenta y Librer\u00eda','go_imprenta'], ['GO - Limpieza y Descartables','go_limpieza'], ['GO - Bienes de Uso Sal\u00f3n','go_bienes_salon'], ['GO - Bienes de Uso Cocina','go_bienes_cocina'], ['GO - Traslados Personal','go_traslados'], ['GO - Bcos y Tjtas','go_bancos_tjtas'], ['GO - IIBB','go_iibb'], ['GO - Otros','go_otros'],
   ['GA - Gastos Azuca','ga']
 ];
 window.descargarPlanillaResultados = async function() {
