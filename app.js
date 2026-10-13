@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-10-13-BQ | ULTIMA | Panel Resultados: dos subrubros nuevos de GO (Bcos y Tjtas, IIBB) + primera columna mas ancha y legible en el cel (etiquetas en 2 lineas, sin scroll lateral) (+ BP/BO/BN) ===== */
+/* ===== BUILD 2026-10-13-BR | ULTIMA | Mis Reservas: aviso in-app (badge con reservas nuevas/cambiadas de tus locales en la tarjeta del inicio; se limpia al entrar) (+ BQ/BP/BO) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -898,8 +898,12 @@ function renderDashboardCards() {
     const isLastOdd = (idx === visibleModules.length - 1) && (visibleModules.length % 2 === 1);
     const fullClass = isLastOdd ? ' full' : '';
 
+    const badge = (m.id === 'reservas')
+      ? '<span class="dash-badge" data-badge="reservas" style="display:none;position:absolute;top:8px;right:8px;background:#E23B3B;color:#fff;font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:9px;align-items:center;justify-content:center;padding:0 5px;line-height:1"></span>'
+      : '';
     return `
-      <button class="dash-card${fullClass}" data-module="${m.id}">
+      <button class="dash-card${fullClass}" data-module="${m.id}" style="position:relative">
+        ${badge}
         <div class="dash-icon" style="color: ${m.color}">
           <i class="ti ${m.icon}"></i>
         </div>
@@ -916,6 +920,33 @@ function renderDashboardCards() {
       if (mod) mod.action();
     });
   });
+  actualizarAvisosReservas();
+}
+
+// Aviso in-app: cuenta reservas nuevas/cambiadas en los locales del usuario desde la última vez que entró a Mis Reservas.
+async function actualizarAvisosReservas() {
+  try {
+    if (typeof puedeReservas === 'function' && !puedeReservas()) return;
+    const badge = document.querySelector('.dash-badge[data-badge="reservas"]');
+    if (!badge) return;
+    const misLoc = _misLocalesReservas();
+    if (!misLoc.length) return;
+    const uid = currentUser ? currentUser.id : 'anon';
+    const lastSeen = localStorage.getItem('reservas_visto_' + uid) || '2000-01-01T00:00:00Z';
+    const limite = addDays(hoyStr(), -2);
+    const q = 'reservas_solicitudes?local=in.(' + misLoc.map(encodeURIComponent).join(',') +
+      ')&fecha=gte.' + limite +
+      '&or=(creado_en.gt.' + lastSeen + ',actualizado_en.gt.' + lastSeen + ')&select=id';
+    const rows = await api(q) || [];
+    const n = rows.length;
+    if (n > 0) { badge.textContent = n > 99 ? '99+' : String(n); badge.style.display = 'flex'; }
+    else { badge.style.display = 'none'; }
+  } catch (e) { /* silencioso: el aviso no debe romper el inicio */ }
+}
+function marcarReservasVisto() {
+  try { const uid = currentUser ? currentUser.id : 'anon'; localStorage.setItem('reservas_visto_' + uid, new Date().toISOString()); } catch (e) {}
+  const badge = document.querySelector('.dash-badge[data-badge="reservas"]');
+  if (badge) badge.style.display = 'none';
 }
 
 // ============================================
@@ -4717,6 +4748,7 @@ async function openMisReservas() {
     return;
   }
   renderReservas();
+  marcarReservasVisto();
 }
 window.openMisReservas = openMisReservas;
 
