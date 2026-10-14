@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-10-13-BR | ULTIMA | Mis Reservas: aviso in-app (badge con reservas nuevas/cambiadas de tus locales en la tarjeta del inicio; se limpia al entrar) (+ BQ/BP/BO) ===== */
+/* ===== BUILD 2026-10-14-BS | ULTIMA | El permiso de Estadisticas ahora tambien habilita el Panel de Resultados (Gestion de estadisticas sigue solo Admin/Master) (+ BR/BQ/BP) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -8727,14 +8727,17 @@ function panelLocalesReales() {
   return panelLocalesPermitidos().filter(function(l) { return !esLocalAgregado(l); });
 }
 
+// Ver el Panel de Resultados: Admin/Master o quien tenga el permiso de Estadísticas.
+function puedeVerResultados() { return isMaster() || isAdmin() || !!(currentUser && currentUser.editor_estadisticas); }
 function openPanelVentas() {
   if (!isMaster() && !isAdmin() && !isAuditor() && !(currentUser && currentUser.editor_estadisticas)) { showDashboard(); return; }
   showView('vPanelVentas');
-  const puedeResultados = isMaster() || isAdmin();
+  const puedeResultados = puedeVerResultados();
   const tabRes = document.getElementById('pvTabResultados');
   if (tabRes) tabRes.style.display = puedeResultados ? '' : 'none';
+  // "Gestión de estadísticas" (editar objetivos / subir planilla) queda solo para Admin/Master.
   const gestBtn = document.getElementById('pvGestionBtn');
-  if (gestBtn) gestBtn.style.display = puedeResultados ? '' : 'none';
+  if (gestBtn) gestBtn.style.display = (isMaster() || isAdmin()) ? '' : 'none';
   if (!puedeResultados) PV_TAB = 'ventas';
   poblarFiltrosPanel();
   aplicarPvTabUI();
@@ -8746,13 +8749,13 @@ function aplicarPvTabUI() {
   document.querySelectorAll('#pvTabs .stock-tab').forEach(function(b){ b.classList.toggle('active', b.dataset.pvtab === PV_TAB); });
 }
 window.setPvTab = function(tab) {
-  if (tab === 'resultados' && !(isMaster() || isAdmin())) return;
+  if (tab === 'resultados' && !puedeVerResultados()) return;
   PV_TAB = tab;
   aplicarPvTabUI();
   cargarPanelActivo();
 };
 function cargarPanelActivo() {
-  if (PV_TAB === 'resultados' && (isMaster() || isAdmin())) cargarPanelResultados();
+  if (PV_TAB === 'resultados' && puedeVerResultados()) cargarPanelResultados();
   else cargarPanelVentas();
 }
 
