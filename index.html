@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261014bs">
+<link rel="stylesheet" href="styles.css?v=20261019bu">
 </head>
 <body>
 
@@ -2221,6 +2221,7 @@
 
     <div class="personal-filtros">
       <select id="recetaFiltroLocal" class="mini-select"><option value="">Todos los locales</option></select>
+      <button class="btn-ghost" id="recetaExportBtn" onclick="exportarRecetasExcel()" title="Bajar la composición completa a Excel"><i class="ti ti-file-spreadsheet"></i> Bajar Excel</button>
     </div>
 
     <div id="recetasLista"><div class="loading">Cargando sub-elaboraciones...</div></div>
@@ -2452,6 +2453,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261014bs"></script>
+<script src="app.js?v=20261019bu"></script>
 </body>
 </html>

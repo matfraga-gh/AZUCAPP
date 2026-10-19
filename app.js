@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-10-14-BS | ULTIMA | El permiso de Estadisticas ahora tambien habilita el Panel de Resultados (Gestion de estadisticas sigue solo Admin/Master) (+ BR/BQ/BP) ===== */
+/* ===== BUILD 2026-10-19-BU | ULTIMA | Recetas: el boton "Bajar Excel" (composicion completa) ahora es solo para Admin/Master (incluye a Sole, que es admin) (+ BT/BS/BR) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -2664,9 +2664,88 @@ function recetasFiltradas() {
   });
 }
 
+// Exporta a Excel la composición completa (explotada) de las recetas filtradas: menú → platos → sub-recetas → insumos, con cantidades y costos por línea.
+window.exportarRecetasExcel = async function() {
+  if (!isMaster() && !isAdmin()) { toast('Solo un Admin puede bajar este Excel', 'error'); return; }
+  const btn = document.getElementById('recetaExportBtn');
+  const items = recetasFiltradas();
+  if (!items.length) { toast('No hay recetas para exportar con ese filtro', 'error'); return; }
+  const txt = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Generando...'; }
+  try {
+    await ensureXLSX();
+    await cargarDatosCosteo();
+    const recNom = {};
+    (await apiAll('recetas?select=id,nombre,tipo') || []).forEach(function(r){ recNom[r.id] = r.nombre; });
+    const insNom = {};
+    (await apiAll('ingredientes?select=id,nombre') || []).forEach(function(i){ insNom[i.id] = i.nombre; });
+    const uc = function(ins){ return (parseFloat(ins.costo) || 0) / (parseFloat(ins.cp) || 1); };
+    const filas = [];
+    const ind = function(n){ return n > 0 ? '          '.slice(0, n * 4) : ''; };
+    const row = function(comp, tipo, cant, unidad, costo){
+      filas.push({ 'Receta / Componente': comp, 'Tipo': tipo, 'Cantidad': cant, 'Unidad': unidad, '$ Costo': costo, '$ Venta': '', 'FC %': '', 'Margen': '' });
+    };
+    const r2 = function(x){ return Math.round(x * 100) / 100; };
+    function explotar(id, scale, nivel, stack){
+      if (stack[id]) return;
+      const st2 = Object.assign({}, stack); st2[id] = true;
+      const rec = COSTEO_RECETAS[id];
+      if (rec && rec.tipo === 'menu') {
+        (COSTEO_PASOS[id] || []).forEach(function(p){
+          if (p.opcional) return;
+          const costoPlato = computeCostoReceta(p.receta_id, {}, {}) * scale;
+          row(ind(nivel) + '▸ ' + (recNom[p.receta_id] || ('Receta #' + p.receta_id)), 'Plato', 1, 'porción', Math.round(costoPlato));
+          explotar(p.receta_id, scale, nivel + 1, st2);
+        });
+      } else {
+        (COSTEO_COMPS[id] || []).forEach(function(c){
+          const cant = parseFloat(c.cantidad) || 0;
+          if (c.tipo_componente === 'ingrediente') {
+            const ins = COSTEO_INSUMOS[c.ingrediente_id];
+            const nom = insNom[c.ingrediente_id] || ('Insumo #' + c.ingrediente_id);
+            const conv = ins ? convertirCantidad(cant, c.unidad, ins.unidad) : null;
+            const lineCost = (ins && conv != null) ? conv * uc(ins) * scale : 0;
+            row(ind(nivel) + '• ' + nom, 'Insumo', r2(cant * scale), c.unidad || '', Math.round(lineCost));
+          } else {
+            const sub = COSTEO_RECETAS[c.sub_receta_id];
+            const nom = recNom[c.sub_receta_id] || ('Receta #' + c.sub_receta_id);
+            const rend = sub ? (parseFloat(sub.rendimiento) || 0) : 0;
+            const conv = sub ? convertirCantidad(cant, c.unidad, sub.unidad_rendimiento) : null;
+            const subUnit = rend > 0 ? computeCostoReceta(c.sub_receta_id, {}, {}) / rend : 0;
+            const lineCost = (conv != null) ? conv * subUnit * scale : 0;
+            const tipoLbl = (sub && sub.tipo === 'plato') ? 'Plato' : 'Sub-elaboración';
+            row(ind(nivel) + '▸ ' + nom, tipoLbl, r2(cant * scale), c.unidad || '', Math.round(lineCost));
+            const childScale = (conv != null && rend > 0) ? scale * (conv / rend) : 0;
+            explotar(c.sub_receta_id, childScale, nivel + 1, st2);
+          }
+        });
+      }
+    }
+    items.forEach(function(r){
+      const costo = RECETAS_COSTO_CALC[r.id] != null ? RECETAS_COSTO_CALC[r.id] : computeCostoReceta(r.id, {}, {});
+      const precio = parseFloat(r.precio_venta) || 0;
+      const fc = precio > 0 ? (costo / precio * 100) : 0;
+      const tipoLbl = r.tipo === 'menu' ? 'MENÚ' : (r.tipo === 'plato' ? 'PLATO' : 'SUB-ELABORACIÓN');
+      filas.push({ 'Receta / Componente': '★ ' + r.nombre + ' (' + localLabel(r.local) + ')', 'Tipo': tipoLbl, 'Cantidad': '', 'Unidad': '', '$ Costo': Math.round(costo), '$ Venta': precio || '', 'FC %': precio > 0 ? Math.round(fc * 10) / 10 : '', 'Margen': precio > 0 ? Math.round(precio - costo) : '' });
+      explotar(r.id, 1, 1, {});
+      filas.push({ 'Receta / Componente': '', 'Tipo': '', 'Cantidad': '', 'Unidad': '', '$ Costo': '', '$ Venta': '', 'FC %': '', 'Margen': '' });
+    });
+    const fLocal = (document.getElementById('recetaFiltroLocal') || {}).value || '';
+    const suf = fLocal ? String(localLabel(fLocal)).replace(/[^a-zA-Z0-9]/g, '') : 'Todos';
+    exportarAExcel('Recetas_' + suf + '_' + hoyStr() + '.xlsx', [{ nombre: 'Composición', filas: filas }]);
+    toast('✓ Excel generado', 'success');
+  } catch (e) {
+    toast('No se pudo generar el Excel: ' + ((e && e.message) || e), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = txt; }
+  }
+};
+
 function renderRecetas() {
   const lista = document.getElementById('recetasLista');
   if (!lista) return;
+  const expBtn = document.getElementById('recetaExportBtn');
+  if (expBtn) expBtn.style.display = (isMaster() || isAdmin()) ? '' : 'none';
   const items = recetasFiltradas();
   const esPlato = RECETA_TIPO === 'plato';
   const esMenu = RECETA_TIPO === 'menu';
