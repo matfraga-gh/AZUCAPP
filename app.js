@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-10-19-BU | ULTIMA | Recetas: el boton "Bajar Excel" (composicion completa) ahora es solo para Admin/Master (incluye a Sole, que es admin) (+ BT/BS/BR) ===== */
+/* ===== BUILD 2026-10-24-BV | ULTIMA | Incidencias: el filtro de Sector ahora muestra SIEMPRE todos los sectores (COCINA incluido), no solo los del estado filtrado (+ BU/BT/BS) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -8677,7 +8677,18 @@ window.borrarCierreCaja = async function() {
 // ============================================
 // GESTIÓN DE INCIDENCIAS (editor_rosters / admin)
 // ============================================
-let GI_ESTADO = 'pendiente', GI_SECTOR = '', GI_LISTA = [], GI_EDIT = null;
+let GI_ESTADO = 'pendiente', GI_SECTOR = '', GI_LISTA = [], GI_EDIT = null, GI_SECTORES_CAT = null;
+// Catálogo fijo de sectores (para que el filtro siempre ofrezca todos, aunque el estado actual no tenga incidencias de ese sector).
+async function cargarSectoresInc() {
+  if (GI_SECTORES_CAT) return GI_SECTORES_CAT;
+  try {
+    const emps = await api('empleados?activo=eq.true&select=sector') || [];
+    const set = Array.from(new Set(emps.map(e => e.sector).filter(Boolean)));
+    set.sort((a, b) => a.localeCompare(b, 'es'));
+    GI_SECTORES_CAT = set;
+  } catch (e) { GI_SECTORES_CAT = []; }
+  return GI_SECTORES_CAT;
+}
 const GI_ESTADOS = {
   pendiente: { label: '\u23f3 Pendiente', cls: 'pendiente' },
   aprobado:  { label: '\u2713 Aceptada', cls: 'aprobado' },
@@ -8721,6 +8732,7 @@ async function cargarIncidencias() {
     data.forEach(i => { i.empleado = _emap[i.empleado_id] || null; });
     const permit = incLocalesPermitidos();
     if (permit) data = data.filter(i => i.empleado && permit.indexOf(i.empleado.local) !== -1);
+    await cargarSectoresInc();
     poblarSectorIncidencias(data);
     if (GI_SECTOR) data = data.filter(i => i.empleado && (i.empleado.sector || '') === GI_SECTOR);
     GI_LISTA = data;
@@ -8732,7 +8744,9 @@ async function cargarIncidencias() {
 function poblarSectorIncidencias(data) {
   const sel = document.getElementById('giSectorFiltro');
   if (!sel) return;
-  const sectores = Array.from(new Set(data.map(i => i.empleado && i.empleado.sector).filter(Boolean)));
+  const sectores = (GI_SECTORES_CAT && GI_SECTORES_CAT.length) ? GI_SECTORES_CAT.slice() : [];
+  // sumar sectores que aparezcan en los datos por si alguno no está en el catálogo
+  data.forEach(i => { const s = i.empleado && i.empleado.sector; if (s && sectores.indexOf(s) === -1) sectores.push(s); });
   if (GI_SECTOR && sectores.indexOf(GI_SECTOR) === -1) sectores.push(GI_SECTOR);
   sectores.sort((a, b) => a.localeCompare(b, 'es'));
   sel.innerHTML = '<option value="">Todos los sectores</option>' +
