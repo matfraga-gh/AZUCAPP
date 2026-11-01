@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-02-BZ | ULTIMA | Comprobantes (compras/pagos) + Proveedores con busqueda server-side (ya no carga los 898 de una, va mucho mas rapido). Subida de PDF a Storage, distribucion divisible por local/cuenta (+ BY/BX/BW) ===== */
+/* ===== BUILD 2026-11-02-CA | ULTIMA | Proveedores: busqueda blindada (token de request, no reflashea "Cargando") para que no se cuelgue si una extension escribe en el buscador. Comprobantes + Proveedores server-side (+ BZ/BY/BX) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -5571,14 +5571,20 @@ async function openAdminProveedores() {
 }
 window.openAdminProveedores = openAdminProveedores;
 window.onBuscarProveedor = function(v) { clearTimeout(PROV_BUSCA_T); PROV_BUSCA_T = setTimeout(function(){ buscarProveedores(v); }, 300); };
+let PROV_REQ = 0;
 async function buscarProveedores(q) {
   const cont = document.getElementById('proveedoresLista');
-  if (cont) cont.innerHTML = '<div class="loading">Cargando...</div>';
+  const mine = ++PROV_REQ;
+  // "Cargando..." solo la primera vez (si todavía no hay nada en pantalla); en búsquedas posteriores no parpadea.
+  if (cont && !PROVEEDORES_LISTA.length) cont.innerHTML = '<div class="loading">Cargando...</div>';
   q = (q || '').trim();
   let url = 'proveedores?select=id,razon_social,cuit,condicion_iva,rubro,cuenta_default_id,cbu_alias,email,telefono&order=razon_social.asc&limit=80';
   if (q) { const w = '*' + encodeURIComponent(q) + '*'; url += '&or=(razon_social.ilike.' + w + ',cuit.ilike.' + w + ',nombre_comercial.ilike.' + w + ')'; }
-  try { PROVEEDORES_LISTA = await api(url) || []; }
-  catch (e) { if (cont) cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los proveedores. ¿Corriste el SQL?</div>'; return; }
+  let data;
+  try { data = await api(url) || []; }
+  catch (e) { if (mine === PROV_REQ && cont) cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los proveedores.</div>'; return; }
+  if (mine !== PROV_REQ) return; // ya salió una búsqueda más nueva: ignoro esta respuesta vieja
+  PROVEEDORES_LISTA = data;
   renderProveedores(q);
 }
 function renderProveedores(q) {
