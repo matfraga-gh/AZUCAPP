@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CE | ULTIMA | QR: jsQR no estaba en cdnjs (404) -> se carga desde jsdelivr. Con el worker de pdf.js como blob, ya deberia leer el QR (+ CD/CC/CB) ===== */
+/* ===== BUILD 2026-11-03-CF | ULTIMA | QR: ahora tambien matchea la razon social propia por el CUIT del comprador (nroDocRec). El neto/IVA/detalle vendran de la IA de vision (prox paso) (+ CE/CD/CC) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -5805,6 +5805,11 @@ function cmpAplicarQR(j) {
     const prov = CMP_PROVEEDORES.find(function(p){ return (p.cuit || '').replace(/\D/g, '') === cuitStr; });
     if (prov) { document.getElementById('cmpProv').value = prov.razon_social || ''; provNombre = prov.razon_social; }
     else provSinCatalogo = cuitStr;
+  }
+  if (j.nroDocRec != null) {
+    const docStr = String(j.nroDocRec).replace(/\D/g, '');
+    const rz = CMP_RAZONES.find(function(r){ return (r.cuit || '').replace(/\D/g, '') === docStr; });
+    if (rz) document.getElementById('cmpRazon').value = rz.id;
   }
   if (j.ptoVta != null) document.getElementById('cmpPtoVenta').value = String(j.ptoVta).padStart(4, '0');
   if (j.nroCmp != null) document.getElementById('cmpNumero').value = String(j.nroCmp).padStart(8, '0');
