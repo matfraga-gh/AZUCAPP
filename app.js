@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CD | ULTIMA | QR: fix carga del worker de pdf.js (blob local, evita bloqueo cross-origin) + escanea todas las paginas + muestra el error real. (+ CC/CB/CA) ===== */
+/* ===== BUILD 2026-11-03-CE | ULTIMA | QR: jsQR no estaba en cdnjs (404) -> se carga desde jsdelivr. Con el worker de pdf.js como blob, ya deberia leer el QR (+ CD/CC/CB) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -5744,7 +5744,7 @@ let _cmpLibsQR = null;
 function cmpAsegurarLibsQR() {
   if (_cmpLibsQR) return _cmpLibsQR;
   _cmpLibsQR = (async function(){
-    if (typeof jsQR === 'undefined') await _cargarScript('https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js');
+    if (typeof jsQR === 'undefined') await _cargarScript('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js');
     if (typeof pdfjsLib === 'undefined') await _cargarScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
     if (window.pdfjsLib && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
       const wsrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
