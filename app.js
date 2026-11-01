@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-02-CA | ULTIMA | Proveedores: busqueda blindada (token de request, no reflashea "Cargando") para que no se cuelgue si una extension escribe en el buscador. Comprobantes + Proveedores server-side (+ BZ/BY/BX) ===== */
+/* ===== BUILD 2026-11-02-CB | ULTIMA | FIX: el modulo Proveedores chocaba de nombre (renderProveedores / proveedoresLista) con el de Insumos y quedaba en "Cargando..." para siempre. Renombrado a renderProvCat / provCatLista (+ CA/BZ/BY) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -5573,7 +5573,7 @@ window.openAdminProveedores = openAdminProveedores;
 window.onBuscarProveedor = function(v) { clearTimeout(PROV_BUSCA_T); PROV_BUSCA_T = setTimeout(function(){ buscarProveedores(v); }, 300); };
 let PROV_REQ = 0;
 async function buscarProveedores(q) {
-  const cont = document.getElementById('proveedoresLista');
+  const cont = document.getElementById('provCatLista');
   const mine = ++PROV_REQ;
   // "Cargando..." solo la primera vez (si todavía no hay nada en pantalla); en búsquedas posteriores no parpadea.
   if (cont && !PROVEEDORES_LISTA.length) cont.innerHTML = '<div class="loading">Cargando...</div>';
@@ -5585,10 +5585,10 @@ async function buscarProveedores(q) {
   catch (e) { if (mine === PROV_REQ && cont) cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los proveedores.</div>'; return; }
   if (mine !== PROV_REQ) return; // ya salió una búsqueda más nueva: ignoro esta respuesta vieja
   PROVEEDORES_LISTA = data;
-  renderProveedores(q);
+  renderProvCat(q);
 }
-function renderProveedores(q) {
-  const cont = document.getElementById('proveedoresLista');
+function renderProvCat(q) {
+  const cont = document.getElementById('provCatLista');
   if (!cont) return;
   const list = PROVEEDORES_LISTA;
   if (!list.length) { cont.innerHTML = '<div class="empty-list">No hay proveedores' + (q ? ' con ese criterio' : ' todavía') + '.</div>'; return; }
@@ -5606,7 +5606,6 @@ function renderProveedores(q) {
     '</div>';
   }).join('');
 }
-window.renderProveedores = renderProveedores;
 function _llenarFormProveedor(p) {
   document.getElementById('provRazon').value = p ? (p.razon_social || '') : '';
   document.getElementById('provCuit').value = p ? (p.cuit || '') : '';
