@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261102by">
+<link rel="stylesheet" href="styles.css?v=20261102bz">
 </head>
 <body>
 
@@ -1870,7 +1870,7 @@
       </div>
     </div>
     <button class="btn-primary" style="width:100%;margin-bottom:12px" onclick="abrirNuevoProveedor()"><i class="ti ti-plus"></i> Nuevo proveedor</button>
-    <input type="text" id="proveedorSearch" class="search-input" placeholder="Buscar por nombre o CUIT..." oninput="renderProveedores()" style="width:100%;margin-bottom:12px">
+    <input type="text" id="proveedorSearch" class="search-input" placeholder="Buscar por nombre o CUIT..." oninput="onBuscarProveedor(this.value)" style="width:100%;margin-bottom:12px">
     <div id="proveedoresLista"><div class="loading">Cargando...</div></div>
   </div>
 </div>
@@ -2603,6 +2603,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261102by"></script>
+<script src="app.js?v=20261102bz"></script>
 </body>
 </html>

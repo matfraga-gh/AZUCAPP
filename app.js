@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-02-BY | ULTIMA | Nuevo modulo "Comprobantes" (compras/pagos): alta con subida de PDF a Storage, importes y distribucion divisible por local/cuenta + permiso editor_comprobantes. Incluye tambien Proveedores (BX). No toca el flujo actual (+ BX/BW/BV) ===== */
+/* ===== BUILD 2026-11-02-BZ | ULTIMA | Comprobantes (compras/pagos) + Proveedores con busqueda server-side (ya no carga los 898 de una, va mucho mas rapido). Subida de PDF a Storage, distribucion divisible por local/cuenta (+ BY/BX/BW) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -5561,25 +5561,33 @@ function _nombreCuenta(id) {
   if (c.parent_id) { const p = PLAN_CUENTAS.find(function(x){ return x.id === c.parent_id; }); return c.grupo + ' · ' + (p ? p.nombre + ' › ' : '') + c.nombre; }
   return c.grupo + ' · ' + c.nombre;
 }
+let PROV_BUSCA_T = null;
 async function openAdminProveedores() {
   if (!isMaster() && !isAdmin()) { showDashboard(); return; }
   showView('vProveedores');
-  const cont = document.getElementById('proveedoresLista');
-  cont.innerHTML = '<div class="loading">Cargando...</div>';
-  try {
-    if (!PLAN_CUENTAS.length) { try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || []; } catch (e) {} }
-    PROVEEDORES_LISTA = await api('proveedores?order=razon_social.asc') || [];
-  } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los proveedores. ¿Corriste proveedores.sql?</div>'; return; }
-  renderProveedores();
+  if (!PLAN_CUENTAS.length) { try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || []; } catch (e) {} }
+  const s = document.getElementById('proveedorSearch'); if (s) s.value = '';
+  await buscarProveedores('');
 }
 window.openAdminProveedores = openAdminProveedores;
-function renderProveedores() {
+window.onBuscarProveedor = function(v) { clearTimeout(PROV_BUSCA_T); PROV_BUSCA_T = setTimeout(function(){ buscarProveedores(v); }, 300); };
+async function buscarProveedores(q) {
+  const cont = document.getElementById('proveedoresLista');
+  if (cont) cont.innerHTML = '<div class="loading">Cargando...</div>';
+  q = (q || '').trim();
+  let url = 'proveedores?select=id,razon_social,cuit,condicion_iva,rubro,cuenta_default_id,cbu_alias,email,telefono&order=razon_social.asc&limit=80';
+  if (q) { const w = '*' + encodeURIComponent(q) + '*'; url += '&or=(razon_social.ilike.' + w + ',cuit.ilike.' + w + ',nombre_comercial.ilike.' + w + ')'; }
+  try { PROVEEDORES_LISTA = await api(url) || []; }
+  catch (e) { if (cont) cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los proveedores. ¿Corriste el SQL?</div>'; return; }
+  renderProveedores(q);
+}
+function renderProveedores(q) {
   const cont = document.getElementById('proveedoresLista');
   if (!cont) return;
-  const q = normalizar((document.getElementById('proveedorSearch') || {}).value || '');
-  const list = PROVEEDORES_LISTA.filter(function(p){ return !q || normalizar((p.razon_social || '') + ' ' + (p.cuit || '')).indexOf(q) !== -1; });
+  const list = PROVEEDORES_LISTA;
   if (!list.length) { cont.innerHTML = '<div class="empty-list">No hay proveedores' + (q ? ' con ese criterio' : ' todavía') + '.</div>'; return; }
-  cont.innerHTML = list.map(function(p){
+  const hint = (!q && list.length >= 80) ? '<div class="cierre-hint" style="margin-bottom:10px"><i class="ti ti-search"></i> Mostrando los primeros 80. Buscá por nombre o CUIT para encontrar uno puntual.</div>' : '';
+  cont.innerHTML = hint + list.map(function(p){
     const sub1 = [ (p.cuit ? 'CUIT: ' + esc(p.cuit) : ''), (p.condicion_iva ? esc(p.condicion_iva) : ''), (p.rubro ? esc(p.rubro) : '') ].filter(Boolean).join(' · ');
     const cta = p.cuenta_default_id ? _nombreCuenta(p.cuenta_default_id) : '';
     const sub2 = [ (cta ? '<i class="ti ti-sitemap"></i> ' + esc(cta) : ''), (p.cbu_alias ? 'Pago: ' + esc(p.cbu_alias) : '') ].filter(Boolean).join(' · ');
@@ -5706,17 +5714,24 @@ async function openComprobantes() {
   cont.innerHTML = '<div class="loading">Cargando...</div>';
   try {
     if (!PLAN_CUENTAS.length) { try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || []; } catch (e) {} }
-    if (!CMP_PROVEEDORES.length) { CMP_PROVEEDORES = await apiAll('proveedores?select=id,razon_social,cuit,cuenta_default_id&order=razon_social.asc') || []; }
-    CMP_PROV_MAP = {}; CMP_PROVEEDORES.forEach(function(p){ CMP_PROV_MAP[p.id] = p; });
     CMP_RAZONES = await api('razones_sociales?activo=eq.true&order=nombre.asc') || [];
     const est = (document.getElementById('cmpEstadoFiltro') || {}).value || '';
     let q = 'comprobantes?select=*&order=creado_en.desc&limit=300';
     if (est) q += '&estado=eq.' + est;
     CMP_LISTA = await api(q) || [];
+    // Nombres de proveedor: solo los referenciados en la lista (rápido)
+    const pids = Array.from(new Set(CMP_LISTA.map(function(c){ return c.proveedor_id; }).filter(Boolean)));
+    if (pids.length) { const ps = await api('proveedores?id=in.(' + pids.join(',') + ')&select=id,razon_social') || []; ps.forEach(function(p){ CMP_PROV_MAP[p.id] = p; }); }
   } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los comprobantes. ¿Corriste comprobantes.sql?</div>'; return; }
   renderComprobantes();
 }
 window.openComprobantes = openComprobantes;
+// Carga el padrón completo de proveedores (para el buscador del formulario), una sola vez.
+async function cmpAsegurarProveedores() {
+  if (CMP_PROVEEDORES.length) return;
+  CMP_PROVEEDORES = await apiAll('proveedores?select=id,razon_social,cuit,cuenta_default_id&order=razon_social.asc') || [];
+  CMP_PROVEEDORES.forEach(function(p){ if (!CMP_PROV_MAP[p.id]) CMP_PROV_MAP[p.id] = p; });
+}
 window.onFiltroComprobantes = function(){ openComprobantes(); };
 function _cmpMoney(v){ return '$' + formatNumber(Math.round(parseFloat(v) || 0)); }
 function renderComprobantes() {
@@ -5794,10 +5809,11 @@ function _cmpLimpiarForm() {
   document.getElementById('cmpAdjEstado').innerHTML = '';
   const fi = document.getElementById('cmpArchivo'); if (fi) fi.value = '';
 }
-window.abrirNuevoComprobante = function() {
+window.abrirNuevoComprobante = async function() {
   CMP_EDIT_ID = null;
   document.getElementById('cmpModalTitulo').textContent = 'Nuevo comprobante';
   _cmpLimpiarForm();
+  try { await cmpAsegurarProveedores(); } catch (e) {}
   _cmpLlenarSelects(null);
   CMP_DIST = [{ local: '', cuenta_id: '', monto: '' }];
   renderDistComprobante();
@@ -5810,6 +5826,7 @@ window.abrirEditarComprobante = async function(id) {
   CMP_EDIT_ID = id;
   document.getElementById('cmpModalTitulo').textContent = 'Editar comprobante';
   _cmpLimpiarForm();
+  try { await cmpAsegurarProveedores(); } catch (e) {}
   _cmpLlenarSelects(c);
   document.getElementById('cmpPtoVenta').value = c.punto_venta || '';
   document.getElementById('cmpNumero').value = c.numero || '';
