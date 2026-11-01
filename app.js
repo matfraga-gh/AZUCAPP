@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-02-CC | ULTIMA | Comprobantes: precarga inteligente por QR de AFIP al subir el PDF/foto (autocompleta proveedor por CUIT, tipo, pto venta, numero, fecha, total y CAE). pdf.js + jsQR bajo demanda (+ CB/CA/BZ) ===== */
+/* ===== BUILD 2026-11-03-CD | ULTIMA | QR: fix carga del worker de pdf.js (blob local, evita bloqueo cross-origin) + escanea todas las paginas + muestra el error real. (+ CC/CB/CA) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -5745,9 +5745,14 @@ function cmpAsegurarLibsQR() {
   if (_cmpLibsQR) return _cmpLibsQR;
   _cmpLibsQR = (async function(){
     if (typeof jsQR === 'undefined') await _cargarScript('https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js');
-    if (typeof pdfjsLib === 'undefined') {
-      await _cargarScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
-      if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    if (typeof pdfjsLib === 'undefined') await _cargarScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+    if (window.pdfjsLib && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      const wsrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      // Los navegadores bloquean workers de otro dominio: traigo el worker y lo cargo como blob local.
+      try {
+        const code = await fetch(wsrc).then(function(r){ return r.text(); });
+        pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+      } catch (e) { pdfjsLib.GlobalWorkerOptions.workerSrc = wsrc; }
     }
   })();
   return _cmpLibsQR;
@@ -5763,8 +5768,8 @@ async function cmpLeerQR(file) {
   const esPdf = /pdf/i.test(file.type || '') || /\.pdf$/i.test(file.name || '');
   if (esPdf) {
     const buf = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-    const n = Math.min(pdf.numPages, 2);
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+    const n = Math.min(pdf.numPages, 5);
     for (let p = 1; p <= n; p++) {
       const page = await pdf.getPage(p);
       for (let i = 0; i < 2; i++) {               // 2 intentos a distinta resolución
@@ -5952,7 +5957,7 @@ window.cmpOnArchivo = async function(input) {
     } else {
       est.innerHTML = adjHtml + ' · <span style="color:var(--c-muted)">sin QR legible — cargá los datos a mano</span>';
     }
-  } catch (e) { est.innerHTML = adjHtml + ' · <span style="color:var(--c-muted)">no se pudo leer el QR</span>'; }
+  } catch (e) { est.innerHTML = adjHtml + ' · <span style="color:var(--c-muted)">no se pudo leer el QR (' + esc((((e && e.message) || e) + '').slice(0, 70)) + ')</span>'; }
 };
 window.cmpNuevaRazon = async function() {
   const nombre = (window.prompt('Nombre de la razón social:') || '').trim();
