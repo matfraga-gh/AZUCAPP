@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CF | ULTIMA | QR: ahora tambien matchea la razon social propia por el CUIT del comprador (nroDocRec). El neto/IVA/detalle vendran de la IA de vision (prox paso) (+ CE/CD/CC) ===== */
+/* ===== BUILD 2026-11-03-CG | ULTIMA | Comprobantes: IA de vision (Claude via Edge Function) completa neto/IVA/percepciones/total/detalle al subir el archivo, y resuelve los comprobantes sin QR. Requiere desplegar edge_extraer_comprobante.ts + secreto ANTHROPIC_API_KEY (+ CF/CE/CD) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -5820,6 +5820,39 @@ function cmpAplicarQR(j) {
   cmpSumaDist();
   return { provNombre: provNombre, provSinCatalogo: provSinCatalogo };
 }
+// --- IA de visión (completa lo que el QR no trae; y todo, en comprobantes sin QR) ---
+function _cmpSetIfEmpty(id, val) { const e = document.getElementById(id); if (e && (e.value == null || e.value === '') && val != null && val !== '') e.value = val; }
+async function cmpExtraerIA(path) {
+  const r = await fetch(SUPABASE_URL + '/functions/v1/extraer-comprobante', {
+    method: 'POST', headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: path })
+  });
+  const j = await r.json();
+  if (!r.ok || (j && j.error)) throw new Error((j && j.error) || ('IA ' + r.status));
+  return j;
+}
+function cmpAplicarIA(j) {
+  if (!j) return;
+  _cmpSetIfEmpty('cmpNeto', j.neto);
+  _cmpSetIfEmpty('cmpIva', j.iva);
+  _cmpSetIfEmpty('cmpPercep', j.percepciones);
+  _cmpSetIfEmpty('cmpOtros', j.otros_imp);
+  _cmpSetIfEmpty('cmpTotal', j.total);
+  _cmpSetIfEmpty('cmpFechaEmision', j.fecha_emision);
+  _cmpSetIfEmpty('cmpFechaVto', j.fecha_vto);
+  _cmpSetIfEmpty('cmpPtoVenta', j.punto_venta);
+  _cmpSetIfEmpty('cmpNumero', j.numero);
+  if (!document.getElementById('cmpProv').value && j.proveedor_cuit) {
+    const cuit = String(j.proveedor_cuit).replace(/\D/g, '');
+    const p = CMP_PROVEEDORES.find(function(x){ return (x.cuit || '').replace(/\D/g, '') === cuit; });
+    if (p) document.getElementById('cmpProv').value = p.razon_social || '';
+  }
+  if (!document.getElementById('cmpTipo').value && j.tipo) {
+    const sel = document.getElementById('cmpTipo');
+    for (let i = 0; i < sel.options.length; i++) { if (sel.options[i].value.toLowerCase() === String(j.tipo).toLowerCase()) { sel.selectedIndex = i; break; } }
+  }
+  cmpSumaDist();
+}
 window.onFiltroComprobantes = function(){ openComprobantes(); };
 function _cmpMoney(v){ return '$' + formatNumber(Math.round(parseFloat(v) || 0)); }
 function renderComprobantes() {
@@ -5963,6 +5996,16 @@ window.cmpOnArchivo = async function(input) {
       est.innerHTML = adjHtml + ' · <span style="color:var(--c-muted)">sin QR legible — cargá los datos a mano</span>';
     }
   } catch (e) { est.innerHTML = adjHtml + ' · <span style="color:var(--c-muted)">no se pudo leer el QR (' + esc((((e && e.message) || e) + '').slice(0, 70)) + ')</span>'; }
+  // IA de visión: completa neto/IVA/percepciones/detalle (y todo lo que falte, en comprobantes sin QR)
+  if (CMP_ADJUNTO_PATH) {
+    const prev = est.innerHTML;
+    est.innerHTML = prev + ' · <span style="color:var(--c-muted)">leyendo con IA…</span>';
+    try {
+      const ia = await cmpExtraerIA(CMP_ADJUNTO_PATH);
+      cmpAplicarIA(ia);
+      est.innerHTML = prev + ' · <span style="color:#4CAF7A">✓ completado con IA</span>';
+    } catch (e) { est.innerHTML = prev; }
+  }
 };
 window.cmpNuevaRazon = async function() {
   const nombre = (window.prompt('Nombre de la razón social:') || '').trim();
