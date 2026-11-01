@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261024bv">
+<link rel="stylesheet" href="styles.css?v=20261101bw">
 </head>
 <body>
 
@@ -1830,6 +1830,36 @@
   </div>
 </div>
 
+<div id="vPlanCuentas" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="openAdministracion()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Plan de cuentas</div>
+        <div class="module-subtitle">Cuentas y sub-cuentas del Panel de Resultados</div>
+      </div>
+    </div>
+    <div id="planCuentasLista"><div class="loading">Cargando...</div></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalPlanCuenta">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title" id="pcModalTitulo">Nueva cuenta</h2>
+      <button class="modal-close" onclick="closePlanCuenta()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+      <label class="field"><span class="field-label">Nombre</span><input type="text" id="pcNombre" placeholder="Ej: Lavandería, Servilletas…"></label>
+      <div class="login-error" id="pcError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closePlanCuenta()">Cancelar</button>
+      <button class="btn-primary" id="pcGuardarBtn" onclick="guardarPlanCuenta()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <div id="vEventos" class="view">
   <div class="module-wrap">
     <div class="module-header">
@@ -2453,6 +2483,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261024bv"></script>
+<script src="app.js?v=20261101bw"></script>
 </body>
 </html>

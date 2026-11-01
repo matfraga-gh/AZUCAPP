@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-10-24-BV | ULTIMA | Incidencias: el filtro de Sector ahora muestra SIEMPRE todos los sectores (COCINA incluido), no solo los del estado filtrado (+ BU/BT/BS) ===== */
+/* ===== BUILD 2026-11-01-BW | ULTIMA | Nuevo modulo Admin "Plan de cuentas": catalogo editable de 3 niveles (grupo fijo VN/CM/CL/GO/GA > cuenta > sub-cuenta), base del proyecto de Resultados en tiempo real. No toca el panel actual (+ BV/BU/BT) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -3601,6 +3601,15 @@ const ADMIN_SECTIONS = [
     action: () => openAdminClientes()
   },
   {
+    id: 'plan_cuentas',
+    icon: 'ti-sitemap',
+    color: '#0E9AA7',
+    title: 'Plan de cuentas',
+    desc: 'Cuentas y sub-cuentas del Panel de Resultados',
+    activa: true,
+    action: () => openAdminPlanCuentas()
+  },
+  {
     id: 'historial',
     icon: 'ti-history',
     color: '#B4B2A9',
@@ -5384,6 +5393,123 @@ window.eliminarCliente = async function(id) {
   const ok = await showConfirm({ title: 'Eliminar cliente', msg: 'Vas a eliminar a "' + c.nombre + '". Las reservas o eventos asociados quedan sin cliente.\n\n¿Confirmás?', type: 'warning', okLabel: 'Sí, eliminar', cancelLabel: 'Cancelar' });
   if (!ok) return;
   try { await api('reservas_clientes?id=eq.' + id, { method: 'DELETE' }); toast('✓ Cliente eliminado', 'success'); await openAdminClientes(); }
+  catch (e) { toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error'); }
+};
+
+// ============================================
+// ADMIN: PLAN DE CUENTAS (Panel de Resultados)
+// ============================================
+let PLAN_CUENTAS = [], PC_EDIT_ID = null, PC_CTX = { grupo: '', parent_id: null };
+const PC_GRUPOS = [
+  ['VN', 'VN · Ventas Netas', '#2E7D32'],
+  ['CM', 'CM · Costo de Mercadería', '#C77DAE'],
+  ['CL', 'CL · Costo Laboral', '#C87A2C'],
+  ['GO', 'GO · Gastos Operativos', '#2D7FC4'],
+  ['GA', 'GA · Gastos Azuca', '#6FA8DC']
+];
+async function openAdminPlanCuentas() {
+  if (!isMaster() && !isAdmin()) { showDashboard(); return; }
+  showView('vPlanCuentas');
+  const cont = document.getElementById('planCuentasLista');
+  cont.innerHTML = '<div class="loading">Cargando...</div>';
+  try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || []; }
+  catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar las cuentas. ¿Corriste plan_cuentas.sql?</div>'; return; }
+  renderPlanCuentas();
+}
+window.openAdminPlanCuentas = openAdminPlanCuentas;
+function renderPlanCuentas() {
+  const cont = document.getElementById('planCuentasLista');
+  if (!cont) return;
+  const porParent = {};
+  PLAN_CUENTAS.forEach(function(c){ if (c.parent_id) (porParent[c.parent_id] = porParent[c.parent_id] || []).push(c); });
+  let html = '<div class="cierre-hint" style="margin-bottom:12px"><i class="ti ti-info-circle"></i> Los grupos (VN, CM, CL, GO, GA) son fijos. Podés agregar, renombrar o quitar cuentas y sub-cuentas. CB y EBITDA se calculan solos.</div>';
+  PC_GRUPOS.forEach(function(g){
+    const grupo = g[0], label = g[1], color = g[2];
+    const cuentas = PLAN_CUENTAS.filter(function(c){ return c.grupo === grupo && !c.parent_id; });
+    html += '<div style="margin-top:14px">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:' + color + ';color:#fff;font-weight:700;padding:7px 11px;border-radius:7px;font-size:13px">' +
+      '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(label) + '</span>' +
+      '<button class="btn-ghost" style="flex:0 0 auto;padding:3px 8px;color:#fff;border:1px solid rgba(255,255,255,.5)" onclick="abrirNuevaCuenta(\'' + grupo + '\')"><i class="ti ti-plus"></i> Cuenta</button>' +
+      '</div>';
+    if (!cuentas.length) {
+      html += '<div class="cierre-hint" style="padding:6px 10px">Sin cuentas todavía.</div>';
+    } else {
+      cuentas.forEach(function(c){
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding:7px 10px;border-bottom:1px solid var(--c-cream-border)">' +
+          '<span style="font-weight:600;color:var(--c-cream);min-width:0;overflow:hidden;text-overflow:ellipsis">' + esc(c.nombre) + '</span>' +
+          '<span style="flex:0 0 auto;display:flex;gap:2px">' +
+            '<button class="btn-ghost" style="padding:4px 7px" title="Agregar sub-cuenta" onclick="abrirNuevaSubcuenta(' + c.id + ',\'' + grupo + '\')"><i class="ti ti-plus"></i></button>' +
+            '<button class="btn-ghost" style="padding:4px 7px" onclick="abrirEditarCuenta(' + c.id + ')"><i class="ti ti-pencil"></i></button>' +
+            '<button class="btn-ghost" style="padding:4px 7px;color:var(--c-error)" onclick="eliminarCuenta(' + c.id + ')"><i class="ti ti-trash"></i></button>' +
+          '</span></div>';
+        (porParent[c.id] || []).forEach(function(s){
+          html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding:5px 10px 5px 28px;border-bottom:1px solid var(--c-cream-border);font-size:13px">' +
+            '<span style="opacity:.85;color:var(--c-cream);min-width:0;overflow:hidden;text-overflow:ellipsis">↳ ' + esc(s.nombre) + '</span>' +
+            '<span style="flex:0 0 auto;display:flex;gap:2px">' +
+              '<button class="btn-ghost" style="padding:4px 7px" onclick="abrirEditarCuenta(' + s.id + ')"><i class="ti ti-pencil"></i></button>' +
+              '<button class="btn-ghost" style="padding:4px 7px;color:var(--c-error)" onclick="eliminarCuenta(' + s.id + ')"><i class="ti ti-trash"></i></button>' +
+            '</span></div>';
+        });
+      });
+    }
+    html += '</div>';
+  });
+  cont.innerHTML = html;
+}
+window.abrirNuevaCuenta = function(grupo) {
+  PC_EDIT_ID = null; PC_CTX = { grupo: grupo, parent_id: null };
+  document.getElementById('pcModalTitulo').textContent = 'Nueva cuenta en ' + grupo;
+  document.getElementById('pcNombre').value = '';
+  document.getElementById('pcError').textContent = '';
+  document.getElementById('modalPlanCuenta').classList.add('show');
+};
+window.abrirNuevaSubcuenta = function(parentId, grupo) {
+  PC_EDIT_ID = null; PC_CTX = { grupo: grupo, parent_id: parentId };
+  const p = PLAN_CUENTAS.find(function(x){ return x.id === parentId; });
+  document.getElementById('pcModalTitulo').textContent = 'Nueva sub-cuenta en ' + (p ? p.nombre : '');
+  document.getElementById('pcNombre').value = '';
+  document.getElementById('pcError').textContent = '';
+  document.getElementById('modalPlanCuenta').classList.add('show');
+};
+window.abrirEditarCuenta = function(id) {
+  const c = PLAN_CUENTAS.find(function(x){ return x.id === id; });
+  if (!c) return;
+  PC_EDIT_ID = id; PC_CTX = { grupo: c.grupo, parent_id: c.parent_id || null };
+  document.getElementById('pcModalTitulo').textContent = c.parent_id ? 'Editar sub-cuenta' : 'Editar cuenta';
+  document.getElementById('pcNombre').value = c.nombre || '';
+  document.getElementById('pcError').textContent = '';
+  document.getElementById('modalPlanCuenta').classList.add('show');
+};
+window.closePlanCuenta = function() { document.getElementById('modalPlanCuenta').classList.remove('show'); };
+window.guardarPlanCuenta = async function() {
+  const err = document.getElementById('pcError'); err.textContent = '';
+  const nombre = document.getElementById('pcNombre').value.trim();
+  if (!nombre) { err.textContent = 'Poné un nombre.'; return; }
+  const btn = document.getElementById('pcGuardarBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
+  try {
+    if (PC_EDIT_ID) {
+      await api('plan_cuentas?id=eq.' + PC_EDIT_ID, { method: 'PATCH', body: JSON.stringify({ nombre: nombre }) });
+    } else {
+      const hermanos = PLAN_CUENTAS.filter(function(c){ return c.grupo === PC_CTX.grupo && (c.parent_id || null) === (PC_CTX.parent_id || null); });
+      const orden = hermanos.reduce(function(m, c){ return Math.max(m, c.orden || 0); }, 0) + 1;
+      await api('plan_cuentas', { method: 'POST', body: JSON.stringify({ grupo: PC_CTX.grupo, nombre: nombre, parent_id: PC_CTX.parent_id, orden: orden, creado_por: currentUser ? currentUser.id : null }) });
+    }
+    closePlanCuenta();
+    await openAdminPlanCuentas();
+    toast('✓ Guardado', 'success');
+  } catch (e) { err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e); }
+  finally { btn.disabled = false; btn.textContent = t; }
+};
+window.eliminarCuenta = async function(id) {
+  const c = PLAN_CUENTAS.find(function(x){ return x.id === id; });
+  if (!c) return;
+  const tieneSubs = PLAN_CUENTAS.some(function(x){ return x.parent_id === id; });
+  const msg = tieneSubs
+    ? 'Vas a eliminar "' + c.nombre + '" y todas sus sub-cuentas. ¿Confirmás?'
+    : 'Vas a eliminar "' + c.nombre + '". ¿Confirmás?';
+  const ok = await showConfirm({ title: 'Eliminar', msg: msg, type: 'warning', okLabel: 'Sí, eliminar', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  try { await api('plan_cuentas?id=eq.' + id, { method: 'DELETE' }); toast('✓ Eliminado', 'success'); await openAdminPlanCuentas(); }
   catch (e) { toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error'); }
 };
 
