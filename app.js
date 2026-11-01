@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-02-CB | ULTIMA | FIX: el modulo Proveedores chocaba de nombre (renderProveedores / proveedoresLista) con el de Insumos y quedaba en "Cargando..." para siempre. Renombrado a renderProvCat / provCatLista (+ CA/BZ/BY) ===== */
+/* ===== BUILD 2026-11-02-CC | ULTIMA | Comprobantes: precarga inteligente por QR de AFIP al subir el PDF/foto (autocompleta proveedor por CUIT, tipo, pto venta, numero, fecha, total y CAE). pdf.js + jsQR bajo demanda (+ CB/CA/BZ) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -5737,6 +5737,79 @@ async function cmpAsegurarProveedores() {
   CMP_PROVEEDORES = await apiAll('proveedores?select=id,razon_social,cuit,cuenta_default_id&order=razon_social.asc') || [];
   CMP_PROVEEDORES.forEach(function(p){ if (!CMP_PROV_MAP[p.id]) CMP_PROV_MAP[p.id] = p; });
 }
+
+// --- Lectura automática del QR de AFIP (pdf.js + jsQR, bajo demanda) ---
+function _cargarScript(src) { return new Promise(function(res, rej){ const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = function(){ rej(new Error('No se pudo cargar ' + src)); }; document.head.appendChild(s); }); }
+let _cmpLibsQR = null;
+function cmpAsegurarLibsQR() {
+  if (_cmpLibsQR) return _cmpLibsQR;
+  _cmpLibsQR = (async function(){
+    if (typeof jsQR === 'undefined') await _cargarScript('https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js');
+    if (typeof pdfjsLib === 'undefined') {
+      await _cargarScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+      if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  })();
+  return _cmpLibsQR;
+}
+function _scanCanvas(cv) {
+  const ctx = cv.getContext('2d');
+  const img = ctx.getImageData(0, 0, cv.width, cv.height);
+  const code = (typeof jsQR !== 'undefined') ? jsQR(img.data, img.width, img.height) : null;
+  return code && code.data ? code.data : null;
+}
+async function cmpLeerQR(file) {
+  await cmpAsegurarLibsQR();
+  const esPdf = /pdf/i.test(file.type || '') || /\.pdf$/i.test(file.name || '');
+  if (esPdf) {
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const n = Math.min(pdf.numPages, 2);
+    for (let p = 1; p <= n; p++) {
+      const page = await pdf.getPage(p);
+      for (let i = 0; i < 2; i++) {               // 2 intentos a distinta resolución
+        const vp = page.getViewport({ scale: i === 0 ? 2.5 : 3.5 });
+        const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
+        await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        const d = _scanCanvas(cv); if (d) return d;
+      }
+    }
+    return null;
+  }
+  const url = URL.createObjectURL(file);
+  try {
+    const im = await new Promise(function(res, rej){ const i = new Image(); i.onload = function(){ res(i); }; i.onerror = rej; i.src = url; });
+    const cv = document.createElement('canvas'); cv.width = im.naturalWidth || im.width; cv.height = im.naturalHeight || im.height;
+    cv.getContext('2d').drawImage(im, 0, 0);
+    return _scanCanvas(cv);
+  } finally { URL.revokeObjectURL(url); }
+}
+const CMP_AFIP_TIPO = { 1:'Factura A', 2:'Nota de Débito', 3:'Nota de Crédito', 6:'Factura B', 7:'Nota de Débito', 8:'Nota de Crédito', 11:'Factura C', 12:'Nota de Débito', 13:'Nota de Crédito', 51:'Factura A', 81:'Factura A', 82:'Factura B', 83:'Factura C' };
+function cmpParseQR(texto) {
+  try {
+    const u = new URL(texto);
+    const p = u.searchParams.get('p'); if (!p) return null;
+    const b = p.replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(decodeURIComponent(escape(atob(b))));
+  } catch (e) { return null; }
+}
+function cmpAplicarQR(j) {
+  let provNombre = null, provSinCatalogo = null;
+  if (j.cuit != null) {
+    const cuitStr = String(j.cuit).replace(/\D/g, '');
+    const prov = CMP_PROVEEDORES.find(function(p){ return (p.cuit || '').replace(/\D/g, '') === cuitStr; });
+    if (prov) { document.getElementById('cmpProv').value = prov.razon_social || ''; provNombre = prov.razon_social; }
+    else provSinCatalogo = cuitStr;
+  }
+  if (j.ptoVta != null) document.getElementById('cmpPtoVenta').value = String(j.ptoVta).padStart(4, '0');
+  if (j.nroCmp != null) document.getElementById('cmpNumero').value = String(j.nroCmp).padStart(8, '0');
+  if (j.fecha) document.getElementById('cmpFechaEmision').value = String(j.fecha).slice(0, 10);
+  if (j.importe != null) document.getElementById('cmpTotal').value = j.importe;
+  if (j.codAut != null) document.getElementById('cmpCae').value = String(j.codAut);
+  const tipo = CMP_AFIP_TIPO[j.tipoCmp]; if (tipo) document.getElementById('cmpTipo').value = tipo;
+  cmpSumaDist();
+  return { provNombre: provNombre, provSinCatalogo: provSinCatalogo };
+}
 window.onFiltroComprobantes = function(){ openComprobantes(); };
 function _cmpMoney(v){ return '$' + formatNumber(Math.round(parseFloat(v) || 0)); }
 function renderComprobantes() {
@@ -5860,11 +5933,26 @@ window.cmpOnArchivo = async function(input) {
   const file = input.files && input.files[0]; if (!file) return;
   const est = document.getElementById('cmpAdjEstado');
   est.innerHTML = '<span style="color:var(--c-muted)"><i class="ti ti-loader"></i> Subiendo...</span>';
+  let adjHtml = '';
   try {
     const path = await cmpSubirArchivo(file);
     CMP_ADJUNTO_PATH = path;
-    est.innerHTML = '<a href="#" onclick="cmpVerAdjunto(\'' + esc(path) + '\');return false;" style="color:var(--c-sand)"><i class="ti ti-file-text"></i> Archivo adjunto ✓ (ver)</a>';
-  } catch (e) { est.innerHTML = '<span style="color:var(--c-error)">No se pudo subir: ' + esc((e && e.message) || e) + '</span>'; }
+    adjHtml = '<a href="#" onclick="cmpVerAdjunto(\'' + esc(path) + '\');return false;" style="color:var(--c-sand)"><i class="ti ti-file-text"></i> Archivo adjunto ✓ (ver)</a>';
+    est.innerHTML = adjHtml + ' · <span style="color:var(--c-muted)">leyendo QR…</span>';
+  } catch (e) { est.innerHTML = '<span style="color:var(--c-error)">No se pudo subir: ' + esc((e && e.message) || e) + '</span>'; return; }
+  // Precarga inteligente por QR de AFIP
+  try {
+    const texto = await cmpLeerQR(file);
+    const j = texto ? cmpParseQR(texto) : null;
+    if (j) {
+      const r = cmpAplicarQR(j);
+      let msg = '<span style="color:#4CAF7A">✓ datos precargados del QR</span>';
+      if (r.provSinCatalogo) msg += ' <span style="color:#EF9F27">(CUIT ' + esc(r.provSinCatalogo) + ' no está en Proveedores)</span>';
+      est.innerHTML = adjHtml + ' · ' + msg;
+    } else {
+      est.innerHTML = adjHtml + ' · <span style="color:var(--c-muted)">sin QR legible — cargá los datos a mano</span>';
+    }
+  } catch (e) { est.innerHTML = adjHtml + ' · <span style="color:var(--c-muted)">no se pudo leer el QR</span>'; }
 };
 window.cmpNuevaRazon = async function() {
   const nombre = (window.prompt('Nombre de la razón social:') || '').trim();
