@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261101bw">
+<link rel="stylesheet" href="styles.css?v=20261102by">
 </head>
 <body>
 
@@ -1860,6 +1860,126 @@
   </div>
 </div>
 
+<div id="vProveedores" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="openAdministracion()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Proveedores</div>
+        <div class="module-subtitle">Catálogo de proveedores (compras y pagos)</div>
+      </div>
+    </div>
+    <button class="btn-primary" style="width:100%;margin-bottom:12px" onclick="abrirNuevoProveedor()"><i class="ti ti-plus"></i> Nuevo proveedor</button>
+    <input type="text" id="proveedorSearch" class="search-input" placeholder="Buscar por nombre o CUIT..." oninput="renderProveedores()" style="width:100%;margin-bottom:12px">
+    <div id="proveedoresLista"><div class="loading">Cargando...</div></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalProveedor">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title" id="provModalTitulo">Nuevo proveedor</h2>
+      <button class="modal-close" onclick="closeProveedor()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+      <label class="field"><span class="field-label">Razón social</span><input type="text" id="provRazon"></label>
+      <label class="field"><span class="field-label">CUIT</span><input type="text" id="provCuit" placeholder="Opcional"></label>
+      <label class="field"><span class="field-label">Condición IVA</span><select id="provCondIva"></select></label>
+      <label class="field"><span class="field-label">Rubro</span><input type="text" id="provRubro" placeholder="Ej: Alimentos, Bebidas, Servicios…"></label>
+      <label class="field"><span class="field-label">Cuenta por defecto (se sugiere al cargar)</span><select id="provCuenta"></select></label>
+      <label class="field"><span class="field-label">CBU / Alias de pago</span><input type="text" id="provCbu" placeholder="Opcional"></label>
+      <label class="field"><span class="field-label">Email</span><input type="email" id="provEmail" placeholder="Opcional"></label>
+      <label class="field"><span class="field-label">Teléfono</span><input type="tel" id="provTel" placeholder="Opcional"></label>
+      <div class="login-error" id="provError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeProveedor()">Cancelar</button>
+      <button class="btn-primary" id="provGuardarBtn" onclick="guardarProveedor()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="vComprobantes" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Comprobantes</div>
+        <div class="module-subtitle">Facturas y gastos (compras y pagos)</div>
+      </div>
+    </div>
+    <button class="btn-primary" style="width:100%;margin-bottom:12px" onclick="abrirNuevoComprobante()"><i class="ti ti-plus"></i> Nuevo comprobante</button>
+    <label class="field"><span class="field-label">Estado</span>
+      <select id="cmpEstadoFiltro" onchange="onFiltroComprobantes()">
+        <option value="">Todos</option>
+        <option value="pendiente_pago">Pendientes de pago</option>
+        <option value="en_orden_pago">En orden de pago</option>
+        <option value="pago_emitido">Pago emitido</option>
+        <option value="pagado_parcial">Pagado parcial</option>
+        <option value="pago_completado">Pagados</option>
+        <option value="anulado">Anulados</option>
+      </select></label>
+    <div id="comprobantesLista" style="margin-top:12px"><div class="loading">Cargando...</div></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalComprobante">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title" id="cmpModalTitulo">Nuevo comprobante</h2>
+      <button class="modal-close" onclick="closeComprobante()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+      <label class="field"><span class="field-label">Archivo (PDF o foto)</span>
+        <input type="file" id="cmpArchivo" accept="application/pdf,image/*" onchange="cmpOnArchivo(this)"></label>
+      <div id="cmpAdjEstado" style="font-size:12px;margin:-4px 0 8px"></div>
+
+      <label class="field"><span class="field-label">Proveedor</span>
+        <input type="text" id="cmpProv" list="cmpProvList" placeholder="Empezá a escribir…" autocomplete="off">
+        <datalist id="cmpProvList"></datalist></label>
+      <label class="field"><span class="field-label">Razón social propia <a href="#" onclick="cmpNuevaRazon();return false;" style="font-weight:400;font-size:12px;color:var(--c-sand)">+ nueva</a></span>
+        <select id="cmpRazon"></select></label>
+      <label class="field"><span class="field-label">Tipo de comprobante</span><select id="cmpTipo"></select></label>
+
+      <div style="display:flex;gap:8px">
+        <label class="field" style="flex:1"><span class="field-label">Pto. venta</span><input type="text" id="cmpPtoVenta" placeholder="0001"></label>
+        <label class="field" style="flex:2"><span class="field-label">Número</span><input type="text" id="cmpNumero" placeholder="00001234"></label>
+      </div>
+      <div style="display:flex;gap:8px">
+        <label class="field" style="flex:1"><span class="field-label">Fecha emisión</span><input type="date" id="cmpFechaEmision"></label>
+        <label class="field" style="flex:1"><span class="field-label">Vencimiento</span><input type="date" id="cmpFechaVto"></label>
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <label class="field" style="flex:1"><span class="field-label">Neto</span><input type="number" step="0.01" id="cmpNeto" oninput="cmpSumaDist()"></label>
+        <label class="field" style="flex:1"><span class="field-label">IVA</span><input type="number" step="0.01" id="cmpIva"></label>
+      </div>
+      <div style="display:flex;gap:8px">
+        <label class="field" style="flex:1"><span class="field-label">Percepciones</span><input type="number" step="0.01" id="cmpPercep"></label>
+        <label class="field" style="flex:1"><span class="field-label">Otros imp.</span><input type="number" step="0.01" id="cmpOtros"></label>
+      </div>
+      <label class="field"><span class="field-label">Total</span><input type="number" step="0.01" id="cmpTotal"></label>
+
+      <div class="field-label" style="margin-top:6px">Distribución (local + cuenta + monto)</div>
+      <div id="cmpDistLista"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 10px">
+        <button type="button" class="btn-ghost" style="padding:5px 9px" onclick="cmpAgregarLinea()"><i class="ti ti-plus"></i> Agregar línea</button>
+        <span id="cmpDistSuma" style="font-size:12px;color:var(--c-muted)"></span>
+      </div>
+
+      <label class="field"><span class="field-label">CAE</span><input type="text" id="cmpCae" placeholder="Opcional"></label>
+      <label class="field"><span class="field-label">Firmado / autorizado por</span><input type="text" id="cmpFirmado" placeholder="Responsable del área"></label>
+      <label class="field"><span class="field-label">Observaciones</span><textarea id="cmpObs" rows="2" placeholder="Opcional"></textarea></label>
+      <div class="login-error" id="cmpError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="cmpBorrarBtn" style="color:var(--c-error);display:none" onclick="if(CMP_EDIT_ID)eliminarComprobante(CMP_EDIT_ID)">Eliminar</button>
+      <button class="btn-ghost" onclick="closeComprobante()">Cancelar</button>
+      <button class="btn-primary" id="cmpGuardarBtn" onclick="guardarComprobante()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <div id="vEventos" class="view">
   <div class="module-wrap">
     <div class="module-header">
@@ -2483,6 +2603,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261101bw"></script>
+<script src="app.js?v=20261102by"></script>
 </body>
 </html>
