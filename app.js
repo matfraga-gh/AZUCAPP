@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CH | ULTIMA | Comprobantes: la primera linea de distribucion se prellena con monto = neto y la cuenta por defecto del proveedor (solo falta elegir el local). Etiqueta "Cuenta..." en el selector (+ CG/CF/CE) ===== */
+/* ===== BUILD 2026-11-03-CI | ULTIMA | Pagos Fase A: nuevo modulo Pagos (bandeja + programacion de pagos: seleccionar comprobantes -> fecha + medio -> Pago programado). Nuevos estados y medios de pago. Ajustes: tipo "Remito valorizado", "+ nuevo proveedor" inline en el comprobante, aprendizaje proveedor->cuenta por defecto. Cta Cte Socios fuera del P&L ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -545,6 +545,15 @@ const MODULES = [
     desc: 'Facturas y gastos (compras y pagos)',
     visible: () => isMaster() || isAdmin() || (currentUser && currentUser.editor_comprobantes),
     action: () => openComprobantes()
+  },
+  {
+    id: 'pagos',
+    icon: 'ti-cash-banknote',
+    color: '#2E7D32',
+    title: 'Pagos',
+    desc: 'Bandeja de pagos y órdenes de pago',
+    visible: () => isMaster() || isAdmin(),
+    action: () => openPagos()
   },
   {
     id: 'panelventas',
@@ -5424,7 +5433,8 @@ const PC_GRUPOS = [
   ['CM', 'CM · Costo de Mercadería', '#C77DAE'],
   ['CL', 'CL · Costo Laboral', '#C87A2C'],
   ['GO', 'GO · Gastos Operativos', '#2D7FC4'],
-  ['GA', 'GA · Gastos Azuca', '#6FA8DC']
+  ['GA', 'GA · Gastos Azuca', '#6FA8DC'],
+  ['SOCIOS', 'Cta Cte Socios (fuera del P&L)', '#8A6D3B']
 ];
 async function openAdminPlanCuentas() {
   if (!isMaster() && !isAdmin()) { showDashboard(); return; }
@@ -5539,7 +5549,7 @@ let PROVEEDORES_LISTA = [], PROV_EDIT_ID = null;
 const PROV_COND_IVA = ['Responsable Inscripto', 'Monotributo', 'Exento', 'Consumidor Final', 'No Categorizado'];
 // Opciones de cuenta (CM/CL/GO/GA) desde el plan de cuentas, para la cuenta por defecto del proveedor
 function _cuentaOptionsHTML(selectedId, placeholder) {
-  const grupos = ['CM', 'CL', 'GO', 'GA'];
+  const grupos = ['CM', 'CL', 'GO', 'GA', 'SOCIOS'];
   const porParent = {};
   PLAN_CUENTAS.forEach(function(c){ if (c.parent_id) (porParent[c.parent_id] = porParent[c.parent_id] || []).push(c); });
   let html = '<option value="">' + (placeholder || '— Sin cuenta por defecto —') + '</option>';
@@ -5671,14 +5681,21 @@ window.eliminarProveedor = async function(id) {
 // ============================================
 let CMP_LISTA = [], CMP_EDIT_ID = null, CMP_ADJUNTO_PATH = null, CMP_DIST = [];
 let CMP_PROVEEDORES = [], CMP_RAZONES = [], CMP_PROV_MAP = {};
-const CMP_TIPOS = ['Factura A', 'Factura B', 'Factura C', 'Nota de Crédito', 'Nota de Débito', 'Recibo', 'Impuesto / DDJJ', 'Remito', 'Otro'];
+const CMP_TIPOS = ['Factura A', 'Factura B', 'Factura C', 'Nota de Crédito', 'Nota de Débito', 'Recibo', 'Remito valorizado', 'Impuesto / DDJJ', 'Remito', 'Otro'];
+// Comprobantes que son Nota de Crédito (restan: generan saldo a favor en la OP)
+function cmpEsNC(tipo) { return (tipo || '').toLowerCase().indexOf('crédito') >= 0 || (tipo || '').toLowerCase().indexOf('credito') >= 0; }
 const CMP_ESTADOS = {
+  aprobacion_pendiente: { label: 'Aprob. pendiente', color: '#B4772C' },
   pendiente_revision: { label: 'Pend. revisión', color: '#B4772C' },
   pendiente_pago:     { label: 'Pend. de pago', color: '#EF9F27' },
+  pago_programado:    { label: 'Pago programado', color: '#3E86C7' },
   en_orden_pago:      { label: 'En orden de pago', color: '#3E86C7' },
   pago_emitido:       { label: 'Pago emitido', color: '#7F77DD' },
   pagado_parcial:     { label: 'Pagado parcial', color: '#C87A2C' },
+  pago_confirmado:    { label: 'Pago confirmado', color: '#4CAF7A' },
   pago_completado:    { label: 'Pagado', color: '#4CAF7A' },
+  mov_pendiente_concil: { label: 'Mov. a conciliar', color: '#C87A2C' },
+  mov_conciliado:     { label: 'Mov. conciliado', color: '#4CAF7A' },
   anulado:            { label: 'Anulado', color: '#888' }
 };
 function puedeComprobantes() { return isMaster() || isAdmin() || (currentUser && currentUser.editor_comprobantes === true); }
@@ -6035,6 +6052,24 @@ window.cmpNuevaRazon = async function() {
     toast('✓ Razón social agregada', 'success');
   } catch (e) { toast('No se pudo agregar: ' + ((e && e.message) || e), 'error'); }
 };
+// Alta rápida de proveedor desde el formulario del comprobante (ajuste pendiente).
+window.cmpNuevoProveedor = async function() {
+  const sugerido = (document.getElementById('cmpProv').value || '').trim();
+  const razon = (window.prompt('Razón social del proveedor:', sugerido) || '').trim();
+  if (!razon) return;
+  const cuit = (window.prompt('CUIT (opcional, solo números):') || '').trim().replace(/[^0-9]/g, '') || null;
+  try {
+    const rec = { razon_social: razon, cuit: cuit, creado_por: currentUser ? currentUser.id : null };
+    const r = await api('proveedores', { method: 'POST', body: JSON.stringify(rec) });
+    const nuevo = Array.isArray(r) ? r[0] : r;
+    CMP_PROVEEDORES.push(nuevo);
+    CMP_PROV_MAP[nuevo.id] = nuevo;
+    const dl = document.getElementById('cmpProvList');
+    if (dl) dl.innerHTML += '<option value="' + esc(razon) + '"></option>';
+    document.getElementById('cmpProv').value = razon;
+    toast('✓ Proveedor agregado', 'success');
+  } catch (e) { toast('No se pudo agregar: ' + ((e && e.message) || e), 'error'); }
+};
 window.guardarComprobante = async function() {
   const err = document.getElementById('cmpError'); err.textContent = '';
   const provTexto = document.getElementById('cmpProv').value.trim();
@@ -6076,6 +6111,14 @@ window.guardarComprobante = async function() {
     }
     const filas = dist.map(function(d){ return { comprobante_id: cmpId, local: d.local, cuenta_id: d.cuenta_id, monto: d.monto }; });
     await api('comprobante_distribuciones', { method: 'POST', body: JSON.stringify(filas) });
+    // Aprendizaje: si el proveedor no tiene cuenta por defecto y el comprobante va a una sola cuenta, la guardamos.
+    try {
+      const cuentasUnicas = Array.from(new Set(dist.map(function(d){ return d.cuenta_id; })));
+      if (!prov.cuenta_default_id && cuentasUnicas.length === 1) {
+        await api('proveedores?id=eq.' + prov.id, { method: 'PATCH', body: JSON.stringify({ cuenta_default_id: cuentasUnicas[0] }) });
+        prov.cuenta_default_id = cuentasUnicas[0];
+      }
+    } catch (e) { /* aprendizaje best-effort */ }
     closeComprobante();
     await openComprobantes();
     toast('✓ Comprobante guardado', 'success');
@@ -6088,6 +6131,167 @@ window.eliminarComprobante = async function(id) {
   if (!ok) return;
   try { await api('comprobantes?id=eq.' + id, { method: 'DELETE' }); toast('✓ Eliminado', 'success'); await openComprobantes(); }
   catch (e) { toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error'); }
+};
+
+// ============================================
+// PAGOS — Bandeja y programación de pagos (Fase A)
+// ============================================
+let PAGOS_LISTA = [], PAGOS_DIST = {}, PAGOS_MEDIOS = [], PAGOS_SEL = {}, PAGOS_SORT = 'vto', PAGOS_FILTRO = 'por_pagar';
+function puedePagos() { return isMaster() || isAdmin(); }
+function _pagoFecha(f) { return f ? f.slice(0, 10).split('-').reverse().join('/') : '—'; }
+function _pagoLocales(id) { const ds = PAGOS_DIST[id] || []; return Array.from(new Set(ds.map(function(d){ return d.local; }).filter(Boolean))).map(function(s){ return localLabel(s); }); }
+function _pagoCuentas(id) { const ds = PAGOS_DIST[id] || []; return Array.from(new Set(ds.map(function(d){ return d.cuenta_id; }).filter(Boolean))).map(function(c){ return _nombreCuenta(c); }).filter(Boolean); }
+function _pagoSigno(c) { return cmpEsNC(c.tipo) ? -1 : 1; }
+function _nombreMedio(id) { const m = PAGOS_MEDIOS.find(function(x){ return String(x.id) === String(id); }); return m ? m.nombre : ''; }
+
+async function openPagos() {
+  if (!puedePagos()) { showDashboard(); return; }
+  showView('vPagos');
+  const cont = document.getElementById('pagosLista');
+  cont.innerHTML = '<div class="loading">Cargando...</div>';
+  try {
+    if (!PLAN_CUENTAS.length) { try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || []; } catch (e) {} }
+    CMP_RAZONES = await api('razones_sociales?order=nombre.asc') || [];
+    PAGOS_MEDIOS = await api('medios_pago?activo=eq.true&order=razon_social_id,nombre') || [];
+    PAGOS_LISTA = await apiAll('comprobantes?select=*&estado=in.(pendiente_pago,pagado_parcial,pago_programado)&order=fecha_vto.asc') || [];
+    const pids = Array.from(new Set(PAGOS_LISTA.map(function(c){ return c.proveedor_id; }).filter(Boolean)));
+    if (pids.length) { const ps = await api('proveedores?id=in.(' + pids.join(',') + ')&select=id,razon_social') || []; ps.forEach(function(p){ CMP_PROV_MAP[p.id] = p; }); }
+    PAGOS_DIST = {};
+    const cids = PAGOS_LISTA.map(function(c){ return c.id; });
+    if (cids.length) {
+      const ds = await apiAll('comprobante_distribuciones?comprobante_id=in.(' + cids.join(',') + ')&select=comprobante_id,local,cuenta_id,monto') || [];
+      ds.forEach(function(d){ (PAGOS_DIST[d.comprobante_id] = PAGOS_DIST[d.comprobante_id] || []).push(d); });
+    }
+  } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los pagos. ¿Corriste pagos_fase_a.sql?</div>'; return; }
+  PAGOS_SEL = {};
+  renderPagos();
+}
+window.openPagos = openPagos;
+
+window.onPagoFiltro = function(v) { PAGOS_FILTRO = v; PAGOS_SEL = {}; renderPagos(); };
+window.onPagoSort = function(v) { PAGOS_SORT = v; renderPagos(); };
+window.togglePagoSel = function(id) { if (PAGOS_SEL[id]) delete PAGOS_SEL[id]; else PAGOS_SEL[id] = true; renderPagos(); };
+
+function _pagosFiltradas() {
+  let arr = PAGOS_LISTA.slice();
+  if (PAGOS_FILTRO === 'por_pagar') arr = arr.filter(function(c){ return c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial'; });
+  else if (PAGOS_FILTRO === 'programados') arr = arr.filter(function(c){ return c.estado === 'pago_programado'; });
+  const prov = function(c){ const p = CMP_PROV_MAP[c.proveedor_id]; return (p && p.razon_social || '').toLowerCase(); };
+  arr.sort(function(a, b){
+    if (PAGOS_SORT === 'proveedor') return prov(a).localeCompare(prov(b));
+    if (PAGOS_SORT === 'importe') return (b.total || 0) - (a.total || 0);
+    if (PAGOS_SORT === 'fecha') return (a.fecha_emision || '').localeCompare(b.fecha_emision || '');
+    return (a.fecha_vto || '9999').localeCompare(b.fecha_vto || '9999'); // vto
+  });
+  return arr;
+}
+
+function renderPagos() {
+  const cont = document.getElementById('pagosLista');
+  if (!cont) return;
+  const arr = _pagosFiltradas();
+  const chip = function(v, lbl){ return '<button class="btn-ghost" style="padding:5px 11px;border-radius:14px;font-size:12px;' + (PAGOS_FILTRO === v ? 'background:var(--c-cream);color:var(--c-ink);font-weight:700' : '') + '" onclick="onPagoFiltro(\'' + v + '\')">' + lbl + '</button>'; };
+  let head = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px">' +
+    chip('por_pagar', 'Por pagar') + chip('programados', 'Programados') + chip('todos', 'Todos') +
+    '<span style="margin-left:auto;font-size:12px;color:var(--c-sand)">Ordenar: </span>' +
+    '<select onchange="onPagoSort(this.value)" style="padding:5px 8px;border-radius:8px;font-size:12px">' +
+      '<option value="vto"' + (PAGOS_SORT === 'vto' ? ' selected' : '') + '>Vencimiento</option>' +
+      '<option value="fecha"' + (PAGOS_SORT === 'fecha' ? ' selected' : '') + '>Fecha comprobante</option>' +
+      '<option value="proveedor"' + (PAGOS_SORT === 'proveedor' ? ' selected' : '') + '>Proveedor</option>' +
+      '<option value="importe"' + (PAGOS_SORT === 'importe' ? ' selected' : '') + '>Importe</option>' +
+    '</select></div>';
+
+  if (!arr.length) { cont.innerHTML = head + '<div class="empty-list">No hay comprobantes en esta vista.</div>'; _pagosFooter(); return; }
+
+  const cards = arr.map(function(c){
+    const p = CMP_PROV_MAP[c.proveedor_id];
+    const est = CMP_ESTADOS[c.estado] || { label: c.estado, color: '#888' };
+    const locs = _pagoLocales(c.id), ctas = _pagoCuentas(c.id);
+    const nc = cmpEsNC(c.tipo);
+    const sel = !!PAGOS_SEL[c.id];
+    const programado = c.estado === 'pago_programado';
+    const seleccionable = c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial';
+    return '<div class="ped-card" style="' + (sel ? 'outline:2px solid var(--c-cream)' : '') + '">' +
+      '<div class="ped-card-top" style="align-items:center;gap:8px">' +
+        (seleccionable ? '<input type="checkbox" ' + (sel ? 'checked' : '') + ' onclick="togglePagoSel(' + c.id + ')" style="width:18px;height:18px;flex:0 0 auto">' : '<span style="width:18px;flex:0 0 auto"></span>') +
+        '<span class="ped-local" style="min-width:0;overflow:hidden;text-overflow:ellipsis">' + esc(p ? p.razon_social : '(prov s/d)') + '</span>' +
+        '<span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;background:' + est.color + ';color:#fff;white-space:nowrap">' + est.label + '</span>' +
+      '</div>' +
+      '<div class="ped-card-sub" style="margin-top:4px">' + esc(c.tipo || '') + (c.numero ? ' · ' + esc((c.punto_venta ? c.punto_venta + '-' : '') + c.numero) : '') + ' · emis. ' + _pagoFecha(c.fecha_emision) + ' · vto ' + _pagoFecha(c.fecha_vto) + '</div>' +
+      (locs.length ? '<div class="ped-card-sub">Locales: ' + esc(locs.join(', ')) + '</div>' : '') +
+      (ctas.length ? '<div class="ped-card-sub">Cuentas: ' + esc(ctas.join(' · ')) + '</div>' : '') +
+      (programado ? '<div class="ped-card-sub" style="color:#3E86C7">Pago: ' + _pagoFecha(c.fecha_pago) + (c.medio_pago_id ? ' · ' + esc(_nombreMedio(c.medio_pago_id)) : '') + '</div>' : '') +
+      '<div class="ped-card-sub" style="margin-top:3px;display:flex;align-items:center;justify-content:space-between;gap:6px">' +
+        '<span style="font-weight:700;color:' + (nc ? '#4CAF7A' : 'var(--c-cream)') + '">' + (nc ? '− ' : '') + _cmpMoney(c.total) + (nc ? ' (NC)' : '') + '</span>' +
+        '<span style="display:flex;gap:3px">' +
+          (c.adjunto_path ? '<button class="btn-ghost" style="padding:5px 9px" title="Ver PDF" onclick="cmpVerAdjunto(\'' + esc(c.adjunto_path) + '\')"><i class="ti ti-file-text"></i></button>' : '') +
+          (programado ? '<button class="btn-ghost" style="padding:5px 9px;color:var(--c-error)" title="Volver a Pendiente de pago" onclick="desprogramarPago(' + c.id + ')"><i class="ti ti-arrow-back-up"></i></button>' : '') +
+        '</span>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  cont.innerHTML = head + cards;
+  _pagosFooter();
+}
+
+function _pagosFooter() {
+  let bar = document.getElementById('pagosFooter');
+  const ids = Object.keys(PAGOS_SEL);
+  const total = PAGOS_LISTA.filter(function(c){ return PAGOS_SEL[c.id]; }).reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'pagosFooter';
+    bar.style.cssText = 'position:sticky;bottom:0;left:0;right:0;background:var(--c-ink);border-top:1px solid var(--c-cream-border);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;z-index:5';
+    const v = document.getElementById('pagosLista');
+    if (v && v.parentNode) v.parentNode.appendChild(bar);
+  }
+  if (!ids.length) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  bar.innerHTML = '<span style="font-size:13px;color:var(--c-cream)"><b>' + ids.length + '</b> sel. · ' + _cmpMoney(total) + '</span>' +
+    '<button class="btn-primary" style="padding:8px 16px" onclick="abrirProgramarPago()"><i class="ti ti-calendar-dollar"></i> Programar pago</button>';
+}
+
+window.abrirProgramarPago = function() {
+  const ids = Object.keys(PAGOS_SEL);
+  if (!ids.length) return;
+  // Medios agrupados por razón social
+  const rzName = {}; CMP_RAZONES.forEach(function(r){ rzName[r.id] = r.nombre; });
+  const porRz = {}; PAGOS_MEDIOS.forEach(function(m){ (porRz[m.razon_social_id] = porRz[m.razon_social_id] || []).push(m); });
+  let opts = '<option value="">—</option>';
+  Object.keys(porRz).forEach(function(rid){
+    opts += '<optgroup label="' + esc(rzName[rid] || 'General') + '">' + porRz[rid].map(function(m){ return '<option value="' + m.id + '">' + esc(m.nombre) + '</option>'; }).join('') + '</optgroup>';
+  });
+  document.getElementById('progMedio').innerHTML = opts;
+  document.getElementById('progFecha').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('progResumen').textContent = ids.length + ' comprobante(s) seleccionado(s).';
+  document.getElementById('progError').textContent = '';
+  document.getElementById('modalProgramarPago').classList.add('show');
+};
+window.closeProgramarPago = function() { document.getElementById('modalProgramarPago').classList.remove('show'); };
+window.confirmarProgramarPago = async function() {
+  const err = document.getElementById('progError'); err.textContent = '';
+  const fecha = document.getElementById('progFecha').value;
+  const medio = document.getElementById('progMedio').value;
+  if (!fecha) { err.textContent = 'Elegí la fecha de pago.'; return; }
+  const ids = Object.keys(PAGOS_SEL).map(function(x){ return parseInt(x, 10); });
+  if (!ids.length) return;
+  const btn = document.getElementById('progBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
+  try {
+    const patch = { estado: 'pago_programado', fecha_pago: fecha, medio_pago_id: medio ? parseInt(medio, 10) : null, actualizado_en: new Date().toISOString() };
+    await api('comprobantes?id=in.(' + ids.join(',') + ')', { method: 'PATCH', body: JSON.stringify(patch) });
+    closeProgramarPago();
+    toast('✓ ' + ids.length + ' pago(s) programado(s)', 'success');
+    await openPagos();
+  } catch (e) { err.textContent = 'No se pudo programar: ' + ((e && e.message) || e); }
+  finally { btn.disabled = false; btn.textContent = t; }
+};
+window.desprogramarPago = async function(id) {
+  const ok = await showConfirm({ title: 'Volver a Pendiente', msg: 'El comprobante vuelve a “Pendiente de pago” y se borra la fecha/medio programado. ¿Confirmás?', type: 'warning', okLabel: 'Sí', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  try {
+    await api('comprobantes?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ estado: 'pendiente_pago', fecha_pago: null, medio_pago_id: null, actualizado_en: new Date().toISOString() }) });
+    toast('✓ Actualizado', 'success'); await openPagos();
+  } catch (e) { toast('No se pudo: ' + ((e && e.message) || e), 'error'); }
 };
 
 window.showDashboard = showDashboard;

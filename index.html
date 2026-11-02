@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261103ch">
+<link rel="stylesheet" href="styles.css?v=20261103ci">
 </head>
 <body>
 
@@ -1912,14 +1912,47 @@
     <label class="field"><span class="field-label">Estado</span>
       <select id="cmpEstadoFiltro" onchange="onFiltroComprobantes()">
         <option value="">Todos</option>
+        <option value="aprobacion_pendiente">Aprobación pendiente</option>
         <option value="pendiente_pago">Pendientes de pago</option>
-        <option value="en_orden_pago">En orden de pago</option>
-        <option value="pago_emitido">Pago emitido</option>
         <option value="pagado_parcial">Pagado parcial</option>
-        <option value="pago_completado">Pagados</option>
+        <option value="pago_programado">Pago programado</option>
+        <option value="pago_emitido">Pago emitido</option>
+        <option value="pago_confirmado">Pago confirmado</option>
         <option value="anulado">Anulados</option>
       </select></label>
     <div id="comprobantesLista" style="margin-top:12px"><div class="loading">Cargando...</div></div>
+  </div>
+</div>
+
+<div id="vPagos" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Pagos</div>
+        <div class="module-subtitle">Bandeja de pagos y programación</div>
+      </div>
+    </div>
+    <div id="pagosLista" style="margin-top:4px"><div class="loading">Cargando...</div></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalProgramarPago">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Programar pago</h2>
+      <button class="modal-close" onclick="closeProgramarPago()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+      <div id="progResumen" class="cierre-hint" style="margin-bottom:10px"></div>
+      <label class="field"><span class="field-label">Fecha de pago</span><input type="date" id="progFecha"></label>
+      <label class="field"><span class="field-label">Medio de pago</span><select id="progMedio"></select></label>
+      <div class="login-error" id="progError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeProgramarPago()">Cancelar</button>
+      <button class="btn-primary" id="progBtn" onclick="confirmarProgramarPago()">Programar</button>
+    </div>
   </div>
 </div>
 
@@ -1934,7 +1967,7 @@
         <input type="file" id="cmpArchivo" accept="application/pdf,image/*" onchange="cmpOnArchivo(this)"></label>
       <div id="cmpAdjEstado" style="font-size:12px;margin:-4px 0 8px"></div>
 
-      <label class="field"><span class="field-label">Proveedor</span>
+      <label class="field"><span class="field-label">Proveedor <a href="#" onclick="cmpNuevoProveedor();return false;" style="font-weight:400;font-size:12px;color:var(--c-sand)">+ nuevo</a></span>
         <input type="text" id="cmpProv" list="cmpProvList" placeholder="Empezá a escribir…" autocomplete="off">
         <datalist id="cmpProvList"></datalist></label>
       <label class="field"><span class="field-label">Razón social propia <a href="#" onclick="cmpNuevaRazon();return false;" style="font-weight:400;font-size:12px;color:var(--c-sand)">+ nueva</a></span>
@@ -2603,6 +2636,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261103ch"></script>
+<script src="app.js?v=20261103ci"></script>
 </body>
 </html>
