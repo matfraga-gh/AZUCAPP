@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CM | ULTIMA | OP rediseñada como documento (cabecera AZUCA, beneficiario+CUIT, tablas Documentos y Medios, importes con $ y 2 decimales). Fichas: fecha emis+vto en linea propia (vto siempre visible, rojo si vencido). Pago Emitido en verde y visible en la bandeja (Todos); solo Pago Completado desaparece. Importes de OP con centavos (sin redondear) ===== */
+/* ===== BUILD 2026-11-03-CN | ULTIMA | Comprobantes: alerta al editar uno ya pagado (Emitido/Confirmado/Completado); se muestra "Pagado: fecha" en emitidos/completados (fecha real del pago, tomada de la OP). OP: cabecera naranja + domicilio Azuca; en Medios la columna pasa a "Fecha de Pago". Antes: OP documento, importes 2 decimales, Pago Emitido verde ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -5915,6 +5915,7 @@ function renderComprobantes() {
         '</span>' +
       '</div>' +
       '<div style="font-size:11px;color:var(--c-sand);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(c.tipo || '') + (nro ? ' · ' + esc(nro) : '') + '</div>' +
+      (['pago_emitido', 'pago_confirmado', 'pago_completado'].indexOf(c.estado) >= 0 && c.fecha_pago ? '<div style="font-size:11px;color:#3BA55D;margin-top:2px">Pagado: ' + _pagoFecha(c.fecha_pago) + '</div>' : '') +
     '</div>';
   }).join('');
 }
@@ -5983,6 +5984,11 @@ window.abrirNuevoComprobante = async function() {
 window.abrirEditarComprobante = async function(id) {
   const c = CMP_LISTA.find(function(x){ return x.id === id; });
   if (!c) return;
+  if (['pago_emitido', 'pago_confirmado', 'pago_completado'].indexOf(c.estado) >= 0) {
+    const est = CMP_ESTADOS[c.estado] || { label: c.estado };
+    const ok = await showConfirm({ title: 'Comprobante ya pagado', msg: 'Este comprobante está en estado "' + est.label + '" y forma parte de una orden de pago. Editarlo puede desincronizar la OP y la conciliación. ¿Querés editarlo igual?', type: 'warning', okLabel: 'Editar igual', cancelLabel: 'Cancelar' });
+    if (!ok) return;
+  }
   CMP_EDIT_ID = id;
   document.getElementById('cmpModalTitulo').textContent = 'Editar comprobante';
   _cmpLimpiarForm();
@@ -6321,6 +6327,7 @@ function renderPagos() {
       '</div>' +
       '<div style="font-size:11px;color:var(--c-sand);margin-top:2px;padding-left:25px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(c.tipo || '') + (nro ? ' · ' + esc(nro) : '') + (nc ? ' · ' : '') + (nc ? '<span style="color:#4CAF7A">NC</span>' : '') + (imputa ? ' · ' + esc(imputa) : '') + '</div>' +
       (programado ? '<div style="font-size:11px;color:#3E86C7;margin-top:2px;padding-left:25px">Pago: ' + _pagoFecha(c.fecha_pago) + (c.medio_pago_id ? ' · ' + esc(_nombreMedio(c.medio_pago_id)) : '') + '</div>' : '') +
+      (['pago_emitido', 'pago_confirmado'].indexOf(c.estado) >= 0 && c.fecha_pago ? '<div style="font-size:11px;color:#3BA55D;margin-top:2px;padding-left:25px">Pagado: ' + _pagoFecha(c.fecha_pago) + (c.medio_pago_id ? ' · ' + esc(_nombreMedio(c.medio_pago_id)) : '') + '</div>' : '') +
     '</div>';
   }).join('');
   const nota = recortado ? '<div class="cierre-hint" style="margin-top:10px"><i class="ti ti-info-circle"></i> Mostrando ' + PAGOS_TOPE + ' de ' + arr.length + '. Usá el buscador o los filtros para acotar.</div>' : '';
@@ -6456,7 +6463,7 @@ function _opRenderMedios() {
       '</div>' +
       '<div style="display:flex;gap:6px;margin-top:6px">' +
         '<input type="text" placeholder="' + (esCheque ? 'N° cheque' : 'N° / referencia') + '" value="' + esc(m.documento || '') + '" oninput="opSetDoc(' + i + ',this.value)" style="flex:1;padding:5px;font-size:12px">' +
-        '<input type="date" value="' + esc(m.vencimiento ? String(m.vencimiento).slice(0,10) : '') + '" onchange="opSetVto(' + i + ',this.value)" title="Vencimiento" style="padding:5px;font-size:12px">' +
+        '<input type="date" value="' + esc(m.vencimiento ? String(m.vencimiento).slice(0,10) : '') + '" onchange="opSetVto(' + i + ',this.value)" title="Fecha de pago" style="padding:5px;font-size:12px">' +
         '<input type="number" placeholder="Importe" value="' + (m.importe != null ? m.importe : '') + '" oninput="opSetImp(' + i + ',this.value)" style="width:110px;padding:5px;font-size:12px">' +
       '</div></div>';
   }).join('');
@@ -6499,8 +6506,9 @@ window.confirmarGenerarOP = async function() {
     // Medios de la OP
     const filasM = medios.map(function(m){ return { orden_pago_id: op.id, medio_pago_id: parseInt(m.medio_pago_id, 10), documento: m.documento || null, vencimiento: m.vencimiento || null, importe: parseFloat(m.importe) || 0 }; });
     await api('orden_pago_medios', { method: 'POST', body: JSON.stringify(filasM) });
-    // Comprobantes -> Pago Emitido
-    await api('comprobantes?id=in.(' + OP_COMPS.map(function(c){ return c.id; }).join(',') + ')', { method: 'PATCH', body: JSON.stringify({ estado: 'pago_emitido', actualizado_en: new Date().toISOString() }) });
+    // Comprobantes -> Pago Emitido. La fecha de pago queda tomada de la OP (para cheques, su fecha de débito se ajusta luego en la conciliación).
+    const fechaPagoOP = (medios.find(function(m){ return m.vencimiento; }) || {}).vencimiento || fecha;
+    await api('comprobantes?id=in.(' + OP_COMPS.map(function(c){ return c.id; }).join(',') + ')', { method: 'PATCH', body: JSON.stringify({ estado: 'pago_emitido', fecha_pago: fechaPagoOP, actualizado_en: new Date().toISOString() }) });
     // Email al proveedor (best-effort)
     let emailMsg = '';
     if (document.getElementById('opEmail').checked) {
@@ -6616,10 +6624,11 @@ window.verOP = async function(id) {
   }).join('');
   body.innerHTML =
     '<div style="border:1px solid var(--c-cream-border);border-radius:10px;overflow:hidden">' +
-      '<div style="background:#2E7D32;color:#fff;padding:10px 12px;display:flex;justify-content:space-between;align-items:center">' +
+      '<div style="background:var(--c-rust);color:#fff;padding:10px 12px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px">' +
         '<div><div style="font-weight:800;font-size:15px;letter-spacing:.5px">AZUCA GRUPO GASTRONÓMICO</div>' +
-          '<div style="font-size:12px;opacity:.9">Orden de Pago · ' + esc(o.numero || ('OP ' + o.id)) + '</div></div>' +
-        '<div style="text-align:right;font-size:11px;opacity:.9">Emitida<br><b style="font-size:13px">' + _pagoFecha(o.fecha) + '</b></div>' +
+          '<div style="font-size:11px;opacity:.9;margin-top:1px">Isla Nueva 6170, Carrodilla, Luján de Cuyo, Mendoza (CP 5505)</div>' +
+          '<div style="font-size:12px;opacity:.95;margin-top:3px">Orden de Pago · ' + esc(o.numero || ('OP ' + o.id)) + '</div></div>' +
+        '<div style="text-align:right;font-size:11px;opacity:.9;white-space:nowrap">Emitida<br><b style="font-size:13px">' + _pagoFecha(o.fecha) + '</b></div>' +
       '</div>' +
       '<div style="padding:11px 12px">' +
         '<div style="font-size:12px;color:var(--c-sand);margin-bottom:2px">Beneficiario</div>' +
@@ -6635,7 +6644,7 @@ window.verOP = async function(id) {
 
         '<div style="font-weight:700;color:var(--c-cream);margin:12px 0 4px">Medios de pago</div>' +
         '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
-          '<thead><tr style="color:var(--c-sand)"><th style="' + thtd + '">Medio</th><th style="' + thtd + '">N° documento</th><th style="' + thtd + '">Vencimiento</th><th style="' + thtdR + '">Importe</th></tr></thead>' +
+          '<thead><tr style="color:var(--c-sand)"><th style="' + thtd + '">Medio</th><th style="' + thtd + '">N° documento</th><th style="' + thtd + '">Fecha de Pago</th><th style="' + thtdR + '">Importe</th></tr></thead>' +
           '<tbody>' + medRows + '</tbody>' +
         '</table>' +
 
