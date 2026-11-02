@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CQ | ULTIMA | Fase C: Estado de cuenta por proveedor (KPIs Total/Pagado/Saldo + lista + Excel). Comprobante Simple (Andy): carga rapida -> estado "aprobacion pendiente" -> Admin lo aprueba (boton check en la lista). Cta Cte Socios: comprobantes imputados a grupo SOCIOS marcan es_socios y se ocultan a los editores (Lauti/Andy). Requiere fase_c.sql. Antes: formato $ forzado por JS, bloqueo de duplicados ===== */
+/* ===== BUILD 2026-11-03-CR | ULTIMA | Comprobante Simple: tipo "Factura" agregado; medios filtrados por la razon social elegida (sin duplicados); cuenta OBLIGATORIA; si la cuenta es Cta Cte Socios el local no aplica (retiro de socio). Pagos: nueva solapa "Simples" y los simples aprobados aparecen en la bandeja. Cta Cte Socios en comprobante normal tampoco exige local. Antes: Fase C (estado de cuenta, comp simple, es_socios) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -6138,7 +6138,12 @@ window.guardarComprobante = async function() {
   _leerDist();
   const dist = CMP_DIST.map(function(d){ return { local: d.local || null, cuenta_id: d.cuenta_id ? parseInt(d.cuenta_id, 10) : null, monto: parseFloat(d.monto) || 0 }; }).filter(function(d){ return d.monto > 0; });
   if (!dist.length) { err.textContent = 'Agregá al menos una línea de distribución (local + cuenta + monto).'; return; }
-  for (let i = 0; i < dist.length; i++) { if (!dist[i].local || !dist[i].cuenta_id) { err.textContent = 'Cada línea necesita local y cuenta.'; return; } }
+  const _socioIds = PLAN_CUENTAS.filter(function(c){ return c.grupo === 'SOCIOS'; }).map(function(c){ return c.id; });
+  for (let i = 0; i < dist.length; i++) {
+    if (!dist[i].cuenta_id) { err.textContent = 'Cada línea necesita una cuenta.'; return; }
+    // Cta Cte Socios no lleva local (es un retiro de socio); el resto sí.
+    if (!dist[i].local && _socioIds.indexOf(dist[i].cuenta_id) < 0) { err.textContent = 'Cada línea (salvo Cta Cte Socios) necesita un local.'; return; }
+  }
   const num = function(id){ return _parseMoney(document.getElementById(id).value); };
   const rec = {
     tipo: document.getElementById('cmpTipo').value || null,
@@ -6270,7 +6275,8 @@ async function openPagos() {
     if (!PLAN_CUENTAS.length) { try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || []; } catch (e) {} }
     CMP_RAZONES = await api('razones_sociales?order=nombre.asc') || [];
     PAGOS_MEDIOS = await api('medios_pago?activo=eq.true&order=razon_social_id,nombre') || [];
-    PAGOS_LISTA = await apiAll('comprobantes?select=*&estado=in.(pendiente_pago,pagado_parcial,pago_programado,pago_emitido,pago_confirmado)&order=fecha_vto.asc') || [];
+    // Pendientes/en circuito + simples aprobados (pago_completado con es_simple) para que figuren en la solapa Simples.
+    PAGOS_LISTA = await apiAll('comprobantes?select=*&or=(estado.in.(pendiente_pago,pagado_parcial,pago_programado,pago_emitido,pago_confirmado),and(estado.eq.pago_completado,es_simple.is.true))&order=fecha_vto.asc') || [];
     PAGOS_OPS = await api('ordenes_pago?select=*&order=creado_en.desc&limit=300') || [];
     const pids = Array.from(new Set(PAGOS_LISTA.map(function(c){ return c.proveedor_id; }).concat(PAGOS_OPS.map(function(o){ return o.proveedor_id; })).filter(Boolean)));
     if (pids.length) { const ps = await api('proveedores?id=in.(' + pids.join(',') + ')&select=id,razon_social') || []; ps.forEach(function(p){ CMP_PROV_MAP[p.id] = p; }); }
@@ -6304,6 +6310,8 @@ function _pagosFiltradas() {
   let arr = PAGOS_LISTA.slice();
   if (PAGOS_FILTRO === 'por_pagar') arr = arr.filter(function(c){ return c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial'; });
   else if (PAGOS_FILTRO === 'programados') arr = arr.filter(function(c){ return c.estado === 'pago_programado'; });
+  else if (PAGOS_FILTRO === 'simples') arr = arr.filter(function(c){ return c.es_simple === true; });
+  else arr = arr.filter(function(c){ return c.estado !== 'pago_completado'; }); // "Todos": sin completados
   if (PAGOS_Q) {
     arr = arr.filter(function(c){
       const p = CMP_PROV_MAP[c.proveedor_id];
@@ -6332,7 +6340,7 @@ function renderPagos() {
   const todosSel = selec.length && selec.every(function(c){ return PAGOS_SEL[c.id]; });
   const totalVista = arr.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
   ctrl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">' +
-    chip('por_pagar', 'Por pagar') + chip('programados', 'Programados') + chip('todos', 'Todos') + chip('ordenes', 'Órdenes') +
+    chip('por_pagar', 'Por pagar') + chip('programados', 'Programados') + chip('simples', 'Simples') + chip('todos', 'Todos') + chip('ordenes', 'Órdenes') +
     '<span style="margin-left:auto;font-size:12px;color:var(--c-sand)">Ordenar: </span>' +
     '<select onchange="onPagoSort(this.value)" style="padding:5px 8px;border-radius:8px;font-size:12px">' +
       '<option value="vto"' + (PAGOS_SORT === 'vto' ? ' selected' : '') + '>Vencimiento</option>' +
@@ -6382,7 +6390,7 @@ function renderPagos() {
       '</div>' +
       '<div style="font-size:11px;color:var(--c-sand);margin-top:2px;padding-left:25px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(c.tipo || '') + (nro ? ' · ' + esc(nro) : '') + (nc ? ' · ' : '') + (nc ? '<span style="color:#4CAF7A">NC</span>' : '') + (imputa ? ' · ' + esc(imputa) : '') + '</div>' +
       (programado ? '<div style="font-size:11px;color:#3E86C7;margin-top:2px;padding-left:25px">Pago: ' + _pagoFecha(c.fecha_pago) + (c.medio_pago_id ? ' · ' + esc(_nombreMedio(c.medio_pago_id)) : '') + '</div>' : '') +
-      (['pago_emitido', 'pago_confirmado'].indexOf(c.estado) >= 0 && c.fecha_pago ? '<div style="font-size:11px;color:#3BA55D;margin-top:2px;padding-left:25px">Pagado: ' + _pagoFecha(c.fecha_pago) + (c.medio_pago_id ? ' · ' + esc(_nombreMedio(c.medio_pago_id)) : '') + '</div>' : '') +
+      (['pago_emitido', 'pago_confirmado', 'pago_completado'].indexOf(c.estado) >= 0 && c.fecha_pago ? '<div style="font-size:11px;color:#3BA55D;margin-top:2px;padding-left:25px">Pagado: ' + _pagoFecha(c.fecha_pago) + (c.medio_pago_id ? ' · ' + esc(_nombreMedio(c.medio_pago_id)) : '') + (c.es_simple ? ' · simple' : '') + '</div>' : '') +
     '</div>';
   }).join('');
   const nota = recortado ? '<div class="cierre-hint" style="margin-top:10px"><i class="ti ti-info-circle"></i> Mostrando ' + PAGOS_TOPE + ' de ' + arr.length + '. Usá el buscador o los filtros para acotar.</div>' : '';
@@ -6613,7 +6621,7 @@ function renderOrdenes(chip) {
   });
   const totalOps = ops.reduce(function(s, o){ return s + (parseFloat(o.total) || 0); }, 0);
   ctrl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">' +
-    chip('por_pagar', 'Por pagar') + chip('programados', 'Programados') + chip('todos', 'Todos') + chip('ordenes', 'Órdenes') + '</div>' +
+    chip('por_pagar', 'Por pagar') + chip('programados', 'Programados') + chip('simples', 'Simples') + chip('todos', 'Todos') + chip('ordenes', 'Órdenes') + '</div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">' +
       '<span style="font-size:12px;color:var(--c-sand)"><b style="color:var(--c-cream)">' + ops.length + '</b> OP · ' + _cmpMoney(totalOps) + '</span>' +
       '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="descargarOrdenesExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>' +
@@ -6823,11 +6831,10 @@ async function abrirCompSimple() {
   if (!PAGOS_MEDIOS.length) { try { PAGOS_MEDIOS = await api('medios_pago?activo=eq.true&order=razon_social_id,nombre') || []; } catch (e) {} }
   document.getElementById('csProvList').innerHTML = CMP_PROVEEDORES.map(function(p){ return '<option value="' + esc(p.razon_social || '') + '"></option>'; }).join('');
   document.getElementById('csRazon').innerHTML = '<option value="">—</option>' + CMP_RAZONES.map(function(r){ return '<option value="' + r.id + '">' + esc(r.nombre) + '</option>'; }).join('');
-  document.getElementById('csTipo').innerHTML = ['Remito valorizado', 'Recibo', 'Ticket', 'Otro'].map(function(t){ return '<option value="' + t + '">' + t + '</option>'; }).join('');
+  document.getElementById('csTipo').innerHTML = ['Factura', 'Remito valorizado', 'Recibo', 'Ticket', 'Otro'].map(function(t){ return '<option value="' + t + '">' + t + '</option>'; }).join('');
   document.getElementById('csLocal').innerHTML = _cmpLocalesOptions('');
-  document.getElementById('csCuenta').innerHTML = _cuentaOptionsHTML('', 'Cuenta (la completa admin si no sabés)…');
-  const rzName = {}; CMP_RAZONES.forEach(function(r){ rzName[r.id] = r.nombre; });
-  document.getElementById('csMedio').innerHTML = '<option value="">—</option>' + PAGOS_MEDIOS.map(function(m){ return '<option value="' + m.id + '">' + esc(m.nombre + ' · ' + (rzName[m.razon_social_id] || '')) + '</option>'; }).join('');
+  document.getElementById('csCuenta').innerHTML = _cuentaOptionsHTML('', 'Elegí la cuenta…');
+  csMediosPorRazon();
   document.getElementById('csFecha').value = hoyStr();
   ['csProv', 'csImporte', 'csObs'].forEach(function(id){ const e = document.getElementById(id); if (e) e.value = ''; });
   document.getElementById('csError').textContent = '';
@@ -6837,6 +6844,22 @@ async function abrirCompSimple() {
 }
 window.abrirCompSimple = abrirCompSimple;
 window.closeCompSimple = function(){ document.getElementById('modalCompSimple').classList.remove('show'); };
+// Medios de la razón social elegida (sin duplicados): el medio corresponde a esa razón.
+window.csMediosPorRazon = function(){
+  const rz = document.getElementById('csRazon').value;
+  const sel = document.getElementById('csMedio');
+  if (!rz) { sel.innerHTML = '<option value="">— (elegí la razón social)</option>'; return; }
+  const medios = PAGOS_MEDIOS.filter(function(m){ return String(m.razon_social_id) === String(rz); });
+  sel.innerHTML = '<option value="">—</option>' + medios.map(function(m){ return '<option value="' + m.id + '">' + esc(m.nombre) + '</option>'; }).join('');
+};
+function _csEsCuentaSocios(cuentaVal){ if (!cuentaVal) return false; return PLAN_CUENTAS.some(function(c){ return String(c.id) === String(cuentaVal) && c.grupo === 'SOCIOS'; }); }
+// Si la cuenta es Cta Cte Socios, el local no aplica (es un retiro de socio, no un gasto de local).
+window.csCuentaChange = function(){
+  const esSocio = _csEsCuentaSocios(document.getElementById('csCuenta').value);
+  const localSel = document.getElementById('csLocal');
+  if (esSocio) { localSel.value = ''; localSel.disabled = true; } else { localSel.disabled = false; }
+  const hint = document.getElementById('csLocalHint'); if (hint) hint.style.display = esSocio ? '' : 'none';
+};
 window.csNuevoProveedor = async function() {
   const sugerido = (document.getElementById('csProv').value || '').trim();
   const razon = (window.prompt('Razón social del proveedor:', sugerido) || '').trim();
@@ -6865,9 +6888,11 @@ window.guardarCompSimple = async function() {
   if (!prov) { err.textContent = 'Elegí un proveedor (o cargalo con “+ nuevo”).'; return; }
   const importe = _parseMoney(document.getElementById('csImporte').value);
   if (importe <= 0) { err.textContent = 'Cargá el importe.'; return; }
-  const local = document.getElementById('csLocal').value;
-  if (!local) { err.textContent = 'Elegí el local.'; return; }
   const cuentaVal = document.getElementById('csCuenta').value;
+  if (!cuentaVal) { err.textContent = 'Elegí la cuenta.'; return; }
+  const esSocio = _csEsCuentaSocios(cuentaVal);
+  const local = esSocio ? '' : document.getElementById('csLocal').value;
+  if (!esSocio && !local) { err.textContent = 'Elegí el local.'; return; }
   const rz = document.getElementById('csRazon').value;
   const socioCuentaIds = PLAN_CUENTAS.filter(function(c){ return c.grupo === 'SOCIOS'; }).map(function(c){ return c.id; });
   const rec = {
@@ -6884,7 +6909,7 @@ window.guardarCompSimple = async function() {
   try {
     const r = await api('comprobantes', { method: 'POST', body: JSON.stringify(rec) });
     const nuevo = Array.isArray(r) ? r[0] : r;
-    await api('comprobante_distribuciones', { method: 'POST', body: JSON.stringify([{ comprobante_id: nuevo.id, local: local, cuenta_id: cuentaVal ? parseInt(cuentaVal, 10) : null, monto: importe }]) });
+    await api('comprobante_distribuciones', { method: 'POST', body: JSON.stringify([{ comprobante_id: nuevo.id, local: local || null, cuenta_id: parseInt(cuentaVal, 10), monto: importe }]) });
     closeCompSimple();
     toast('✓ Comprobante cargado (queda pendiente de aprobación)', 'success');
   } catch (e) { err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e); }
