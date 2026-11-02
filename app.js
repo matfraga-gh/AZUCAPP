@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CG | ULTIMA | Comprobantes: IA de vision (Claude via Edge Function) completa neto/IVA/percepciones/total/detalle al subir el archivo, y resuelve los comprobantes sin QR. Requiere desplegar edge_extraer_comprobante.ts + secreto ANTHROPIC_API_KEY (+ CF/CE/CD) ===== */
+/* ===== BUILD 2026-11-03-CH | ULTIMA | Comprobantes: la primera linea de distribucion se prellena con monto = neto y la cuenta por defecto del proveedor (solo falta elegir el local). Etiqueta "Cuenta..." en el selector (+ CG/CF/CE) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -5538,11 +5538,11 @@ window.eliminarCuenta = async function(id) {
 let PROVEEDORES_LISTA = [], PROV_EDIT_ID = null;
 const PROV_COND_IVA = ['Responsable Inscripto', 'Monotributo', 'Exento', 'Consumidor Final', 'No Categorizado'];
 // Opciones de cuenta (CM/CL/GO/GA) desde el plan de cuentas, para la cuenta por defecto del proveedor
-function _cuentaOptionsHTML(selectedId) {
+function _cuentaOptionsHTML(selectedId, placeholder) {
   const grupos = ['CM', 'CL', 'GO', 'GA'];
   const porParent = {};
   PLAN_CUENTAS.forEach(function(c){ if (c.parent_id) (porParent[c.parent_id] = porParent[c.parent_id] || []).push(c); });
-  let html = '<option value="">— Sin cuenta por defecto —</option>';
+  let html = '<option value="">' + (placeholder || '— Sin cuenta por defecto —') + '</option>';
   grupos.forEach(function(g){
     PLAN_CUENTAS.filter(function(c){ return c.grupo === g && !c.parent_id; }).forEach(function(c){
       const sel = String(c.id) === String(selectedId) ? ' selected' : '';
@@ -5853,6 +5853,20 @@ function cmpAplicarIA(j) {
   }
   cmpSumaDist();
 }
+// Prellena la primera línea de distribución: monto = neto y cuenta por defecto del proveedor (si tiene). El local lo elige la persona.
+function cmpPrefillDist() {
+  const neto = parseFloat(document.getElementById('cmpNeto').value) || 0;
+  if (neto <= 0) return;
+  const provTxt = (document.getElementById('cmpProv').value || '').trim().toLowerCase();
+  const prov = CMP_PROVEEDORES.find(function(p){ return (p.razon_social || '').toLowerCase() === provTxt; });
+  const cuentaDef = (prov && prov.cuenta_default_id) ? prov.cuenta_default_id : '';
+  _leerDist();
+  if (CMP_DIST.length === 1 && (parseFloat(CMP_DIST[0].monto) || 0) <= 0) {
+    CMP_DIST[0].monto = neto;
+    if (!CMP_DIST[0].cuenta_id && cuentaDef) CMP_DIST[0].cuenta_id = cuentaDef;
+    renderDistComprobante();
+  }
+}
 window.onFiltroComprobantes = function(){ openComprobantes(); };
 function _cmpMoney(v){ return '$' + formatNumber(Math.round(parseFloat(v) || 0)); }
 function renderComprobantes() {
@@ -5908,7 +5922,7 @@ function renderDistComprobante() {
   cont.innerHTML = CMP_DIST.map(function(d, i){
     return '<div class="cmp-dist-row" style="display:flex;gap:5px;margin-bottom:6px;align-items:center">' +
       '<select class="cmp-d-local" style="flex:1;min-width:0">' + _cmpLocalesOptions(d.local) + '</select>' +
-      '<select class="cmp-d-cuenta" style="flex:1.3;min-width:0">' + _cuentaOptionsHTML(d.cuenta_id) + '</select>' +
+      '<select class="cmp-d-cuenta" style="flex:1.3;min-width:0">' + _cuentaOptionsHTML(d.cuenta_id, 'Cuenta…') + '</select>' +
       '<input class="cmp-d-monto" type="number" step="0.01" placeholder="$" value="' + (d.monto != null ? d.monto : '') + '" style="flex:0 0 90px" oninput="cmpSumaDist()">' +
       '<button type="button" class="btn-ghost" style="flex:0 0 auto;padding:4px 7px;color:var(--c-error)" onclick="cmpQuitarLinea(' + i + ')"><i class="ti ti-x"></i></button>' +
     '</div>';
@@ -6006,6 +6020,7 @@ window.cmpOnArchivo = async function(input) {
       est.innerHTML = prev + ' · <span style="color:#4CAF7A">✓ completado con IA</span>';
     } catch (e) { est.innerHTML = prev; }
   }
+  cmpPrefillDist();
 };
 window.cmpNuevaRazon = async function() {
   const nombre = (window.prompt('Nombre de la razón social:') || '').trim();
