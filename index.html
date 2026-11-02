@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261103ci">
+<link rel="stylesheet" href="styles.css?v=20261103cj">
 </head>
 <body>
 
@@ -1933,6 +1933,8 @@
         <div class="module-subtitle">Bandeja de pagos y programación</div>
       </div>
     </div>
+    <label class="field" style="margin-bottom:8px"><input type="text" id="pagosBuscar" placeholder="Buscar proveedor o número…" oninput="onPagoBuscar(this.value)" autocomplete="off"></label>
+    <div id="pagosControles"></div>
     <div id="pagosLista" style="margin-top:4px"><div class="loading">Cargando...</div></div>
   </div>
 </div>
@@ -2636,6 +2638,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261103ci"></script>
+<script src="app.js?v=20261103cj"></script>
 </body>
 </html>

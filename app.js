@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CI | ULTIMA | Pagos Fase A: nuevo modulo Pagos (bandeja + programacion de pagos: seleccionar comprobantes -> fecha + medio -> Pago programado). Nuevos estados y medios de pago. Ajustes: tipo "Remito valorizado", "+ nuevo proveedor" inline en el comprobante, aprendizaje proveedor->cuenta por defecto. Cta Cte Socios fuera del P&L ===== */
+/* ===== BUILD 2026-11-03-CJ | ULTIMA | Pagos: buscador + contador + "seleccionar todo" (escala a cientos de comprobantes), chip activo legible, y en "programar pago" los medios se filtran por la razon social del comprobante (no duplicados). Base Fase A: modulo Pagos, estados nuevos, medios de pago, Cta Cte Socios, "Remito valorizado", "+ nuevo proveedor", aprendizaje proveedor->cuenta ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -6136,7 +6136,8 @@ window.eliminarComprobante = async function(id) {
 // ============================================
 // PAGOS — Bandeja y programación de pagos (Fase A)
 // ============================================
-let PAGOS_LISTA = [], PAGOS_DIST = {}, PAGOS_MEDIOS = [], PAGOS_SEL = {}, PAGOS_SORT = 'vto', PAGOS_FILTRO = 'por_pagar';
+let PAGOS_LISTA = [], PAGOS_DIST = {}, PAGOS_MEDIOS = [], PAGOS_SEL = {}, PAGOS_SORT = 'vto', PAGOS_FILTRO = 'por_pagar', PAGOS_Q = '';
+const PAGOS_TOPE = 400;
 function puedePagos() { return isMaster() || isAdmin(); }
 function _pagoFecha(f) { return f ? f.slice(0, 10).split('-').reverse().join('/') : '—'; }
 function _pagoLocales(id) { const ds = PAGOS_DIST[id] || []; return Array.from(new Set(ds.map(function(d){ return d.local; }).filter(Boolean))).map(function(s){ return localLabel(s); }); }
@@ -6170,12 +6171,28 @@ window.openPagos = openPagos;
 
 window.onPagoFiltro = function(v) { PAGOS_FILTRO = v; PAGOS_SEL = {}; renderPagos(); };
 window.onPagoSort = function(v) { PAGOS_SORT = v; renderPagos(); };
+window.onPagoBuscar = function(v) { PAGOS_Q = (v || '').trim().toLowerCase(); renderPagos(); };
 window.togglePagoSel = function(id) { if (PAGOS_SEL[id]) delete PAGOS_SEL[id]; else PAGOS_SEL[id] = true; renderPagos(); };
+function _pagoSeleccionable(c) { return c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial'; }
+window.pagosSeleccionarTodo = function() {
+  const arr = _pagosFiltradas().filter(_pagoSeleccionable);
+  const todosSel = arr.length && arr.every(function(c){ return PAGOS_SEL[c.id]; });
+  if (todosSel) { arr.forEach(function(c){ delete PAGOS_SEL[c.id]; }); }
+  else { arr.forEach(function(c){ PAGOS_SEL[c.id] = true; }); }
+  renderPagos();
+};
 
 function _pagosFiltradas() {
   let arr = PAGOS_LISTA.slice();
   if (PAGOS_FILTRO === 'por_pagar') arr = arr.filter(function(c){ return c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial'; });
   else if (PAGOS_FILTRO === 'programados') arr = arr.filter(function(c){ return c.estado === 'pago_programado'; });
+  if (PAGOS_Q) {
+    arr = arr.filter(function(c){
+      const p = CMP_PROV_MAP[c.proveedor_id];
+      const hay = ((p && p.razon_social || '') + ' ' + (c.punto_venta || '') + ' ' + (c.numero || '')).toLowerCase();
+      return hay.indexOf(PAGOS_Q) >= 0;
+    });
+  }
   const prov = function(c){ const p = CMP_PROV_MAP[c.proveedor_id]; return (p && p.razon_social || '').toLowerCase(); };
   arr.sort(function(a, b){
     if (PAGOS_SORT === 'proveedor') return prov(a).localeCompare(prov(b));
@@ -6188,10 +6205,14 @@ function _pagosFiltradas() {
 
 function renderPagos() {
   const cont = document.getElementById('pagosLista');
-  if (!cont) return;
+  const ctrl = document.getElementById('pagosControles');
+  if (!cont || !ctrl) return;
   const arr = _pagosFiltradas();
-  const chip = function(v, lbl){ return '<button class="btn-ghost" style="padding:5px 11px;border-radius:14px;font-size:12px;' + (PAGOS_FILTRO === v ? 'background:var(--c-cream);color:var(--c-ink);font-weight:700' : '') + '" onclick="onPagoFiltro(\'' + v + '\')">' + lbl + '</button>'; };
-  let head = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px">' +
+  const chip = function(v, lbl){ return '<button class="btn-ghost" style="padding:5px 11px;border-radius:14px;font-size:12px;' + (PAGOS_FILTRO === v ? 'background:var(--c-cream);color:#2b2017;font-weight:700' : '') + '" onclick="onPagoFiltro(\'' + v + '\')">' + lbl + '</button>'; };
+  const selec = arr.filter(_pagoSeleccionable);
+  const todosSel = selec.length && selec.every(function(c){ return PAGOS_SEL[c.id]; });
+  const totalVista = arr.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
+  ctrl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">' +
     chip('por_pagar', 'Por pagar') + chip('programados', 'Programados') + chip('todos', 'Todos') +
     '<span style="margin-left:auto;font-size:12px;color:var(--c-sand)">Ordenar: </span>' +
     '<select onchange="onPagoSort(this.value)" style="padding:5px 8px;border-radius:8px;font-size:12px">' +
@@ -6199,11 +6220,17 @@ function renderPagos() {
       '<option value="fecha"' + (PAGOS_SORT === 'fecha' ? ' selected' : '') + '>Fecha comprobante</option>' +
       '<option value="proveedor"' + (PAGOS_SORT === 'proveedor' ? ' selected' : '') + '>Proveedor</option>' +
       '<option value="importe"' + (PAGOS_SORT === 'importe' ? ' selected' : '') + '>Importe</option>' +
-    '</select></div>';
+    '</select></div>' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">' +
+      '<span style="font-size:12px;color:var(--c-sand)"><b style="color:var(--c-cream)">' + arr.length + '</b> comprob. · ' + _cmpMoney(totalVista) + '</span>' +
+      (selec.length ? '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="pagosSeleccionarTodo()">' + (todosSel ? 'Quitar selección' : 'Seleccionar todo') + '</button>' : '') +
+    '</div>';
 
-  if (!arr.length) { cont.innerHTML = head + '<div class="empty-list">No hay comprobantes en esta vista.</div>'; _pagosFooter(); return; }
+  if (!arr.length) { cont.innerHTML = '<div class="empty-list">No hay comprobantes en esta vista.</div>'; _pagosFooter(); return; }
 
-  const cards = arr.map(function(c){
+  const recortado = arr.length > PAGOS_TOPE;
+  const vis = recortado ? arr.slice(0, PAGOS_TOPE) : arr;
+  const cards = vis.map(function(c){
     const p = CMP_PROV_MAP[c.proveedor_id];
     const est = CMP_ESTADOS[c.estado] || { label: c.estado, color: '#888' };
     const locs = _pagoLocales(c.id), ctas = _pagoCuentas(c.id);
@@ -6230,7 +6257,8 @@ function renderPagos() {
       '</div>' +
     '</div>';
   }).join('');
-  cont.innerHTML = head + cards;
+  const nota = recortado ? '<div class="cierre-hint" style="margin-top:10px"><i class="ti ti-info-circle"></i> Mostrando ' + PAGOS_TOPE + ' de ' + arr.length + '. Usá el buscador o los filtros para acotar.</div>' : '';
+  cont.innerHTML = cards + nota;
   _pagosFooter();
 }
 
@@ -6254,16 +6282,26 @@ function _pagosFooter() {
 window.abrirProgramarPago = function() {
   const ids = Object.keys(PAGOS_SEL);
   if (!ids.length) return;
-  // Medios agrupados por razón social
+  const selComp = PAGOS_LISTA.filter(function(c){ return PAGOS_SEL[c.id]; });
+  // Razones sociales involucradas en la selección: los medios se filtran por ellas.
+  const rzIds = Array.from(new Set(selComp.map(function(c){ return c.razon_social_id; }).filter(function(x){ return x != null; })));
   const rzName = {}; CMP_RAZONES.forEach(function(r){ rzName[r.id] = r.nombre; });
-  const porRz = {}; PAGOS_MEDIOS.forEach(function(m){ (porRz[m.razon_social_id] = porRz[m.razon_social_id] || []).push(m); });
+  let medios = PAGOS_MEDIOS;
+  if (rzIds.length) medios = PAGOS_MEDIOS.filter(function(m){ return rzIds.indexOf(m.razon_social_id) >= 0; });
   let opts = '<option value="">—</option>';
-  Object.keys(porRz).forEach(function(rid){
-    opts += '<optgroup label="' + esc(rzName[rid] || 'General') + '">' + porRz[rid].map(function(m){ return '<option value="' + m.id + '">' + esc(m.nombre) + '</option>'; }).join('') + '</optgroup>';
-  });
+  if (rzIds.length <= 1) {
+    // Una sola razón social (o comprobantes sin razón): lista simple, sin duplicar.
+    opts += medios.map(function(m){ return '<option value="' + m.id + '">' + esc(m.nombre) + '</option>'; }).join('');
+  } else {
+    // La selección mezcla razones sociales: agrupamos para que quede claro cuál es cuál.
+    rzIds.forEach(function(rid){
+      opts += '<optgroup label="' + esc(rzName[rid] || 'General') + '">' + medios.filter(function(m){ return m.razon_social_id === rid; }).map(function(m){ return '<option value="' + m.id + '">' + esc(m.nombre) + '</option>'; }).join('') + '</optgroup>';
+    });
+  }
   document.getElementById('progMedio').innerHTML = opts;
   document.getElementById('progFecha').value = new Date().toISOString().slice(0, 10);
-  document.getElementById('progResumen').textContent = ids.length + ' comprobante(s) seleccionado(s).';
+  const rzTxt = rzIds.length === 1 ? (' · ' + (rzName[rzIds[0]] || '')) : (rzIds.length > 1 ? ' · varias razones sociales' : '');
+  document.getElementById('progResumen').textContent = ids.length + ' comprobante(s)' + rzTxt + '.';
   document.getElementById('progError').textContent = '';
   document.getElementById('modalProgramarPago').classList.add('show');
 };
