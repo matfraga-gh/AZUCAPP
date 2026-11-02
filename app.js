@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CJ | ULTIMA | Pagos: buscador + contador + "seleccionar todo" (escala a cientos de comprobantes), chip activo legible, y en "programar pago" los medios se filtran por la razon social del comprobante (no duplicados). Base Fase A: modulo Pagos, estados nuevos, medios de pago, Cta Cte Socios, "Remito valorizado", "+ nuevo proveedor", aprendizaje proveedor->cuenta ===== */
+/* ===== BUILD 2026-11-03-CK | ULTIMA | Descarga a Excel en Pagos y Comprobantes (respeta filtros/busqueda). Fichas mas compactas: total y fecha del comprobante destacados, vencimiento destacado y en rojo si esta vencido, borde izq con color de estado. Base: modulo Pagos (buscador/contador/seleccionar todo), medios por razon social, estados nuevos, Cta Cte Socios, "Remito valorizado", "+ nuevo proveedor", aprendizaje proveedor->cuenta ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -5894,17 +5894,23 @@ function renderComprobantes() {
     const prov = CMP_PROV_MAP[c.proveedor_id];
     const est = CMP_ESTADOS[c.estado] || { label: c.estado || '—', color: '#888' };
     const nro = [c.punto_venta, c.numero].filter(Boolean).join('-');
-    const sub = [ (c.tipo || ''), (nro ? 'N° ' + esc(nro) : ''), (c.fecha_emision ? fmtFechaCorta(String(c.fecha_emision).slice(0,10)) : '') ].filter(Boolean).join(' · ');
-    return '<div class="ped-card" style="margin-bottom:8px">' +
-      '<div class="ped-card-top" style="align-items:center"><span class="ped-local" style="min-width:0;overflow:hidden;text-overflow:ellipsis">' + esc(prov ? prov.razon_social : '(proveedor s/d)') + '</span>' +
-        '<span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;background:' + est.color + ';color:#fff;white-space:nowrap">' + est.label + '</span></div>' +
-      '<div class="ped-card-sub">' + sub + '</div>' +
-      '<div class="ped-card-sub" style="margin-top:3px;display:flex;align-items:center;justify-content:space-between;gap:6px">' +
-        '<span style="font-weight:700;color:var(--c-cream)">' + _cmpMoney(c.total) + '</span>' +
-        '<span style="display:flex;gap:3px">' +
-          (c.adjunto_path ? '<button class="btn-ghost" style="padding:5px 9px" title="Ver PDF" onclick="cmpVerAdjunto(\'' + esc(c.adjunto_path) + '\')"><i class="ti ti-file-text"></i></button>' : '') +
-          '<button class="btn-ghost" style="padding:5px 9px" onclick="abrirEditarComprobante(' + c.id + ')"><i class="ti ti-pencil"></i></button>' +
-          '<button class="btn-ghost" style="padding:5px 9px;color:var(--c-error)" onclick="eliminarComprobante(' + c.id + ')"><i class="ti ti-trash"></i></button>' +
+    const nc = cmpEsNC(c.tipo);
+    const vencida = _cmpVencida(c);
+    const vtoTxt = c.fecha_vto ? ('vto <b style="color:' + (vencida ? '#E5534B' : 'var(--c-cream)') + '">' + _pagoFecha(c.fecha_vto) + (vencida ? ' ⚠' : '') + '</b>') : '';
+    return '<div class="ped-card" style="padding:8px 10px;margin-bottom:6px;border-left:3px solid ' + est.color + '">' +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+        '<span style="font-weight:700;color:var(--c-cream);min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(prov ? prov.razon_social : '(proveedor s/d)') + '</span>' +
+        '<span style="font-weight:800;font-size:15px;white-space:nowrap;color:' + (nc ? '#4CAF7A' : 'var(--c-cream)') + '">' + (nc ? '− ' : '') + _cmpMoney(c.total) + '</span>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:3px">' +
+        '<span style="font-size:11.5px;color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+          esc(c.tipo || '') + (nro ? ' · ' + esc(nro) : '') + ' · <b style="color:var(--c-cream)">' + _pagoFecha(c.fecha_emision) + '</b>' + (vtoTxt ? ' · ' + vtoTxt : '') +
+        '</span>' +
+        '<span style="display:flex;gap:2px;flex:0 0 auto;align-items:center">' +
+          '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:' + est.color + ';color:#fff;white-space:nowrap">' + est.label + '</span>' +
+          (c.adjunto_path ? '<button class="btn-ghost" style="padding:3px 7px" title="Ver PDF" onclick="cmpVerAdjunto(\'' + esc(c.adjunto_path) + '\')"><i class="ti ti-file-text"></i></button>' : '') +
+          '<button class="btn-ghost" style="padding:3px 7px" onclick="abrirEditarComprobante(' + c.id + ')"><i class="ti ti-pencil"></i></button>' +
+          '<button class="btn-ghost" style="padding:3px 7px;color:var(--c-error)" onclick="eliminarComprobante(' + c.id + ')"><i class="ti ti-trash"></i></button>' +
         '</span>' +
       '</div>' +
     '</div>';
@@ -6144,6 +6150,53 @@ function _pagoLocales(id) { const ds = PAGOS_DIST[id] || []; return Array.from(n
 function _pagoCuentas(id) { const ds = PAGOS_DIST[id] || []; return Array.from(new Set(ds.map(function(d){ return d.cuenta_id; }).filter(Boolean))).map(function(c){ return _nombreCuenta(c); }).filter(Boolean); }
 function _pagoSigno(c) { return cmpEsNC(c.tipo) ? -1 : 1; }
 function _nombreMedio(id) { const m = PAGOS_MEDIOS.find(function(x){ return String(x.id) === String(id); }); return m ? m.nombre : ''; }
+function _cmpVencida(c) {
+  if (!c.fecha_vto) return false;
+  if (['pago_confirmado', 'pago_completado', 'anulado'].indexOf(c.estado) >= 0) return false;
+  return String(c.fecha_vto).slice(0, 10) < hoyStr();
+}
+// Fila para exportar un comprobante a Excel (reutilizable en Pagos y Comprobantes).
+function _filaCmpExcel(c, distMap) {
+  const p = CMP_PROV_MAP[c.proveedor_id];
+  const ds = (distMap && distMap[c.id]) || [];
+  const locs = Array.from(new Set(ds.map(function(d){ return localLabel(d.local); }).filter(Boolean))).join(', ');
+  const ctas = Array.from(new Set(ds.map(function(d){ return _nombreCuenta(d.cuenta_id); }).filter(Boolean))).join(' | ');
+  const est = CMP_ESTADOS[c.estado] || { label: c.estado || '' };
+  return {
+    'Proveedor': p ? p.razon_social : '',
+    'Tipo': c.tipo || '',
+    'Pto venta': c.punto_venta || '',
+    'Número': c.numero || '',
+    'Fecha comprobante': _pagoFecha(c.fecha_emision),
+    'Vencimiento': _pagoFecha(c.fecha_vto),
+    'Locales': locs,
+    'Cuentas': ctas,
+    'Neto': Math.round(parseFloat(c.neto) || 0),
+    'IVA': Math.round(parseFloat(c.iva) || 0),
+    'Percepciones': Math.round(parseFloat(c.percepciones) || 0),
+    'Otros': Math.round(parseFloat(c.otros_imp) || 0),
+    'Total': Math.round(parseFloat(c.total) || 0),
+    'Estado': est.label,
+    'Fecha de pago': _pagoFecha(c.fecha_pago),
+    'Medio de pago': c.medio_pago_id ? _nombreMedio(c.medio_pago_id) : ''
+  };
+}
+window.descargarPagosExcel = async function() {
+  try { await ensureXLSX(); } catch (e) { toast('No se pudo cargar el exportador de Excel', 'error'); return; }
+  const arr = _pagosFiltradas();
+  if (!arr.length) { toast('No hay comprobantes para exportar', 'error'); return; }
+  const filas = arr.map(function(c){ return _filaCmpExcel(c, PAGOS_DIST); });
+  exportarAExcel('Pagos_AZUCA_' + hoyStr() + '.xlsx', [{ nombre: 'Pagos', filas: filas }]);
+};
+window.descargarComprobantesExcel = async function() {
+  try { await ensureXLSX(); } catch (e) { toast('No se pudo cargar el exportador de Excel', 'error'); return; }
+  if (!CMP_LISTA.length) { toast('No hay comprobantes para exportar', 'error'); return; }
+  const ids = CMP_LISTA.map(function(c){ return c.id; });
+  let distMap = {};
+  try { const ds = await apiAll('comprobante_distribuciones?comprobante_id=in.(' + ids.join(',') + ')&select=comprobante_id,local,cuenta_id,monto') || []; ds.forEach(function(d){ (distMap[d.comprobante_id] = distMap[d.comprobante_id] || []).push(d); }); } catch (e) {}
+  const filas = CMP_LISTA.map(function(c){ return _filaCmpExcel(c, distMap); });
+  exportarAExcel('Comprobantes_AZUCA_' + hoyStr() + '.xlsx', [{ nombre: 'Comprobantes', filas: filas }]);
+};
 
 async function openPagos() {
   if (!puedePagos()) { showDashboard(); return; }
@@ -6223,7 +6276,10 @@ function renderPagos() {
     '</select></div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">' +
       '<span style="font-size:12px;color:var(--c-sand)"><b style="color:var(--c-cream)">' + arr.length + '</b> comprob. · ' + _cmpMoney(totalVista) + '</span>' +
-      (selec.length ? '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="pagosSeleccionarTodo()">' + (todosSel ? 'Quitar selección' : 'Seleccionar todo') + '</button>' : '') +
+      '<span style="display:flex;gap:6px">' +
+        (selec.length ? '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="pagosSeleccionarTodo()">' + (todosSel ? 'Quitar selección' : 'Seleccionar todo') + '</button>' : '') +
+        '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="descargarPagosExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>' +
+      '</span>' +
     '</div>';
 
   if (!arr.length) { cont.innerHTML = '<div class="empty-list">No hay comprobantes en esta vista.</div>'; _pagosFooter(); return; }
@@ -6238,23 +6294,28 @@ function renderPagos() {
     const sel = !!PAGOS_SEL[c.id];
     const programado = c.estado === 'pago_programado';
     const seleccionable = c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial';
-    return '<div class="ped-card" style="' + (sel ? 'outline:2px solid var(--c-cream)' : '') + '">' +
-      '<div class="ped-card-top" style="align-items:center;gap:8px">' +
-        (seleccionable ? '<input type="checkbox" ' + (sel ? 'checked' : '') + ' onclick="togglePagoSel(' + c.id + ')" style="width:18px;height:18px;flex:0 0 auto">' : '<span style="width:18px;flex:0 0 auto"></span>') +
-        '<span class="ped-local" style="min-width:0;overflow:hidden;text-overflow:ellipsis">' + esc(p ? p.razon_social : '(prov s/d)') + '</span>' +
-        '<span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;background:' + est.color + ';color:#fff;white-space:nowrap">' + est.label + '</span>' +
+    const nro = [c.punto_venta, c.numero].filter(Boolean).join('-');
+    const vencida = _cmpVencida(c);
+    const imputa = [locs.join(', '), ctas.join(' · ')].filter(Boolean).join('  ·  ');
+    const vtoTxt = c.fecha_vto ? ('vto <b style="color:' + (vencida ? '#E5534B' : 'var(--c-cream)') + '">' + _pagoFecha(c.fecha_vto) + (vencida ? ' ⚠' : '') + '</b>') : '';
+    return '<div class="ped-card" style="padding:8px 10px;margin-bottom:6px;border-left:3px solid ' + est.color + ';' + (sel ? 'outline:2px solid var(--c-cream)' : '') + '">' +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+        (seleccionable ? '<input type="checkbox" ' + (sel ? 'checked' : '') + ' onclick="togglePagoSel(' + c.id + ')" style="width:17px;height:17px;flex:0 0 auto">' : '<span style="width:17px;flex:0 0 auto"></span>') +
+        '<span style="font-weight:700;color:var(--c-cream);min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p ? p.razon_social : '(prov s/d)') + '</span>' +
+        '<span style="font-weight:800;font-size:15px;white-space:nowrap;color:' + (nc ? '#4CAF7A' : 'var(--c-cream)') + '">' + (nc ? '− ' : '') + _cmpMoney(c.total) + '</span>' +
       '</div>' +
-      '<div class="ped-card-sub" style="margin-top:4px">' + esc(c.tipo || '') + (c.numero ? ' · ' + esc((c.punto_venta ? c.punto_venta + '-' : '') + c.numero) : '') + ' · emis. ' + _pagoFecha(c.fecha_emision) + ' · vto ' + _pagoFecha(c.fecha_vto) + '</div>' +
-      (locs.length ? '<div class="ped-card-sub">Locales: ' + esc(locs.join(', ')) + '</div>' : '') +
-      (ctas.length ? '<div class="ped-card-sub">Cuentas: ' + esc(ctas.join(' · ')) + '</div>' : '') +
-      (programado ? '<div class="ped-card-sub" style="color:#3E86C7">Pago: ' + _pagoFecha(c.fecha_pago) + (c.medio_pago_id ? ' · ' + esc(_nombreMedio(c.medio_pago_id)) : '') + '</div>' : '') +
-      '<div class="ped-card-sub" style="margin-top:3px;display:flex;align-items:center;justify-content:space-between;gap:6px">' +
-        '<span style="font-weight:700;color:' + (nc ? '#4CAF7A' : 'var(--c-cream)') + '">' + (nc ? '− ' : '') + _cmpMoney(c.total) + (nc ? ' (NC)' : '') + '</span>' +
-        '<span style="display:flex;gap:3px">' +
-          (c.adjunto_path ? '<button class="btn-ghost" style="padding:5px 9px" title="Ver PDF" onclick="cmpVerAdjunto(\'' + esc(c.adjunto_path) + '\')"><i class="ti ti-file-text"></i></button>' : '') +
-          (programado ? '<button class="btn-ghost" style="padding:5px 9px;color:var(--c-error)" title="Volver a Pendiente de pago" onclick="desprogramarPago(' + c.id + ')"><i class="ti ti-arrow-back-up"></i></button>' : '') +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:3px;padding-left:25px">' +
+        '<span style="font-size:11.5px;color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+          esc(c.tipo || '') + (nro ? ' · ' + esc(nro) : '') + ' · <b style="color:var(--c-cream)">' + _pagoFecha(c.fecha_emision) + '</b>' + (vtoTxt ? ' · ' + vtoTxt : '') + (nc ? ' · <span style="color:#4CAF7A">NC</span>' : '') +
+        '</span>' +
+        '<span style="display:flex;gap:2px;flex:0 0 auto">' +
+          '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:' + est.color + ';color:#fff;white-space:nowrap">' + est.label + '</span>' +
+          (c.adjunto_path ? '<button class="btn-ghost" style="padding:3px 7px" title="Ver PDF" onclick="cmpVerAdjunto(\'' + esc(c.adjunto_path) + '\')"><i class="ti ti-file-text"></i></button>' : '') +
+          (programado ? '<button class="btn-ghost" style="padding:3px 7px;color:var(--c-error)" title="Volver a Pendiente de pago" onclick="desprogramarPago(' + c.id + ')"><i class="ti ti-arrow-back-up"></i></button>' : '') +
         '</span>' +
       '</div>' +
+      (imputa ? '<div style="font-size:11px;color:var(--c-sand);margin-top:2px;padding-left:25px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(imputa) + '</div>' : '') +
+      (programado ? '<div style="font-size:11px;color:#3E86C7;margin-top:2px;padding-left:25px">Pago: ' + _pagoFecha(c.fecha_pago) + (c.medio_pago_id ? ' · ' + esc(_nombreMedio(c.medio_pago_id)) : '') + '</div>' : '') +
     '</div>';
   }).join('');
   const nota = recortado ? '<div class="cierre-hint" style="margin-top:10px"><i class="ti ti-info-circle"></i> Mostrando ' + PAGOS_TOPE + ' de ' + arr.length + '. Usá el buscador o los filtros para acotar.</div>' : '';

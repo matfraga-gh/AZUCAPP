@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261103cj">
+<link rel="stylesheet" href="styles.css?v=20261103ck">
 </head>
 <body>
 
@@ -1920,7 +1920,10 @@
         <option value="pago_confirmado">Pago confirmado</option>
         <option value="anulado">Anulados</option>
       </select></label>
-    <div id="comprobantesLista" style="margin-top:12px"><div class="loading">Cargando...</div></div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:4px">
+      <button class="btn-ghost" style="padding:5px 11px;font-size:12px" onclick="descargarComprobantesExcel()"><i class="ti ti-file-spreadsheet"></i> Descargar Excel</button>
+    </div>
+    <div id="comprobantesLista" style="margin-top:4px"><div class="loading">Cargando...</div></div>
   </div>
 </div>
 
@@ -2638,6 +2641,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261103cj"></script>
+<script src="app.js?v=20261103ck"></script>
 </body>
 </html>
