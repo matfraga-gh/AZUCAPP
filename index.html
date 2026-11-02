@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261103cp">
+<link rel="stylesheet" href="styles.css?v=20261103cq">
 </head>
 <body>
 
@@ -1942,6 +1942,61 @@
   </div>
 </div>
 
+<div id="vEstadoCuenta" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Estado de cuenta</div>
+        <div class="module-subtitle">Comprobantes y saldo por proveedor</div>
+      </div>
+    </div>
+    <label class="field"><span class="field-label">Proveedor</span>
+      <input type="text" id="ecProv" list="ecProvList" placeholder="Empezá a escribir…" autocomplete="off">
+      <datalist id="ecProvList"></datalist></label>
+    <div style="display:flex;gap:8px">
+      <label class="field" style="flex:1"><span class="field-label">Desde</span><input type="date" id="ecDesde"></label>
+      <label class="field" style="flex:1"><span class="field-label">Hasta</span><input type="date" id="ecHasta"></label>
+    </div>
+    <button class="btn-primary" style="width:100%;margin:4px 0 12px" onclick="ecVer()"><i class="ti ti-search"></i> Ver</button>
+    <div id="ecResultado"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalCompSimple">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Comprobante simple</h2>
+      <button class="modal-close" onclick="closeCompSimple()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+      <div class="cierre-hint" style="margin-bottom:8px">Para compras chicas pagadas al momento. Queda <b>pendiente de aprobación</b> hasta que Administración revise la imputación.</div>
+      <label class="field"><span class="field-label">Fecha</span><input type="date" id="csFecha"></label>
+      <label class="field"><span class="field-label">Proveedor <a href="#" onclick="csNuevoProveedor();return false;" style="font-weight:400;font-size:12px;color:var(--c-sand)">+ nuevo</a></span>
+        <input type="text" id="csProv" list="csProvList" placeholder="Empezá a escribir…" autocomplete="off">
+        <datalist id="csProvList"></datalist></label>
+      <div style="display:flex;gap:8px">
+        <label class="field" style="flex:1"><span class="field-label">Tipo</span><select id="csTipo"></select></label>
+        <label class="field" style="flex:1"><span class="field-label">Razón social propia</span><select id="csRazon"></select></label>
+      </div>
+      <label class="field"><span class="field-label">Importe total</span><input type="text" inputmode="decimal" id="csImporte" placeholder="$0,00"></label>
+      <div style="display:flex;gap:8px">
+        <label class="field" style="flex:1"><span class="field-label">Local</span><select id="csLocal"></select></label>
+        <label class="field" style="flex:1.3"><span class="field-label">Cuenta (opcional)</span><select id="csCuenta"></select></label>
+      </div>
+      <label class="field"><span class="field-label">Medio de pago (opcional)</span><select id="csMedio"></select></label>
+      <label class="field"><span class="field-label">Foto / comprobante (opcional)</span><input type="file" id="csArchivo" accept="application/pdf,image/*" onchange="csOnArchivo(this)"></label>
+      <div id="csAdjEstado" style="font-size:12px;margin:-4px 0 8px"></div>
+      <label class="field"><span class="field-label">Observaciones</span><input type="text" id="csObs" placeholder="Opcional"></label>
+      <div class="login-error" id="csError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeCompSimple()">Cancelar</button>
+      <button class="btn-primary" id="csGuardarBtn" onclick="guardarCompSimple()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalProgramarPago">
   <div class="modal-card cierre-card">
     <div class="modal-header">
@@ -2687,6 +2742,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261103cp"></script>
+<script src="app.js?v=20261103cq"></script>
 </body>
 </html>

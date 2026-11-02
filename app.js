@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CP | ULTIMA | Importes: el formato $ se fuerza desde el JS (los campos de neto/iva/total se convierten a texto con $ aunque el index.html quede viejo). Bloqueo de comprobantes duplicados (mismo proveedor + mismo numero + mismo importe). Antes: formato $ en Compras/Pagos, alerta al editar pagado, OP naranja+domicilio ===== */
+/* ===== BUILD 2026-11-03-CQ | ULTIMA | Fase C: Estado de cuenta por proveedor (KPIs Total/Pagado/Saldo + lista + Excel). Comprobante Simple (Andy): carga rapida -> estado "aprobacion pendiente" -> Admin lo aprueba (boton check en la lista). Cta Cte Socios: comprobantes imputados a grupo SOCIOS marcan es_socios y se ocultan a los editores (Lauti/Andy). Requiere fase_c.sql. Antes: formato $ forzado por JS, bloqueo de duplicados ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -554,6 +554,24 @@ const MODULES = [
     desc: 'Bandeja de pagos y órdenes de pago',
     visible: () => isMaster() || isAdmin(),
     action: () => openPagos()
+  },
+  {
+    id: 'estadocuenta',
+    icon: 'ti-report-money',
+    color: '#8A6D3B',
+    title: 'Estado de cuenta',
+    desc: 'Comprobantes y saldo por proveedor',
+    visible: () => isMaster() || isAdmin(),
+    action: () => openEstadoCuenta()
+  },
+  {
+    id: 'compsimple',
+    icon: 'ti-receipt-2',
+    color: '#0E9AA7',
+    title: 'Comprobante simple',
+    desc: 'Compras chicas pagadas al momento',
+    visible: () => isMaster() || isAdmin() || (currentUser && currentUser.editor_comp_simple),
+    action: () => abrirCompSimple()
   },
   {
     id: 'panelventas',
@@ -5740,6 +5758,8 @@ async function openComprobantes() {
     const est = (document.getElementById('cmpEstadoFiltro') || {}).value || '';
     let q = 'comprobantes?select=*&order=creado_en.desc&limit=300';
     if (est) q += '&estado=eq.' + est;
+    // Cta Cte Socios: solo visible para Paula/Silvina/Matías (admin/master), no para los editores (Lauti/Andy).
+    if (!isMaster() && !isAdmin()) q += '&es_socios=eq.false';
     CMP_LISTA = await api(q) || [];
     // Nombres de proveedor: solo los referenciados en la lista (rápido)
     const pids = Array.from(new Set(CMP_LISTA.map(function(c){ return c.proveedor_id; }).filter(Boolean)));
@@ -5931,6 +5951,7 @@ function renderComprobantes() {
         '<span style="font-size:11.5px;color:var(--c-sand);white-space:nowrap;flex:0 0 auto">emis. <b style="color:var(--c-cream)">' + _pagoFecha(c.fecha_emision) + '</b> · ' + vtoTxt + '</span>' +
         '<span style="display:flex;gap:2px;flex:0 0 auto;align-items:center">' +
           '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:' + est.color + ';color:#fff;white-space:nowrap">' + est.label + '</span>' +
+          (c.estado === 'aprobacion_pendiente' && (isMaster() || isAdmin()) ? '<button class="btn-ghost" style="padding:3px 7px;color:#3BA55D" title="Aprobar" onclick="aprobarComprobante(' + c.id + ')"><i class="ti ti-check"></i></button>' : '') +
           (c.adjunto_path ? '<button class="btn-ghost" style="padding:3px 7px" title="Ver PDF" onclick="cmpVerAdjunto(\'' + esc(c.adjunto_path) + '\')"><i class="ti ti-file-text"></i></button>' : '') +
           '<button class="btn-ghost" style="padding:3px 7px" onclick="abrirEditarComprobante(' + c.id + ')"><i class="ti ti-pencil"></i></button>' +
           '<button class="btn-ghost" style="padding:3px 7px;color:var(--c-error)" onclick="eliminarComprobante(' + c.id + ')"><i class="ti ti-trash"></i></button>' +
@@ -6132,6 +6153,7 @@ window.guardarComprobante = async function() {
     firmado_por: document.getElementById('cmpFirmado').value.trim() || null,
     observaciones: document.getElementById('cmpObs').value.trim() || null,
     adjunto_path: CMP_ADJUNTO_PATH || null,
+    es_socios: (function(){ const ids = PLAN_CUENTAS.filter(function(c){ return c.grupo === 'SOCIOS'; }).map(function(c){ return c.id; }); return dist.some(function(d){ return ids.indexOf(d.cuenta_id) >= 0; }); })(),
     actualizado_en: new Date().toISOString()
   };
   // Bloqueo de duplicados: mismo proveedor + mismo número + mismo importe total.
@@ -6724,6 +6746,160 @@ window.descargarOrdenesExcel = async function() {
     };
   });
   exportarAExcel('Ordenes_de_pago_AZUCA_' + hoyStr() + '.xlsx', [{ nombre: 'Órdenes de pago', filas: filas }]);
+};
+
+// ============================================
+// ESTADO DE CUENTA POR PROVEEDOR
+// ============================================
+let EC_LISTA = [], EC_PROV = null;
+async function openEstadoCuenta() {
+  if (!(isMaster() || isAdmin())) { showDashboard(); return; }
+  showView('vEstadoCuenta');
+  try { await cmpAsegurarProveedores(); } catch (e) {}
+  if (!PLAN_CUENTAS.length) { try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || []; } catch (e) {} }
+  const dl = document.getElementById('ecProvList');
+  if (dl) dl.innerHTML = CMP_PROVEEDORES.map(function(p){ return '<option value="' + esc(p.razon_social || '') + '"></option>'; }).join('');
+  document.getElementById('ecResultado').innerHTML = '<div class="empty-list">Elegí un proveedor y tocá “Ver”.</div>';
+}
+window.openEstadoCuenta = openEstadoCuenta;
+function _ecPagado(c){ return ['pago_completado', 'pago_confirmado'].indexOf(c.estado) >= 0; }
+window.ecVer = async function() {
+  const txt = (document.getElementById('ecProv').value || '').trim().toLowerCase();
+  const prov = CMP_PROVEEDORES.find(function(p){ return (p.razon_social || '').toLowerCase() === txt; });
+  const cont = document.getElementById('ecResultado');
+  if (!prov) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">Elegí un proveedor de la lista.</div>'; return; }
+  EC_PROV = prov;
+  const desde = document.getElementById('ecDesde').value, hasta = document.getElementById('ecHasta').value;
+  cont.innerHTML = '<div class="loading">Cargando...</div>';
+  let q = 'comprobantes?proveedor_id=eq.' + prov.id + '&select=*&order=fecha_emision.asc';
+  if (desde) q += '&fecha_emision=gte.' + desde;
+  if (hasta) q += '&fecha_emision=lte.' + hasta;
+  try { EC_LISTA = await apiAll(q) || []; } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar.</div>'; return; }
+  renderEstadoCuenta();
+};
+function _ecKpi(lbl, val, color){ return '<div style="flex:1;min-width:92px;background:rgba(255,255,255,.04);border:1px solid var(--c-cream-border);border-radius:8px;padding:7px 10px"><div style="font-size:11px;color:var(--c-sand)">' + lbl + '</div><div style="font-weight:800;font-size:15px;color:' + color + '">' + _money2(val) + '</div></div>'; }
+function renderEstadoCuenta() {
+  const cont = document.getElementById('ecResultado');
+  if (!EC_LISTA.length) { cont.innerHTML = '<div class="empty-list">Sin comprobantes para este proveedor en el período.</div>'; return; }
+  const totalFact = EC_LISTA.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
+  const pagado = EC_LISTA.filter(_ecPagado).reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
+  const saldo = totalFact - pagado;
+  let html = '<div style="font-weight:700;color:var(--c-cream);margin-bottom:8px">' + esc(EC_PROV.razon_social || '') + '</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">' +
+      _ecKpi('Total', totalFact, 'var(--c-cream)') + _ecKpi('Pagado', pagado, '#3BA55D') + _ecKpi('Saldo', saldo, saldo > 0.5 ? '#C87A2C' : '#3BA55D') +
+    '</div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;color:var(--c-sand)">' + EC_LISTA.length + ' comprobantes</span>' +
+      '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="descargarEstadoCuentaExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button></div>';
+  html += EC_LISTA.map(function(c){
+    const est = CMP_ESTADOS[c.estado] || { label: c.estado, color: '#888' };
+    const nc = cmpEsNC(c.tipo);
+    return '<div class="ped-card" style="padding:7px 10px;margin-bottom:5px;border-left:3px solid ' + est.color + '">' +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+        '<span style="font-size:12px;color:var(--c-sand);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc((c.tipo || '') + ' ' + [c.punto_venta, c.numero].filter(Boolean).join('-')) + ' · ' + _pagoFecha(c.fecha_emision) + '</span>' +
+        '<span style="font-weight:700;white-space:nowrap;color:' + (nc ? '#4CAF7A' : 'var(--c-cream)') + '">' + (nc ? '− ' : '') + _money2(c.total) + '</span>' +
+      '</div>' +
+      '<div style="margin-top:2px"><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:' + est.color + ';color:#fff">' + est.label + '</span>' + (c.fecha_pago && _ecPagado(c) ? '<span style="font-size:11px;color:#3BA55D;margin-left:6px">Pagado ' + _pagoFecha(c.fecha_pago) + '</span>' : '') + '</div>' +
+    '</div>';
+  }).join('');
+  cont.innerHTML = html;
+}
+window.descargarEstadoCuentaExcel = async function() {
+  try { await ensureXLSX(); } catch (e) { toast('No se pudo cargar el exportador de Excel', 'error'); return; }
+  if (!EC_LISTA.length) return;
+  const filas = EC_LISTA.map(function(c){ return _filaCmpExcel(c, null); });
+  const suf = ((EC_PROV && EC_PROV.razon_social) || 'prov').replace(/[^a-z0-9]/gi, '_').slice(0, 24);
+  exportarAExcel('EstadoCuenta_' + suf + '_' + hoyStr() + '.xlsx', [{ nombre: 'Estado de cuenta', filas: filas }]);
+};
+
+// ============================================
+// COMPROBANTE SIMPLE (Andy) + aprobación
+// ============================================
+let CS_ADJUNTO_PATH = null;
+async function abrirCompSimple() {
+  if (!(isMaster() || isAdmin() || (currentUser && currentUser.editor_comp_simple))) { showDashboard(); return; }
+  try { await cmpAsegurarProveedores(); } catch (e) {}
+  if (!PLAN_CUENTAS.length) { try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || []; } catch (e) {} }
+  CMP_RAZONES = await api('razones_sociales?activo=eq.true&order=nombre.asc') || [];
+  if (!PAGOS_MEDIOS.length) { try { PAGOS_MEDIOS = await api('medios_pago?activo=eq.true&order=razon_social_id,nombre') || []; } catch (e) {} }
+  document.getElementById('csProvList').innerHTML = CMP_PROVEEDORES.map(function(p){ return '<option value="' + esc(p.razon_social || '') + '"></option>'; }).join('');
+  document.getElementById('csRazon').innerHTML = '<option value="">—</option>' + CMP_RAZONES.map(function(r){ return '<option value="' + r.id + '">' + esc(r.nombre) + '</option>'; }).join('');
+  document.getElementById('csTipo').innerHTML = ['Remito valorizado', 'Recibo', 'Ticket', 'Otro'].map(function(t){ return '<option value="' + t + '">' + t + '</option>'; }).join('');
+  document.getElementById('csLocal').innerHTML = _cmpLocalesOptions('');
+  document.getElementById('csCuenta').innerHTML = _cuentaOptionsHTML('', 'Cuenta (la completa admin si no sabés)…');
+  const rzName = {}; CMP_RAZONES.forEach(function(r){ rzName[r.id] = r.nombre; });
+  document.getElementById('csMedio').innerHTML = '<option value="">—</option>' + PAGOS_MEDIOS.map(function(m){ return '<option value="' + m.id + '">' + esc(m.nombre + ' · ' + (rzName[m.razon_social_id] || '')) + '</option>'; }).join('');
+  document.getElementById('csFecha').value = hoyStr();
+  ['csProv', 'csImporte', 'csObs'].forEach(function(id){ const e = document.getElementById(id); if (e) e.value = ''; });
+  document.getElementById('csError').textContent = '';
+  CS_ADJUNTO_PATH = null; document.getElementById('csAdjEstado').innerHTML = '';
+  const imp = document.getElementById('csImporte'); if (imp && !imp._mb) { imp.addEventListener('focus', function(){ moneyFocus(imp); }); imp.addEventListener('blur', function(){ moneyBlur(imp); }); imp._mb = true; }
+  document.getElementById('modalCompSimple').classList.add('show');
+}
+window.abrirCompSimple = abrirCompSimple;
+window.closeCompSimple = function(){ document.getElementById('modalCompSimple').classList.remove('show'); };
+window.csNuevoProveedor = async function() {
+  const sugerido = (document.getElementById('csProv').value || '').trim();
+  const razon = (window.prompt('Razón social del proveedor:', sugerido) || '').trim();
+  if (!razon) return;
+  const cuit = (window.prompt('CUIT (opcional, solo números):') || '').trim().replace(/[^0-9]/g, '') || null;
+  try {
+    const r = await api('proveedores', { method: 'POST', body: JSON.stringify({ razon_social: razon, cuit: cuit, creado_por: currentUser ? currentUser.id : null }) });
+    const nuevo = Array.isArray(r) ? r[0] : r;
+    CMP_PROVEEDORES.push(nuevo); CMP_PROV_MAP[nuevo.id] = nuevo;
+    document.getElementById('csProvList').innerHTML += '<option value="' + esc(razon) + '"></option>';
+    document.getElementById('csProv').value = razon;
+    toast('✓ Proveedor agregado', 'success');
+  } catch (e) { toast('No se pudo agregar: ' + ((e && e.message) || e), 'error'); }
+};
+window.csOnArchivo = async function(input) {
+  const file = input.files && input.files[0]; if (!file) return;
+  const est = document.getElementById('csAdjEstado');
+  est.innerHTML = '<span style="color:var(--c-muted)">Subiendo...</span>';
+  try { CS_ADJUNTO_PATH = await cmpSubirArchivo(file); est.innerHTML = '<span style="color:#3BA55D">✓ Archivo adjunto</span>'; }
+  catch (e) { est.innerHTML = '<span style="color:var(--c-error)">No se pudo subir</span>'; }
+};
+window.guardarCompSimple = async function() {
+  const err = document.getElementById('csError'); err.textContent = '';
+  const provTxt = (document.getElementById('csProv').value || '').trim();
+  const prov = CMP_PROVEEDORES.find(function(p){ return (p.razon_social || '').toLowerCase() === provTxt.toLowerCase(); });
+  if (!prov) { err.textContent = 'Elegí un proveedor (o cargalo con “+ nuevo”).'; return; }
+  const importe = _parseMoney(document.getElementById('csImporte').value);
+  if (importe <= 0) { err.textContent = 'Cargá el importe.'; return; }
+  const local = document.getElementById('csLocal').value;
+  if (!local) { err.textContent = 'Elegí el local.'; return; }
+  const cuentaVal = document.getElementById('csCuenta').value;
+  const rz = document.getElementById('csRazon').value;
+  const socioCuentaIds = PLAN_CUENTAS.filter(function(c){ return c.grupo === 'SOCIOS'; }).map(function(c){ return c.id; });
+  const rec = {
+    tipo: document.getElementById('csTipo').value || 'Otro', proveedor_id: prov.id,
+    razon_social_id: rz ? parseInt(rz, 10) : null, fecha_emision: document.getElementById('csFecha').value || null,
+    neto: importe, total: importe, estado: 'aprobacion_pendiente', es_simple: true,
+    es_socios: cuentaVal ? socioCuentaIds.indexOf(parseInt(cuentaVal, 10)) >= 0 : false,
+    medio_pago_id: document.getElementById('csMedio').value ? parseInt(document.getElementById('csMedio').value, 10) : null,
+    fecha_pago: document.getElementById('csFecha').value || null,
+    adjunto_path: CS_ADJUNTO_PATH || null, observaciones: document.getElementById('csObs').value.trim() || null,
+    creado_por: currentUser ? currentUser.id : null
+  };
+  const btn = document.getElementById('csGuardarBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
+  try {
+    const r = await api('comprobantes', { method: 'POST', body: JSON.stringify(rec) });
+    const nuevo = Array.isArray(r) ? r[0] : r;
+    await api('comprobante_distribuciones', { method: 'POST', body: JSON.stringify([{ comprobante_id: nuevo.id, local: local, cuenta_id: cuentaVal ? parseInt(cuentaVal, 10) : null, monto: importe }]) });
+    closeCompSimple();
+    toast('✓ Comprobante cargado (queda pendiente de aprobación)', 'success');
+  } catch (e) { err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e); }
+  finally { btn.disabled = false; btn.textContent = t; }
+};
+window.aprobarComprobante = async function(id) {
+  if (!(isMaster() || isAdmin())) return;
+  const c = CMP_LISTA.find(function(x){ return x.id === id; }); if (!c) return;
+  let ds = []; try { ds = await api('comprobante_distribuciones?comprobante_id=eq.' + id + '&select=local,cuenta_id') || []; } catch (e) {}
+  const faltan = !ds.length || ds.some(function(d){ return !d.cuenta_id || !d.local; });
+  if (faltan) { toast('Asigná local y cuenta antes de aprobar (editá el comprobante).', 'error'); return; }
+  const ok = await showConfirm({ title: 'Aprobar comprobante', msg: 'Se aprueba la imputación y el comprobante impacta en resultados. ¿Confirmás?', type: 'info', okLabel: 'Aprobar', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  try { await api('comprobantes?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ estado: 'pago_completado', actualizado_en: new Date().toISOString() }) }); toast('✓ Aprobado', 'success'); await openComprobantes(); }
+  catch (e) { toast('No se pudo: ' + ((e && e.message) || e), 'error'); }
 };
 
 window.showDashboard = showDashboard;
