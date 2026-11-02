@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CL | ULTIMA | Fase A parte 2: Orden de Pago (Silvina). Desde "Programados" se seleccionan comprobantes de un mismo proveedor+razon social y se genera una OP (medios con nro de cheque/importe/vto, NC restan del total); los comprobantes pasan a Pago Emitido y se avisa al proveedor por email (Edge Function enviar-orden-pago/Resend). Nueva solapa "Ordenes" con detalle, reenvio de email y descarga Excel. Antes: Excel en listados, fichas compactas ===== */
+/* ===== BUILD 2026-11-03-CM | ULTIMA | OP rediseñada como documento (cabecera AZUCA, beneficiario+CUIT, tablas Documentos y Medios, importes con $ y 2 decimales). Fichas: fecha emis+vto en linea propia (vto siempre visible, rojo si vencido). Pago Emitido en verde y visible en la bandeja (Todos); solo Pago Completado desaparece. Importes de OP con centavos (sin redondear) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -5690,10 +5690,10 @@ const CMP_ESTADOS = {
   pendiente_pago:     { label: 'Pend. de pago', color: '#EF9F27' },
   pago_programado:    { label: 'Pago programado', color: '#3E86C7' },
   en_orden_pago:      { label: 'En orden de pago', color: '#3E86C7' },
-  pago_emitido:       { label: 'Pago emitido', color: '#7F77DD' },
+  pago_emitido:       { label: 'Pago emitido', color: '#3BA55D' },
   pagado_parcial:     { label: 'Pagado parcial', color: '#C87A2C' },
-  pago_confirmado:    { label: 'Pago confirmado', color: '#4CAF7A' },
-  pago_completado:    { label: 'Pagado', color: '#4CAF7A' },
+  pago_confirmado:    { label: 'Pago confirmado', color: '#2E7D32' },
+  pago_completado:    { label: 'Pago completado', color: '#2E7D32' },
   mov_pendiente_concil: { label: 'Mov. a conciliar', color: '#C87A2C' },
   mov_conciliado:     { label: 'Mov. conciliado', color: '#4CAF7A' },
   anulado:            { label: 'Anulado', color: '#888' }
@@ -5886,6 +5886,7 @@ function cmpPrefillDist() {
 }
 window.onFiltroComprobantes = function(){ openComprobantes(); };
 function _cmpMoney(v){ return '$' + formatNumber(Math.round(parseFloat(v) || 0)); }
+function _money2(v){ const n = parseFloat(v) || 0; return '$' + n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function renderComprobantes() {
   const cont = document.getElementById('comprobantesLista');
   if (!cont) return;
@@ -5896,16 +5897,16 @@ function renderComprobantes() {
     const nro = [c.punto_venta, c.numero].filter(Boolean).join('-');
     const nc = cmpEsNC(c.tipo);
     const vencida = _cmpVencida(c);
-    const vtoTxt = c.fecha_vto ? ('vto <b style="color:' + (vencida ? '#E5534B' : 'var(--c-cream)') + '">' + _pagoFecha(c.fecha_vto) + (vencida ? ' ⚠' : '') + '</b>') : '';
+    const vtoTxt = c.fecha_vto
+      ? ('vto <b style="color:' + (vencida ? '#E5534B' : 'var(--c-cream)') + '">' + _pagoFecha(c.fecha_vto) + (vencida ? ' ⚠' : '') + '</b>')
+      : 'sin vto';
     return '<div class="ped-card" style="padding:8px 10px;margin-bottom:6px;border-left:3px solid ' + est.color + '">' +
       '<div style="display:flex;align-items:center;gap:8px">' +
         '<span style="font-weight:700;color:var(--c-cream);min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(prov ? prov.razon_social : '(proveedor s/d)') + '</span>' +
         '<span style="font-weight:800;font-size:15px;white-space:nowrap;color:' + (nc ? '#4CAF7A' : 'var(--c-cream)') + '">' + (nc ? '− ' : '') + _cmpMoney(c.total) + '</span>' +
       '</div>' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:3px">' +
-        '<span style="font-size:11.5px;color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-          esc(c.tipo || '') + (nro ? ' · ' + esc(nro) : '') + ' · <b style="color:var(--c-cream)">' + _pagoFecha(c.fecha_emision) + '</b>' + (vtoTxt ? ' · ' + vtoTxt : '') +
-        '</span>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:4px">' +
+        '<span style="font-size:11.5px;color:var(--c-sand);white-space:nowrap;flex:0 0 auto">emis. <b style="color:var(--c-cream)">' + _pagoFecha(c.fecha_emision) + '</b> · ' + vtoTxt + '</span>' +
         '<span style="display:flex;gap:2px;flex:0 0 auto;align-items:center">' +
           '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:' + est.color + ';color:#fff;white-space:nowrap">' + est.label + '</span>' +
           (c.adjunto_path ? '<button class="btn-ghost" style="padding:3px 7px" title="Ver PDF" onclick="cmpVerAdjunto(\'' + esc(c.adjunto_path) + '\')"><i class="ti ti-file-text"></i></button>' : '') +
@@ -5913,6 +5914,7 @@ function renderComprobantes() {
           '<button class="btn-ghost" style="padding:3px 7px;color:var(--c-error)" onclick="eliminarComprobante(' + c.id + ')"><i class="ti ti-trash"></i></button>' +
         '</span>' +
       '</div>' +
+      '<div style="font-size:11px;color:var(--c-sand);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(c.tipo || '') + (nro ? ' · ' + esc(nro) : '') + '</div>' +
     '</div>';
   }).join('');
 }
@@ -6207,7 +6209,7 @@ async function openPagos() {
     if (!PLAN_CUENTAS.length) { try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || []; } catch (e) {} }
     CMP_RAZONES = await api('razones_sociales?order=nombre.asc') || [];
     PAGOS_MEDIOS = await api('medios_pago?activo=eq.true&order=razon_social_id,nombre') || [];
-    PAGOS_LISTA = await apiAll('comprobantes?select=*&estado=in.(pendiente_pago,pagado_parcial,pago_programado)&order=fecha_vto.asc') || [];
+    PAGOS_LISTA = await apiAll('comprobantes?select=*&estado=in.(pendiente_pago,pagado_parcial,pago_programado,pago_emitido,pago_confirmado)&order=fecha_vto.asc') || [];
     PAGOS_OPS = await api('ordenes_pago?select=*&order=creado_en.desc&limit=300') || [];
     const pids = Array.from(new Set(PAGOS_LISTA.map(function(c){ return c.proveedor_id; }).concat(PAGOS_OPS.map(function(o){ return o.proveedor_id; })).filter(Boolean)));
     if (pids.length) { const ps = await api('proveedores?id=in.(' + pids.join(',') + ')&select=id,razon_social') || []; ps.forEach(function(p){ CMP_PROV_MAP[p.id] = p; }); }
@@ -6300,24 +6302,24 @@ function renderPagos() {
     const nro = [c.punto_venta, c.numero].filter(Boolean).join('-');
     const vencida = _cmpVencida(c);
     const imputa = [locs.join(', '), ctas.join(' · ')].filter(Boolean).join('  ·  ');
-    const vtoTxt = c.fecha_vto ? ('vto <b style="color:' + (vencida ? '#E5534B' : 'var(--c-cream)') + '">' + _pagoFecha(c.fecha_vto) + (vencida ? ' ⚠' : '') + '</b>') : '';
+    const vtoTxt = c.fecha_vto
+      ? ('vto <b style="color:' + (vencida ? '#E5534B' : 'var(--c-cream)') + '">' + _pagoFecha(c.fecha_vto) + (vencida ? ' ⚠' : '') + '</b>')
+      : 'sin vto';
     return '<div class="ped-card" style="padding:8px 10px;margin-bottom:6px;border-left:3px solid ' + est.color + ';' + (sel ? 'outline:2px solid var(--c-cream)' : '') + '">' +
       '<div style="display:flex;align-items:center;gap:8px">' +
         (seleccionable ? '<input type="checkbox" ' + (sel ? 'checked' : '') + ' onclick="togglePagoSel(' + c.id + ')" style="width:17px;height:17px;flex:0 0 auto">' : '<span style="width:17px;flex:0 0 auto"></span>') +
         '<span style="font-weight:700;color:var(--c-cream);min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p ? p.razon_social : '(prov s/d)') + '</span>' +
         '<span style="font-weight:800;font-size:15px;white-space:nowrap;color:' + (nc ? '#4CAF7A' : 'var(--c-cream)') + '">' + (nc ? '− ' : '') + _cmpMoney(c.total) + '</span>' +
       '</div>' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:3px;padding-left:25px">' +
-        '<span style="font-size:11.5px;color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-          esc(c.tipo || '') + (nro ? ' · ' + esc(nro) : '') + ' · <b style="color:var(--c-cream)">' + _pagoFecha(c.fecha_emision) + '</b>' + (vtoTxt ? ' · ' + vtoTxt : '') + (nc ? ' · <span style="color:#4CAF7A">NC</span>' : '') +
-        '</span>' +
-        '<span style="display:flex;gap:2px;flex:0 0 auto">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:4px;padding-left:25px">' +
+        '<span style="font-size:11.5px;color:var(--c-sand);white-space:nowrap;flex:0 0 auto">emis. <b style="color:var(--c-cream)">' + _pagoFecha(c.fecha_emision) + '</b> · ' + vtoTxt + '</span>' +
+        '<span style="display:flex;gap:2px;flex:0 0 auto;align-items:center">' +
           '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:' + est.color + ';color:#fff;white-space:nowrap">' + est.label + '</span>' +
           (c.adjunto_path ? '<button class="btn-ghost" style="padding:3px 7px" title="Ver PDF" onclick="cmpVerAdjunto(\'' + esc(c.adjunto_path) + '\')"><i class="ti ti-file-text"></i></button>' : '') +
           (programado ? '<button class="btn-ghost" style="padding:3px 7px;color:var(--c-error)" title="Volver a Pendiente de pago" onclick="desprogramarPago(' + c.id + ')"><i class="ti ti-arrow-back-up"></i></button>' : '') +
         '</span>' +
       '</div>' +
-      (imputa ? '<div style="font-size:11px;color:var(--c-sand);margin-top:2px;padding-left:25px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(imputa) + '</div>' : '') +
+      '<div style="font-size:11px;color:var(--c-sand);margin-top:2px;padding-left:25px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(c.tipo || '') + (nro ? ' · ' + esc(nro) : '') + (nc ? ' · ' : '') + (nc ? '<span style="color:#4CAF7A">NC</span>' : '') + (imputa ? ' · ' + esc(imputa) : '') + '</div>' +
       (programado ? '<div style="font-size:11px;color:#3E86C7;margin-top:2px;padding-left:25px">Pago: ' + _pagoFecha(c.fecha_pago) + (c.medio_pago_id ? ' · ' + esc(_nombreMedio(c.medio_pago_id)) : '') + '</div>' : '') +
     '</div>';
   }).join('');
@@ -6418,7 +6420,7 @@ window.abrirGenerarOP = async function() {
   const total = comps.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
   // Prefill de medios: uno por cada medio distinto ya programado; si no, uno vacío con el total
   const medioComp = comps.find(function(c){ return c.medio_pago_id; });
-  OP_MEDIOS = [{ medio_pago_id: medioComp ? medioComp.medio_pago_id : '', documento: '', vencimiento: (comps.find(function(c){ return c.fecha_pago; }) || {}).fecha_pago || '', importe: Math.round(total) }];
+  OP_MEDIOS = [{ medio_pago_id: medioComp ? medioComp.medio_pago_id : '', documento: '', vencimiento: (comps.find(function(c){ return c.fecha_pago; }) || {}).fecha_pago || '', importe: Math.round(total * 100) / 100 }];
   document.getElementById('opBenef').innerHTML =
     '<b style="color:var(--c-cream)">' + esc(OP_BENEF.razon_social || '') + '</b>' + (OP_BENEF.cuit ? ' · CUIT ' + esc(OP_BENEF.cuit) : '') +
     '<br><span style="color:var(--c-sand)">Paga: ' + esc(rz ? rz.nombre : '—') + ' · ' + (OP_BENEF.email ? esc(OP_BENEF.email) : '<span style="color:#E5534B">sin email cargado</span>') + '</span>';
@@ -6486,16 +6488,16 @@ window.confirmarGenerarOP = async function() {
   const rzId = OP_COMPS[0].razon_social_id;
   const btn = document.getElementById('opBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Generando...';
   try {
-    const cab = { razon_social_id: rzId || null, proveedor_id: OP_BENEF.id || OP_COMPS[0].proveedor_id, fecha: fecha, estado: 'emitida', total: Math.round(total), observaciones: document.getElementById('opObs').value.trim() || null, creado_por: currentUser ? currentUser.id : null };
+    const cab = { razon_social_id: rzId || null, proveedor_id: OP_BENEF.id || OP_COMPS[0].proveedor_id, fecha: fecha, estado: 'emitida', total: total, observaciones: document.getElementById('opObs').value.trim() || null, creado_por: currentUser ? currentUser.id : null };
     const r = await api('ordenes_pago', { method: 'POST', body: JSON.stringify(cab) });
     const op = Array.isArray(r) ? r[0] : r;
     const numero = 'OP-' + String(op.id).padStart(5, '0');
     await api('ordenes_pago?id=eq.' + op.id, { method: 'PATCH', body: JSON.stringify({ numero: numero }) });
     // Comprobantes de la OP
-    const filasC = OP_COMPS.map(function(c){ return { orden_pago_id: op.id, comprobante_id: c.id, importe_saldado: Math.round(_pagoSigno(c) * (parseFloat(c.total) || 0)) }; });
+    const filasC = OP_COMPS.map(function(c){ return { orden_pago_id: op.id, comprobante_id: c.id, importe_saldado: _pagoSigno(c) * (parseFloat(c.total) || 0) }; });
     await api('orden_pago_comprobantes', { method: 'POST', body: JSON.stringify(filasC) });
     // Medios de la OP
-    const filasM = medios.map(function(m){ return { orden_pago_id: op.id, medio_pago_id: parseInt(m.medio_pago_id, 10), documento: m.documento || null, vencimiento: m.vencimiento || null, importe: Math.round(parseFloat(m.importe) || 0) }; });
+    const filasM = medios.map(function(m){ return { orden_pago_id: op.id, medio_pago_id: parseInt(m.medio_pago_id, 10), documento: m.documento || null, vencimiento: m.vencimiento || null, importe: parseFloat(m.importe) || 0 }; });
     await api('orden_pago_medios', { method: 'POST', body: JSON.stringify(filasM) });
     // Comprobantes -> Pago Emitido
     await api('comprobantes?id=in.(' + OP_COMPS.map(function(c){ return c.id; }).join(',') + ')', { method: 'PATCH', body: JSON.stringify({ estado: 'pago_emitido', actualizado_en: new Date().toISOString() }) });
@@ -6584,23 +6586,65 @@ window.verOP = async function(id) {
     const oc = await api('orden_pago_comprobantes?orden_pago_id=eq.' + id + '&select=*') || [];
     const cids = oc.map(function(x){ return x.comprobante_id; });
     let cmap = {};
-    if (cids.length) { const cs = await api('comprobantes?id=in.(' + cids.join(',') + ')&select=id,tipo,punto_venta,numero,total') || []; cs.forEach(function(c){ cmap[c.id] = c; }); }
+    if (cids.length) { const cs = await api('comprobantes?id=in.(' + cids.join(',') + ')&select=id,tipo,punto_venta,numero,total,fecha_emision') || []; cs.forEach(function(c){ cmap[c.id] = c; }); }
     comps = oc.map(function(x){ return { saldo: x.importe_saldado, c: cmap[x.comprobante_id] || {} }; });
     medios = await api('orden_pago_medios?orden_pago_id=eq.' + id + '&select=*') || [];
-    const pr = await api('proveedores?id=eq.' + o.proveedor_id + '&select=email'); provEmail = (Array.isArray(pr) ? pr[0] : pr || {}).email;
+    const pr = await api('proveedores?id=eq.' + o.proveedor_id + '&select=email,cuit'); const prObj = (Array.isArray(pr) ? pr[0] : pr) || {}; provEmail = prObj.email; o._provCuit = prObj.cuit || '';
   } catch (e) {}
   const p = CMP_PROV_MAP[o.proveedor_id];
   const rz = CMP_RAZONES.find(function(r){ return r.id === o.razon_social_id; });
   VER_OP._comps = comps; VER_OP._medios = medios; VER_OP._prov = p; VER_OP._rz = rz; VER_OP._provEmail = provEmail;
+  const thtd = 'padding:5px 7px;border-bottom:1px solid var(--c-cream-border);text-align:left';
+  const thtdR = 'padding:5px 7px;border-bottom:1px solid var(--c-cream-border);text-align:right;white-space:nowrap';
+  const docRows = comps.map(function(x){
+    const c = x.c;
+    return '<tr>' +
+      '<td style="' + thtd + '">' + esc(c.tipo || '') + '</td>' +
+      '<td style="' + thtd + '">' + esc([c.punto_venta, c.numero].filter(Boolean).join('-')) + '</td>' +
+      '<td style="' + thtd + '">' + _pagoFecha(c.fecha_emision) + '</td>' +
+      '<td style="' + thtdR + '">' + _money2(c.total) + '</td>' +
+      '<td style="' + thtdR + ';color:' + (x.saldo < 0 ? '#4CAF7A' : 'var(--c-cream)') + '">' + _money2(x.saldo) + '</td>' +
+    '</tr>';
+  }).join('');
+  const medRows = medios.map(function(m){
+    return '<tr>' +
+      '<td style="' + thtd + '">' + esc(_nombreMedio(m.medio_pago_id)) + '</td>' +
+      '<td style="' + thtd + '">' + esc(m.documento || '—') + '</td>' +
+      '<td style="' + thtd + '">' + (m.vencimiento ? _pagoFecha(m.vencimiento) : '—') + '</td>' +
+      '<td style="' + thtdR + '">' + _money2(m.importe) + '</td>' +
+    '</tr>';
+  }).join('');
   body.innerHTML =
-    '<div class="cierre-hint" style="margin-bottom:8px;font-size:13px;line-height:1.5"><b style="color:var(--c-cream)">' + esc(p ? p.razon_social : '') + '</b>' + (provEmail ? ' · ' + esc(provEmail) : ' · <span style="color:#E5534B">sin email</span>') + '<br>Paga: ' + esc(rz ? rz.nombre : '—') + ' · Fecha ' + _pagoFecha(o.fecha) + '</div>' +
-    '<div class="field-label" style="margin-bottom:3px">Comprobantes</div>' +
-    comps.map(function(c){ return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--c-cream-border)"><span style="color:var(--c-sand)">' + esc((c.c.tipo || '') + ' ' + [c.c.punto_venta, c.c.numero].filter(Boolean).join('-')) + '</span><span style="color:var(--c-cream)">' + _cmpMoney(c.saldo) + '</span></div>'; }).join('') +
-    '<div class="field-label" style="margin:10px 0 3px">Medios de pago</div>' +
-    medios.map(function(m){ return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--c-cream-border)"><span style="color:var(--c-sand)">' + esc(_nombreMedio(m.medio_pago_id) + (m.documento ? ' · ' + m.documento : '') + (m.vencimiento ? ' · vto ' + _pagoFecha(m.vencimiento) : '')) + '</span><span style="color:var(--c-cream)">' + _cmpMoney(m.importe) + '</span></div>'; }).join('') +
-    '<div style="text-align:right;font-weight:700;margin-top:8px;color:var(--c-cream)">Total: ' + _cmpMoney(o.total) + '</div>' +
-    (o.observaciones ? '<div style="font-size:12px;color:var(--c-sand);margin-top:6px">' + esc(o.observaciones) + '</div>' : '');
+    '<div style="border:1px solid var(--c-cream-border);border-radius:10px;overflow:hidden">' +
+      '<div style="background:#2E7D32;color:#fff;padding:10px 12px;display:flex;justify-content:space-between;align-items:center">' +
+        '<div><div style="font-weight:800;font-size:15px;letter-spacing:.5px">AZUCA GRUPO GASTRONÓMICO</div>' +
+          '<div style="font-size:12px;opacity:.9">Orden de Pago · ' + esc(o.numero || ('OP ' + o.id)) + '</div></div>' +
+        '<div style="text-align:right;font-size:11px;opacity:.9">Emitida<br><b style="font-size:13px">' + _pagoFecha(o.fecha) + '</b></div>' +
+      '</div>' +
+      '<div style="padding:11px 12px">' +
+        '<div style="font-size:12px;color:var(--c-sand);margin-bottom:2px">Beneficiario</div>' +
+        '<div style="font-weight:700;color:var(--c-cream)">' + esc(p ? p.razon_social : '') + (OP_PROV_CUIT(o) ? '</div><div style="font-size:12px;color:var(--c-sand)">CUIT ' + esc(OP_PROV_CUIT(o)) : '') + '</div>' +
+        '<div style="font-size:12px;color:var(--c-sand)">' + (provEmail ? esc(provEmail) : '<span style="color:#E5534B">sin email</span>') + '</div>' +
+        '<div style="font-size:12px;color:var(--c-sand);margin-top:2px">Razón social que paga: <b style="color:var(--c-cream)">' + esc(rz ? rz.nombre : '—') + '</b></div>' +
+
+        '<div style="font-weight:700;color:var(--c-cream);margin:12px 0 4px">Documentos</div>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+          '<thead><tr style="color:var(--c-sand)"><th style="' + thtd + '">Tipo</th><th style="' + thtd + '">Número</th><th style="' + thtd + '">Fecha</th><th style="' + thtdR + '">Total doc.</th><th style="' + thtdR + '">Saldado</th></tr></thead>' +
+          '<tbody>' + docRows + '</tbody>' +
+        '</table>' +
+
+        '<div style="font-weight:700;color:var(--c-cream);margin:12px 0 4px">Medios de pago</div>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+          '<thead><tr style="color:var(--c-sand)"><th style="' + thtd + '">Medio</th><th style="' + thtd + '">N° documento</th><th style="' + thtd + '">Vencimiento</th><th style="' + thtdR + '">Importe</th></tr></thead>' +
+          '<tbody>' + medRows + '</tbody>' +
+        '</table>' +
+
+        '<div style="text-align:right;font-weight:800;font-size:16px;margin-top:10px;color:var(--c-cream)">TOTAL: ' + _money2(o.total) + '</div>' +
+        (o.observaciones ? '<div style="font-size:12px;color:var(--c-sand);margin-top:8px;border-top:1px solid var(--c-cream-border);padding-top:6px">Obs.: ' + esc(o.observaciones) + '</div>' : '') +
+      '</div>' +
+    '</div>';
 };
+function OP_PROV_CUIT(o) { return (VER_OP && VER_OP._provCuit) || ''; }
 window.closeVerOP = function() { document.getElementById('modalVerOP').classList.remove('show'); };
 window.reenviarEmailOP = async function() {
   if (!VER_OP) return;
