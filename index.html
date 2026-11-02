@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261103ck">
+<link rel="stylesheet" href="styles.css?v=20261103cl">
 </head>
 <body>
 
@@ -1961,6 +1961,52 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modalGenerarOP">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Nueva orden de pago</h2>
+      <button class="modal-close" onclick="closeGenerarOP()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+      <input type="hidden" id="opRazon">
+      <div id="opBenef" class="cierre-hint" style="margin-bottom:8px;font-size:13px;line-height:1.5"></div>
+      <div class="field-label" style="margin-bottom:3px">Comprobantes</div>
+      <div id="opComps" style="margin-bottom:10px"></div>
+      <label class="field"><span class="field-label">Fecha de la orden</span><input type="date" id="opFecha"></label>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:6px 0 4px">
+        <span class="field-label">Medios de pago</span>
+        <button class="btn-ghost" style="padding:3px 9px;font-size:12px" onclick="opAgregarMedio()"><i class="ti ti-plus"></i> Medio</button>
+      </div>
+      <div id="opMedios"></div>
+      <div id="opTotal" style="font-size:13px;margin:4px 0 10px"></div>
+      <label class="field"><span class="field-label">Observaciones (opcional)</span><input type="text" id="opObs" placeholder=""></label>
+      <label class="switch-row" style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer">
+        <input type="checkbox" id="opEmail" style="width:17px;height:17px">
+        <span style="font-size:13px;color:var(--c-cream)">Avisar al proveedor por email al generar</span>
+      </label>
+      <div class="login-error" id="opError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeGenerarOP()">Cancelar</button>
+      <button class="btn-primary" id="opBtn" onclick="confirmarGenerarOP()">Generar OP</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalVerOP">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title" id="verOpTitulo">Orden de pago</h2>
+      <button class="modal-close" onclick="closeVerOP()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body" id="verOpBody"></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeVerOP()">Cerrar</button>
+      <button class="btn-primary" id="verOpReenviarBtn" onclick="reenviarEmailOP()"><i class="ti ti-mail"></i> Reenviar email</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalComprobante">
   <div class="modal-card cierre-card">
     <div class="modal-header">
@@ -2641,6 +2687,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261103ck"></script>
+<script src="app.js?v=20261103cl"></script>
 </body>
 </html>

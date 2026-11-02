@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CK | ULTIMA | Descarga a Excel en Pagos y Comprobantes (respeta filtros/busqueda). Fichas mas compactas: total y fecha del comprobante destacados, vencimiento destacado y en rojo si esta vencido, borde izq con color de estado. Base: modulo Pagos (buscador/contador/seleccionar todo), medios por razon social, estados nuevos, Cta Cte Socios, "Remito valorizado", "+ nuevo proveedor", aprendizaje proveedor->cuenta ===== */
+/* ===== BUILD 2026-11-03-CL | ULTIMA | Fase A parte 2: Orden de Pago (Silvina). Desde "Programados" se seleccionan comprobantes de un mismo proveedor+razon social y se genera una OP (medios con nro de cheque/importe/vto, NC restan del total); los comprobantes pasan a Pago Emitido y se avisa al proveedor por email (Edge Function enviar-orden-pago/Resend). Nueva solapa "Ordenes" con detalle, reenvio de email y descarga Excel. Antes: Excel en listados, fichas compactas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -6142,7 +6142,7 @@ window.eliminarComprobante = async function(id) {
 // ============================================
 // PAGOS — Bandeja y programación de pagos (Fase A)
 // ============================================
-let PAGOS_LISTA = [], PAGOS_DIST = {}, PAGOS_MEDIOS = [], PAGOS_SEL = {}, PAGOS_SORT = 'vto', PAGOS_FILTRO = 'por_pagar', PAGOS_Q = '';
+let PAGOS_LISTA = [], PAGOS_DIST = {}, PAGOS_MEDIOS = [], PAGOS_SEL = {}, PAGOS_SORT = 'vto', PAGOS_FILTRO = 'por_pagar', PAGOS_Q = '', PAGOS_OPS = [];
 const PAGOS_TOPE = 400;
 function puedePagos() { return isMaster() || isAdmin(); }
 function _pagoFecha(f) { return f ? f.slice(0, 10).split('-').reverse().join('/') : '—'; }
@@ -6208,7 +6208,8 @@ async function openPagos() {
     CMP_RAZONES = await api('razones_sociales?order=nombre.asc') || [];
     PAGOS_MEDIOS = await api('medios_pago?activo=eq.true&order=razon_social_id,nombre') || [];
     PAGOS_LISTA = await apiAll('comprobantes?select=*&estado=in.(pendiente_pago,pagado_parcial,pago_programado)&order=fecha_vto.asc') || [];
-    const pids = Array.from(new Set(PAGOS_LISTA.map(function(c){ return c.proveedor_id; }).filter(Boolean)));
+    PAGOS_OPS = await api('ordenes_pago?select=*&order=creado_en.desc&limit=300') || [];
+    const pids = Array.from(new Set(PAGOS_LISTA.map(function(c){ return c.proveedor_id; }).concat(PAGOS_OPS.map(function(o){ return o.proveedor_id; })).filter(Boolean)));
     if (pids.length) { const ps = await api('proveedores?id=in.(' + pids.join(',') + ')&select=id,razon_social') || []; ps.forEach(function(p){ CMP_PROV_MAP[p.id] = p; }); }
     PAGOS_DIST = {};
     const cids = PAGOS_LISTA.map(function(c){ return c.id; });
@@ -6226,7 +6227,8 @@ window.onPagoFiltro = function(v) { PAGOS_FILTRO = v; PAGOS_SEL = {}; renderPago
 window.onPagoSort = function(v) { PAGOS_SORT = v; renderPagos(); };
 window.onPagoBuscar = function(v) { PAGOS_Q = (v || '').trim().toLowerCase(); renderPagos(); };
 window.togglePagoSel = function(id) { if (PAGOS_SEL[id]) delete PAGOS_SEL[id]; else PAGOS_SEL[id] = true; renderPagos(); };
-function _pagoSeleccionable(c) { return c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial'; }
+function _pagoModo() { return PAGOS_FILTRO === 'programados' ? 'op' : 'programar'; }
+function _pagoSeleccionable(c) { return _pagoModo() === 'op' ? (c.estado === 'pago_programado') : (c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial'); }
 window.pagosSeleccionarTodo = function() {
   const arr = _pagosFiltradas().filter(_pagoSeleccionable);
   const todosSel = arr.length && arr.every(function(c){ return PAGOS_SEL[c.id]; });
@@ -6260,13 +6262,14 @@ function renderPagos() {
   const cont = document.getElementById('pagosLista');
   const ctrl = document.getElementById('pagosControles');
   if (!cont || !ctrl) return;
-  const arr = _pagosFiltradas();
   const chip = function(v, lbl){ return '<button class="btn-ghost" style="padding:5px 11px;border-radius:14px;font-size:12px;' + (PAGOS_FILTRO === v ? 'background:var(--c-cream);color:#2b2017;font-weight:700' : '') + '" onclick="onPagoFiltro(\'' + v + '\')">' + lbl + '</button>'; };
+  if (PAGOS_FILTRO === 'ordenes') { renderOrdenes(chip); return; }
+  const arr = _pagosFiltradas();
   const selec = arr.filter(_pagoSeleccionable);
   const todosSel = selec.length && selec.every(function(c){ return PAGOS_SEL[c.id]; });
   const totalVista = arr.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
   ctrl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">' +
-    chip('por_pagar', 'Por pagar') + chip('programados', 'Programados') + chip('todos', 'Todos') +
+    chip('por_pagar', 'Por pagar') + chip('programados', 'Programados') + chip('todos', 'Todos') + chip('ordenes', 'Órdenes') +
     '<span style="margin-left:auto;font-size:12px;color:var(--c-sand)">Ordenar: </span>' +
     '<select onchange="onPagoSort(this.value)" style="padding:5px 8px;border-radius:8px;font-size:12px">' +
       '<option value="vto"' + (PAGOS_SORT === 'vto' ? ' selected' : '') + '>Vencimiento</option>' +
@@ -6293,7 +6296,7 @@ function renderPagos() {
     const nc = cmpEsNC(c.tipo);
     const sel = !!PAGOS_SEL[c.id];
     const programado = c.estado === 'pago_programado';
-    const seleccionable = c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial';
+    const seleccionable = _pagoSeleccionable(c);
     const nro = [c.punto_venta, c.numero].filter(Boolean).join('-');
     const vencida = _cmpVencida(c);
     const imputa = [locs.join(', '), ctas.join(' · ')].filter(Boolean).join('  ·  ');
@@ -6336,8 +6339,10 @@ function _pagosFooter() {
   }
   if (!ids.length) { bar.style.display = 'none'; return; }
   bar.style.display = 'flex';
-  bar.innerHTML = '<span style="font-size:13px;color:var(--c-cream)"><b>' + ids.length + '</b> sel. · ' + _cmpMoney(total) + '</span>' +
-    '<button class="btn-primary" style="padding:8px 16px" onclick="abrirProgramarPago()"><i class="ti ti-calendar-dollar"></i> Programar pago</button>';
+  const btn = _pagoModo() === 'op'
+    ? '<button class="btn-primary" style="padding:8px 16px" onclick="abrirGenerarOP()"><i class="ti ti-file-dollar"></i> Generar orden de pago</button>'
+    : '<button class="btn-primary" style="padding:8px 16px" onclick="abrirProgramarPago()"><i class="ti ti-calendar-dollar"></i> Programar pago</button>';
+  bar.innerHTML = '<span style="font-size:13px;color:var(--c-cream)"><b>' + ids.length + '</b> sel. · ' + _cmpMoney(total) + '</span>' + btn;
 }
 
 window.abrirProgramarPago = function() {
@@ -6391,6 +6396,248 @@ window.desprogramarPago = async function(id) {
     await api('comprobantes?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ estado: 'pendiente_pago', fecha_pago: null, medio_pago_id: null, actualizado_en: new Date().toISOString() }) });
     toast('✓ Actualizado', 'success'); await openPagos();
   } catch (e) { toast('No se pudo: ' + ((e && e.message) || e), 'error'); }
+};
+
+// ---- Orden de Pago (Silvina) ----
+let OP_COMPS = [], OP_MEDIOS = [], OP_BENEF = null;
+function _opMediosRaz(rzId) { return PAGOS_MEDIOS.filter(function(m){ return rzId == null || m.razon_social_id === rzId; }); }
+window.abrirGenerarOP = async function() {
+  const comps = PAGOS_LISTA.filter(function(c){ return PAGOS_SEL[c.id] && c.estado === 'pago_programado'; });
+  if (!comps.length) { toast('Seleccioná comprobantes en Pago Programado', 'error'); return; }
+  const provIds = Array.from(new Set(comps.map(function(c){ return c.proveedor_id; })));
+  const rzIds = Array.from(new Set(comps.map(function(c){ return c.razon_social_id; })));
+  if (provIds.length > 1) { toast('Una orden de pago es por proveedor. Seleccioná comprobantes de un solo proveedor.', 'error'); return; }
+  if (rzIds.length > 1) { toast('Los comprobantes son de distintas razones sociales. Seleccioná de una sola.', 'error'); return; }
+  OP_COMPS = comps;
+  const rzId = rzIds[0];
+  // Datos del beneficiario (proveedor) incluyendo email
+  let prov = null;
+  try { const r = await api('proveedores?id=eq.' + provIds[0] + '&select=id,razon_social,cuit,email'); prov = Array.isArray(r) ? r[0] : r; } catch (e) {}
+  OP_BENEF = prov || CMP_PROV_MAP[provIds[0]] || { razon_social: '(proveedor)' };
+  const rz = CMP_RAZONES.find(function(r){ return r.id === rzId; });
+  const total = comps.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
+  // Prefill de medios: uno por cada medio distinto ya programado; si no, uno vacío con el total
+  const medioComp = comps.find(function(c){ return c.medio_pago_id; });
+  OP_MEDIOS = [{ medio_pago_id: medioComp ? medioComp.medio_pago_id : '', documento: '', vencimiento: (comps.find(function(c){ return c.fecha_pago; }) || {}).fecha_pago || '', importe: Math.round(total) }];
+  document.getElementById('opBenef').innerHTML =
+    '<b style="color:var(--c-cream)">' + esc(OP_BENEF.razon_social || '') + '</b>' + (OP_BENEF.cuit ? ' · CUIT ' + esc(OP_BENEF.cuit) : '') +
+    '<br><span style="color:var(--c-sand)">Paga: ' + esc(rz ? rz.nombre : '—') + ' · ' + (OP_BENEF.email ? esc(OP_BENEF.email) : '<span style="color:#E5534B">sin email cargado</span>') + '</span>';
+  document.getElementById('opComps').innerHTML = comps.map(function(c){
+    const nc = cmpEsNC(c.tipo);
+    return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px solid var(--c-cream-border)">' +
+      '<span style="color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis">' + esc(c.tipo || '') + ' ' + esc([c.punto_venta, c.numero].filter(Boolean).join('-')) + '</span>' +
+      '<span style="white-space:nowrap;color:' + (nc ? '#4CAF7A' : 'var(--c-cream)') + '">' + (nc ? '− ' : '') + _cmpMoney(c.total) + '</span></div>';
+  }).join('');
+  document.getElementById('opRazon').value = rzId || '';
+  document.getElementById('opFecha').value = hoyStr();
+  document.getElementById('opEmail').checked = !!OP_BENEF.email;
+  document.getElementById('opObs').value = '';
+  document.getElementById('opError').textContent = '';
+  _opRenderMedios();
+  document.getElementById('modalGenerarOP').classList.add('show');
+};
+window.closeGenerarOP = function() { document.getElementById('modalGenerarOP').classList.remove('show'); };
+function _opRenderMedios() {
+  const rzId = OP_COMPS.length ? OP_COMPS[0].razon_social_id : null;
+  const medios = _opMediosRaz(rzId);
+  const total = OP_COMPS.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
+  const sumMed = OP_MEDIOS.reduce(function(s, m){ return s + (parseFloat(m.importe) || 0); }, 0);
+  const cont = document.getElementById('opMedios');
+  cont.innerHTML = OP_MEDIOS.map(function(m, i){
+    const esCheque = (function(){ const md = PAGOS_MEDIOS.find(function(x){ return String(x.id) === String(m.medio_pago_id); }); return md && (md.tipo === 'cheque_propio' || md.tipo === 'cheque_tercero'); })();
+    return '<div style="border:1px solid var(--c-cream-border);border-radius:8px;padding:8px;margin-bottom:6px">' +
+      '<div style="display:flex;gap:6px;align-items:center">' +
+        '<select onchange="opSetMedio(' + i + ',this.value)" style="flex:1;padding:5px;font-size:12px"><option value="">Medio…</option>' +
+          medios.map(function(md){ return '<option value="' + md.id + '"' + (String(md.id) === String(m.medio_pago_id) ? ' selected' : '') + '>' + esc(md.nombre) + '</option>'; }).join('') +
+        '</select>' +
+        (OP_MEDIOS.length > 1 ? '<button class="btn-ghost" style="padding:4px 8px;color:var(--c-error)" onclick="opQuitarMedio(' + i + ')"><i class="ti ti-x"></i></button>' : '') +
+      '</div>' +
+      '<div style="display:flex;gap:6px;margin-top:6px">' +
+        '<input type="text" placeholder="' + (esCheque ? 'N° cheque' : 'N° / referencia') + '" value="' + esc(m.documento || '') + '" oninput="opSetDoc(' + i + ',this.value)" style="flex:1;padding:5px;font-size:12px">' +
+        '<input type="date" value="' + esc(m.vencimiento ? String(m.vencimiento).slice(0,10) : '') + '" onchange="opSetVto(' + i + ',this.value)" title="Vencimiento" style="padding:5px;font-size:12px">' +
+        '<input type="number" placeholder="Importe" value="' + (m.importe != null ? m.importe : '') + '" oninput="opSetImp(' + i + ',this.value)" style="width:110px;padding:5px;font-size:12px">' +
+      '</div></div>';
+  }).join('');
+  const dif = Math.round(total - sumMed);
+  document.getElementById('opTotal').innerHTML = 'Total OP: <b style="color:var(--c-cream)">' + _cmpMoney(total) + '</b>' +
+    (Math.abs(dif) > 1 ? ' · <span style="color:#E5534B">medios suman ' + _cmpMoney(sumMed) + ' (dif ' + _cmpMoney(dif) + ')</span>' : ' · <span style="color:#4CAF7A">medios OK</span>');
+}
+window.opSetMedio = function(i, v) { OP_MEDIOS[i].medio_pago_id = v; _opRenderMedios(); };
+window.opSetDoc = function(i, v) { OP_MEDIOS[i].documento = v; };
+window.opSetVto = function(i, v) { OP_MEDIOS[i].vencimiento = v; };
+window.opSetImp = function(i, v) { OP_MEDIOS[i].importe = v; _opActualizarDif(); };
+function _opActualizarDif() {
+  const total = OP_COMPS.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
+  const sumMed = OP_MEDIOS.reduce(function(s, m){ return s + (parseFloat(m.importe) || 0); }, 0);
+  const dif = Math.round(total - sumMed);
+  document.getElementById('opTotal').innerHTML = 'Total OP: <b style="color:var(--c-cream)">' + _cmpMoney(total) + '</b>' +
+    (Math.abs(dif) > 1 ? ' · <span style="color:#E5534B">medios suman ' + _cmpMoney(sumMed) + ' (dif ' + _cmpMoney(dif) + ')</span>' : ' · <span style="color:#4CAF7A">medios OK</span>');
+}
+window.opAgregarMedio = function() { OP_MEDIOS.push({ medio_pago_id: '', documento: '', vencimiento: '', importe: '' }); _opRenderMedios(); };
+window.opQuitarMedio = function(i) { OP_MEDIOS.splice(i, 1); _opRenderMedios(); };
+window.confirmarGenerarOP = async function() {
+  const err = document.getElementById('opError'); err.textContent = '';
+  if (!OP_COMPS.length) return;
+  const fecha = document.getElementById('opFecha').value;
+  if (!fecha) { err.textContent = 'Elegí la fecha de la orden de pago.'; return; }
+  const medios = OP_MEDIOS.filter(function(m){ return m.medio_pago_id && (parseFloat(m.importe) || 0) !== 0; });
+  if (!medios.length) { err.textContent = 'Cargá al menos un medio de pago con importe.'; return; }
+  const total = OP_COMPS.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
+  const rzId = OP_COMPS[0].razon_social_id;
+  const btn = document.getElementById('opBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Generando...';
+  try {
+    const cab = { razon_social_id: rzId || null, proveedor_id: OP_BENEF.id || OP_COMPS[0].proveedor_id, fecha: fecha, estado: 'emitida', total: Math.round(total), observaciones: document.getElementById('opObs').value.trim() || null, creado_por: currentUser ? currentUser.id : null };
+    const r = await api('ordenes_pago', { method: 'POST', body: JSON.stringify(cab) });
+    const op = Array.isArray(r) ? r[0] : r;
+    const numero = 'OP-' + String(op.id).padStart(5, '0');
+    await api('ordenes_pago?id=eq.' + op.id, { method: 'PATCH', body: JSON.stringify({ numero: numero }) });
+    // Comprobantes de la OP
+    const filasC = OP_COMPS.map(function(c){ return { orden_pago_id: op.id, comprobante_id: c.id, importe_saldado: Math.round(_pagoSigno(c) * (parseFloat(c.total) || 0)) }; });
+    await api('orden_pago_comprobantes', { method: 'POST', body: JSON.stringify(filasC) });
+    // Medios de la OP
+    const filasM = medios.map(function(m){ return { orden_pago_id: op.id, medio_pago_id: parseInt(m.medio_pago_id, 10), documento: m.documento || null, vencimiento: m.vencimiento || null, importe: Math.round(parseFloat(m.importe) || 0) }; });
+    await api('orden_pago_medios', { method: 'POST', body: JSON.stringify(filasM) });
+    // Comprobantes -> Pago Emitido
+    await api('comprobantes?id=in.(' + OP_COMPS.map(function(c){ return c.id; }).join(',') + ')', { method: 'PATCH', body: JSON.stringify({ estado: 'pago_emitido', actualizado_en: new Date().toISOString() }) });
+    // Email al proveedor (best-effort)
+    let emailMsg = '';
+    if (document.getElementById('opEmail').checked) {
+      if (!OP_BENEF.email) { emailMsg = ' (sin email del proveedor, no se envió)'; }
+      else {
+        const ok = await _opEnviarEmail(op.id, numero, fecha, total, medios).catch(function(){ return false; });
+        if (ok) { await api('ordenes_pago?id=eq.' + op.id, { method: 'PATCH', body: JSON.stringify({ email_enviado: true }) }); emailMsg = ' y avisado por email'; }
+        else { emailMsg = ' (el email no se pudo enviar; revisá la config)'; }
+      }
+    }
+    closeGenerarOP();
+    toast('✓ ' + numero + ' generada' + emailMsg, 'success');
+    await openPagos();
+  } catch (e) { err.textContent = 'No se pudo generar: ' + ((e && e.message) || e); }
+  finally { btn.disabled = false; btn.textContent = t; }
+};
+async function _opEnviarEmail(opId, numero, fecha, total, medios) {
+  const rz = CMP_RAZONES.find(function(r){ return r.id === OP_COMPS[0].razon_social_id; });
+  const payload = {
+    to: OP_BENEF.email,
+    numero: numero,
+    proveedor: OP_BENEF.razon_social,
+    razon_social: rz ? rz.nombre : '',
+    fecha: _pagoFecha(fecha),
+    total: Math.round(total),
+    comprobantes: OP_COMPS.map(function(c){ return { detalle: (c.tipo || '') + ' ' + [c.punto_venta, c.numero].filter(Boolean).join('-'), importe: Math.round(_pagoSigno(c) * (parseFloat(c.total) || 0)) }; }),
+    medios: medios.map(function(m){ return { nombre: _nombreMedio(m.medio_pago_id), documento: m.documento || '', vencimiento: m.vencimiento ? _pagoFecha(m.vencimiento) : '', importe: Math.round(parseFloat(m.importe) || 0) }; })
+  };
+  const res = await fetch(SUPABASE_URL + '/functions/v1/enviar-orden-pago', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+    body: JSON.stringify(payload)
+  });
+  const j = await res.json().catch(function(){ return {}; });
+  return res.ok && j && j.ok;
+}
+
+// ---- Listado de Órdenes de Pago ----
+function renderOrdenes(chip) {
+  const cont = document.getElementById('pagosLista');
+  const ctrl = document.getElementById('pagosControles');
+  const bar = document.getElementById('pagosFooter'); if (bar) bar.style.display = 'none';
+  const ops = PAGOS_OPS.filter(function(o){
+    if (!PAGOS_Q) return true;
+    const p = CMP_PROV_MAP[o.proveedor_id];
+    return ((o.numero || '') + ' ' + (p && p.razon_social || '')).toLowerCase().indexOf(PAGOS_Q) >= 0;
+  });
+  const totalOps = ops.reduce(function(s, o){ return s + (parseFloat(o.total) || 0); }, 0);
+  ctrl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">' +
+    chip('por_pagar', 'Por pagar') + chip('programados', 'Programados') + chip('todos', 'Todos') + chip('ordenes', 'Órdenes') + '</div>' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">' +
+      '<span style="font-size:12px;color:var(--c-sand)"><b style="color:var(--c-cream)">' + ops.length + '</b> OP · ' + _cmpMoney(totalOps) + '</span>' +
+      '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="descargarOrdenesExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>' +
+    '</div>';
+  if (!ops.length) { cont.innerHTML = '<div class="empty-list">Todavía no hay órdenes de pago.</div>'; return; }
+  cont.innerHTML = ops.map(function(o){
+    const p = CMP_PROV_MAP[o.proveedor_id];
+    const anul = o.estado === 'anulada';
+    return '<div class="ped-card" style="padding:8px 10px;margin-bottom:6px;border-left:3px solid ' + (anul ? '#888' : '#2E7D32') + '">' +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+        '<span style="font-weight:700;color:var(--c-cream)">' + esc(o.numero || ('OP ' + o.id)) + '</span>' +
+        '<span style="color:var(--c-sand);font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"> · ' + esc(p ? p.razon_social : '') + '</span>' +
+        '<span style="font-weight:800;font-size:15px;white-space:nowrap;color:var(--c-cream)">' + _cmpMoney(o.total) + '</span>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:3px">' +
+        '<span style="font-size:11.5px;color:var(--c-sand)">' + _pagoFecha(o.fecha) + (anul ? ' · anulada' : '') + ' · ' + (o.email_enviado ? '<span style="color:#4CAF7A">email enviado</span>' : '<span style="color:#C87A2C">sin email</span>') + '</span>' +
+        '<button class="btn-ghost" style="padding:3px 9px;font-size:12px" onclick="verOP(' + o.id + ')">Ver</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+let VER_OP = null;
+window.verOP = async function(id) {
+  const o = PAGOS_OPS.find(function(x){ return x.id === id; });
+  if (!o) return;
+  VER_OP = o;
+  document.getElementById('verOpTitulo').textContent = o.numero || ('OP ' + id);
+  const body = document.getElementById('verOpBody');
+  body.innerHTML = '<div class="loading">Cargando...</div>';
+  document.getElementById('modalVerOP').classList.add('show');
+  let comps = [], medios = [], provEmail = null;
+  try {
+    const oc = await api('orden_pago_comprobantes?orden_pago_id=eq.' + id + '&select=*') || [];
+    const cids = oc.map(function(x){ return x.comprobante_id; });
+    let cmap = {};
+    if (cids.length) { const cs = await api('comprobantes?id=in.(' + cids.join(',') + ')&select=id,tipo,punto_venta,numero,total') || []; cs.forEach(function(c){ cmap[c.id] = c; }); }
+    comps = oc.map(function(x){ return { saldo: x.importe_saldado, c: cmap[x.comprobante_id] || {} }; });
+    medios = await api('orden_pago_medios?orden_pago_id=eq.' + id + '&select=*') || [];
+    const pr = await api('proveedores?id=eq.' + o.proveedor_id + '&select=email'); provEmail = (Array.isArray(pr) ? pr[0] : pr || {}).email;
+  } catch (e) {}
+  const p = CMP_PROV_MAP[o.proveedor_id];
+  const rz = CMP_RAZONES.find(function(r){ return r.id === o.razon_social_id; });
+  VER_OP._comps = comps; VER_OP._medios = medios; VER_OP._prov = p; VER_OP._rz = rz; VER_OP._provEmail = provEmail;
+  body.innerHTML =
+    '<div class="cierre-hint" style="margin-bottom:8px;font-size:13px;line-height:1.5"><b style="color:var(--c-cream)">' + esc(p ? p.razon_social : '') + '</b>' + (provEmail ? ' · ' + esc(provEmail) : ' · <span style="color:#E5534B">sin email</span>') + '<br>Paga: ' + esc(rz ? rz.nombre : '—') + ' · Fecha ' + _pagoFecha(o.fecha) + '</div>' +
+    '<div class="field-label" style="margin-bottom:3px">Comprobantes</div>' +
+    comps.map(function(c){ return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--c-cream-border)"><span style="color:var(--c-sand)">' + esc((c.c.tipo || '') + ' ' + [c.c.punto_venta, c.c.numero].filter(Boolean).join('-')) + '</span><span style="color:var(--c-cream)">' + _cmpMoney(c.saldo) + '</span></div>'; }).join('') +
+    '<div class="field-label" style="margin:10px 0 3px">Medios de pago</div>' +
+    medios.map(function(m){ return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--c-cream-border)"><span style="color:var(--c-sand)">' + esc(_nombreMedio(m.medio_pago_id) + (m.documento ? ' · ' + m.documento : '') + (m.vencimiento ? ' · vto ' + _pagoFecha(m.vencimiento) : '')) + '</span><span style="color:var(--c-cream)">' + _cmpMoney(m.importe) + '</span></div>'; }).join('') +
+    '<div style="text-align:right;font-weight:700;margin-top:8px;color:var(--c-cream)">Total: ' + _cmpMoney(o.total) + '</div>' +
+    (o.observaciones ? '<div style="font-size:12px;color:var(--c-sand);margin-top:6px">' + esc(o.observaciones) + '</div>' : '');
+};
+window.closeVerOP = function() { document.getElementById('modalVerOP').classList.remove('show'); };
+window.reenviarEmailOP = async function() {
+  if (!VER_OP) return;
+  const o = VER_OP;
+  if (!o._provEmail) { toast('El proveedor no tiene email cargado', 'error'); return; }
+  const payload = {
+    to: o._provEmail, numero: o.numero, proveedor: o._prov ? o._prov.razon_social : '', razon_social: o._rz ? o._rz.nombre : '',
+    fecha: _pagoFecha(o.fecha), total: Math.round(o.total || 0),
+    comprobantes: (o._comps || []).map(function(c){ return { detalle: (c.c.tipo || '') + ' ' + [c.c.punto_venta, c.c.numero].filter(Boolean).join('-'), importe: Math.round(c.saldo || 0) }; }),
+    medios: (o._medios || []).map(function(m){ return { nombre: _nombreMedio(m.medio_pago_id), documento: m.documento || '', vencimiento: m.vencimiento ? _pagoFecha(m.vencimiento) : '', importe: Math.round(m.importe || 0) }; })
+  };
+  const btn = document.getElementById('verOpReenviarBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Enviando...';
+  try {
+    const res = await fetch(SUPABASE_URL + '/functions/v1/enviar-orden-pago', { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY }, body: JSON.stringify(payload) });
+    const j = await res.json().catch(function(){ return {}; });
+    if (res.ok && j && j.ok) { await api('ordenes_pago?id=eq.' + o.id, { method: 'PATCH', body: JSON.stringify({ email_enviado: true }) }); o.email_enviado = true; toast('✓ Email enviado', 'success'); }
+    else { toast('No se pudo enviar: ' + ((j && j.error) || res.status), 'error'); }
+  } catch (e) { toast('No se pudo enviar: ' + ((e && e.message) || e), 'error'); }
+  finally { btn.disabled = false; btn.textContent = t; }
+};
+window.descargarOrdenesExcel = async function() {
+  try { await ensureXLSX(); } catch (e) { toast('No se pudo cargar el exportador de Excel', 'error'); return; }
+  if (!PAGOS_OPS.length) { toast('No hay órdenes de pago para exportar', 'error'); return; }
+  const rzName = {}; CMP_RAZONES.forEach(function(r){ rzName[r.id] = r.nombre; });
+  const filas = PAGOS_OPS.map(function(o){
+    const p = CMP_PROV_MAP[o.proveedor_id];
+    return {
+      'OP': o.numero || ('OP ' + o.id),
+      'Proveedor': p ? p.razon_social : '',
+      'Razón social': rzName[o.razon_social_id] || '',
+      'Fecha': _pagoFecha(o.fecha),
+      'Total': Math.round(parseFloat(o.total) || 0),
+      'Estado': o.estado || '',
+      'Email enviado': o.email_enviado ? 'Sí' : 'No'
+    };
+  });
+  exportarAExcel('Ordenes_de_pago_AZUCA_' + hoyStr() + '.xlsx', [{ nombre: 'Órdenes de pago', filas: filas }]);
 };
 
 window.showDashboard = showDashboard;
