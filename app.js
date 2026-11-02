@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CN | ULTIMA | Comprobantes: alerta al editar uno ya pagado (Emitido/Confirmado/Completado); se muestra "Pagado: fecha" en emitidos/completados (fecha real del pago, tomada de la OP). OP: cabecera naranja + domicilio Azuca; en Medios la columna pasa a "Fecha de Pago". Antes: OP documento, importes 2 decimales, Pago Emitido verde ===== */
+/* ===== BUILD 2026-11-03-CP | ULTIMA | Importes: el formato $ se fuerza desde el JS (los campos de neto/iva/total se convierten a texto con $ aunque el index.html quede viejo). Bloqueo de comprobantes duplicados (mismo proveedor + mismo numero + mismo importe). Antes: formato $ en Compras/Pagos, alerta al editar pagado, OP naranja+domicilio ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -5834,6 +5834,7 @@ function cmpAplicarQR(j) {
   if (j.importe != null) document.getElementById('cmpTotal').value = j.importe;
   if (j.codAut != null) document.getElementById('cmpCae').value = String(j.codAut);
   const tipo = CMP_AFIP_TIPO[j.tipoCmp]; if (tipo) document.getElementById('cmpTipo').value = tipo;
+  _cmpFmtMoneyFields();
   cmpSumaDist();
   return { provNombre: provNombre, provSinCatalogo: provSinCatalogo };
 }
@@ -5868,11 +5869,26 @@ function cmpAplicarIA(j) {
     const sel = document.getElementById('cmpTipo');
     for (let i = 0; i < sel.options.length; i++) { if (sel.options[i].value.toLowerCase() === String(j.tipo).toLowerCase()) { sel.selectedIndex = i; break; } }
   }
+  _cmpFmtMoneyFields();
   cmpSumaDist();
+}
+function _cmpFmtMoneyFields(){ ['cmpNeto','cmpIva','cmpPercep','cmpOtros','cmpTotal'].forEach(function(id){ const e = document.getElementById(id); if (e) e.value = _fmtMoneyStr(e.value); }); }
+// Garantiza que los campos de importe sean de texto con formato $, aunque el index.html esté viejo.
+function _cmpPrepMoneyInputs(){
+  ['cmpNeto','cmpIva','cmpPercep','cmpOtros','cmpTotal'].forEach(function(id){
+    const e = document.getElementById(id); if (!e) return;
+    try { e.type = 'text'; } catch (x) {}
+    e.setAttribute('inputmode', 'decimal');
+    if (!e._moneyBound) {
+      e.addEventListener('focus', function(){ moneyFocus(e); });
+      e.addEventListener('blur', function(){ moneyBlur(e); if (id === 'cmpNeto') cmpSumaDist(); });
+      e._moneyBound = true;
+    }
+  });
 }
 // Prellena la primera línea de distribución: monto = neto y cuenta por defecto del proveedor (si tiene). El local lo elige la persona.
 function cmpPrefillDist() {
-  const neto = parseFloat(document.getElementById('cmpNeto').value) || 0;
+  const neto = _parseMoney(document.getElementById('cmpNeto').value);
   if (neto <= 0) return;
   const provTxt = (document.getElementById('cmpProv').value || '').trim().toLowerCase();
   const prov = CMP_PROVEEDORES.find(function(p){ return (p.razon_social || '').toLowerCase() === provTxt; });
@@ -5885,8 +5901,14 @@ function cmpPrefillDist() {
   }
 }
 window.onFiltroComprobantes = function(){ openComprobantes(); };
-function _cmpMoney(v){ return '$' + formatNumber(Math.round(parseFloat(v) || 0)); }
 function _money2(v){ const n = parseFloat(v) || 0; return '$' + n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function _cmpMoney(v){ return _money2(v); }
+// Parseo tolerante de montos escritos como "$1.234.567,89", "1234567.89" o "1234567,89".
+function _parseMoney(v){ if (v == null) return 0; let s = String(v).trim().replace(/[$\s]/g, ''); if (!s) return 0; if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.'); return parseFloat(s) || 0; }
+function _fmtMoneyStr(v){ const n = _parseMoney(v); return n ? ('$' + n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) : ''; }
+// Campos de texto de dinero: al entrar se muestran "en crudo" para editar; al salir se formatean.
+window.moneyFocus = function(el){ const n = _parseMoney(el.value); el.value = n ? String(n) : ''; };
+window.moneyBlur = function(el){ el.value = _fmtMoneyStr(el.value); };
 function renderComprobantes() {
   const cont = document.getElementById('comprobantesLista');
   if (!cont) return;
@@ -5940,7 +5962,7 @@ function _cmpLocalesOptions(sel) {
 function _leerDist() {
   const rows = document.querySelectorAll('#cmpDistLista .cmp-dist-row');
   CMP_DIST = Array.prototype.map.call(rows, function(r){
-    return { local: r.querySelector('.cmp-d-local').value, cuenta_id: r.querySelector('.cmp-d-cuenta').value, monto: r.querySelector('.cmp-d-monto').value };
+    return { local: r.querySelector('.cmp-d-local').value, cuenta_id: r.querySelector('.cmp-d-cuenta').value, monto: _parseMoney(r.querySelector('.cmp-d-monto').value) };
   });
 }
 function renderDistComprobante() {
@@ -5949,7 +5971,7 @@ function renderDistComprobante() {
     return '<div class="cmp-dist-row" style="display:flex;gap:5px;margin-bottom:6px;align-items:center">' +
       '<select class="cmp-d-local" style="flex:1;min-width:0">' + _cmpLocalesOptions(d.local) + '</select>' +
       '<select class="cmp-d-cuenta" style="flex:1.3;min-width:0">' + _cuentaOptionsHTML(d.cuenta_id, 'Cuenta…') + '</select>' +
-      '<input class="cmp-d-monto" type="number" step="0.01" placeholder="$" value="' + (d.monto != null ? d.monto : '') + '" style="flex:0 0 90px" oninput="cmpSumaDist()">' +
+      '<input class="cmp-d-monto" type="text" inputmode="decimal" placeholder="$0,00" value="' + esc(_fmtMoneyStr(d.monto)) + '" style="flex:0 0 110px" oninput="cmpSumaDist()" onfocus="moneyFocus(this)" onblur="moneyBlur(this);cmpSumaDist()">' +
       '<button type="button" class="btn-ghost" style="flex:0 0 auto;padding:4px 7px;color:var(--c-error)" onclick="cmpQuitarLinea(' + i + ')"><i class="ti ti-x"></i></button>' +
     '</div>';
   }).join('');
@@ -5958,8 +5980,8 @@ function renderDistComprobante() {
 window.cmpAgregarLinea = function(){ _leerDist(); CMP_DIST.push({ local: '', cuenta_id: '', monto: '' }); renderDistComprobante(); };
 window.cmpQuitarLinea = function(i){ _leerDist(); CMP_DIST.splice(i, 1); renderDistComprobante(); };
 window.cmpSumaDist = function(){
-  let s = 0; document.querySelectorAll('#cmpDistLista .cmp-d-monto').forEach(function(el){ s += parseFloat(el.value) || 0; });
-  const neto = parseFloat(document.getElementById('cmpNeto').value) || 0;
+  let s = 0; document.querySelectorAll('#cmpDistLista .cmp-d-monto').forEach(function(el){ s += _parseMoney(el.value); });
+  const neto = _parseMoney(document.getElementById('cmpNeto').value);
   const el = document.getElementById('cmpDistSuma');
   if (el) { el.textContent = 'Distribuido: ' + _cmpMoney(s) + (neto ? ' / Neto: ' + _cmpMoney(neto) : ''); el.style.color = (neto && Math.abs(s - neto) > 1) ? 'var(--c-error)' : 'var(--c-muted)'; }
 };
@@ -5974,6 +5996,7 @@ window.abrirNuevoComprobante = async function() {
   CMP_EDIT_ID = null;
   document.getElementById('cmpModalTitulo').textContent = 'Nuevo comprobante';
   _cmpLimpiarForm();
+  _cmpPrepMoneyInputs();
   try { await cmpAsegurarProveedores(); } catch (e) {}
   _cmpLlenarSelects(null);
   CMP_DIST = [{ local: '', cuenta_id: '', monto: '' }];
@@ -5992,6 +6015,7 @@ window.abrirEditarComprobante = async function(id) {
   CMP_EDIT_ID = id;
   document.getElementById('cmpModalTitulo').textContent = 'Editar comprobante';
   _cmpLimpiarForm();
+  _cmpPrepMoneyInputs();
   try { await cmpAsegurarProveedores(); } catch (e) {}
   _cmpLlenarSelects(c);
   document.getElementById('cmpPtoVenta').value = c.punto_venta || '';
@@ -6003,6 +6027,7 @@ window.abrirEditarComprobante = async function(id) {
   document.getElementById('cmpPercep').value = c.percepciones != null ? c.percepciones : '';
   document.getElementById('cmpOtros').value = c.otros_imp != null ? c.otros_imp : '';
   document.getElementById('cmpTotal').value = c.total != null ? c.total : '';
+  _cmpFmtMoneyFields();
   document.getElementById('cmpCae').value = c.cae || '';
   document.getElementById('cmpFirmado').value = c.firmado_por || '';
   document.getElementById('cmpObs').value = c.observaciones || '';
@@ -6093,7 +6118,7 @@ window.guardarComprobante = async function() {
   const dist = CMP_DIST.map(function(d){ return { local: d.local || null, cuenta_id: d.cuenta_id ? parseInt(d.cuenta_id, 10) : null, monto: parseFloat(d.monto) || 0 }; }).filter(function(d){ return d.monto > 0; });
   if (!dist.length) { err.textContent = 'Agregá al menos una línea de distribución (local + cuenta + monto).'; return; }
   for (let i = 0; i < dist.length; i++) { if (!dist[i].local || !dist[i].cuenta_id) { err.textContent = 'Cada línea necesita local y cuenta.'; return; } }
-  const num = function(id){ return parseFloat(document.getElementById(id).value) || 0; };
+  const num = function(id){ return _parseMoney(document.getElementById(id).value); };
   const rec = {
     tipo: document.getElementById('cmpTipo').value || null,
     proveedor_id: prov.id,
@@ -6109,6 +6134,14 @@ window.guardarComprobante = async function() {
     adjunto_path: CMP_ADJUNTO_PATH || null,
     actualizado_en: new Date().toISOString()
   };
+  // Bloqueo de duplicados: mismo proveedor + mismo número + mismo importe total.
+  if (rec.numero) {
+    try {
+      const dups = await api('comprobantes?proveedor_id=eq.' + prov.id + '&numero=eq.' + encodeURIComponent(rec.numero) + '&select=id,total,punto_venta') || [];
+      const hit = dups.find(function(x){ return (!CMP_EDIT_ID || x.id !== CMP_EDIT_ID) && Math.abs((parseFloat(x.total) || 0) - rec.total) < 0.5; });
+      if (hit) { err.textContent = 'Ya existe un comprobante de este proveedor con el mismo número (' + rec.numero + ') e importe. No se cargó para evitar duplicados.'; return; }
+    } catch (e) { /* si la verificación falla, seguimos */ }
+  }
   const btn = document.getElementById('cmpGuardarBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
   try {
     let cmpId;
@@ -6464,7 +6497,7 @@ function _opRenderMedios() {
       '<div style="display:flex;gap:6px;margin-top:6px">' +
         '<input type="text" placeholder="' + (esCheque ? 'N° cheque' : 'N° / referencia') + '" value="' + esc(m.documento || '') + '" oninput="opSetDoc(' + i + ',this.value)" style="flex:1;padding:5px;font-size:12px">' +
         '<input type="date" value="' + esc(m.vencimiento ? String(m.vencimiento).slice(0,10) : '') + '" onchange="opSetVto(' + i + ',this.value)" title="Fecha de pago" style="padding:5px;font-size:12px">' +
-        '<input type="number" placeholder="Importe" value="' + (m.importe != null ? m.importe : '') + '" oninput="opSetImp(' + i + ',this.value)" style="width:110px;padding:5px;font-size:12px">' +
+        '<input type="text" inputmode="decimal" placeholder="Importe" value="' + esc(_fmtMoneyStr(m.importe)) + '" oninput="opSetImp(' + i + ',this.value)" onfocus="moneyFocus(this)" onblur="moneyBlur(this)" style="width:120px;padding:5px;font-size:12px">' +
       '</div></div>';
   }).join('');
   const dif = Math.round(total - sumMed);
@@ -6474,7 +6507,7 @@ function _opRenderMedios() {
 window.opSetMedio = function(i, v) { OP_MEDIOS[i].medio_pago_id = v; _opRenderMedios(); };
 window.opSetDoc = function(i, v) { OP_MEDIOS[i].documento = v; };
 window.opSetVto = function(i, v) { OP_MEDIOS[i].vencimiento = v; };
-window.opSetImp = function(i, v) { OP_MEDIOS[i].importe = v; _opActualizarDif(); };
+window.opSetImp = function(i, v) { OP_MEDIOS[i].importe = _parseMoney(v); _opActualizarDif(); };
 function _opActualizarDif() {
   const total = OP_COMPS.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
   const sumMed = OP_MEDIOS.reduce(function(s, m){ return s + (parseFloat(m.importe) || 0); }, 0);
