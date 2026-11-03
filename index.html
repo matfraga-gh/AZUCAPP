@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261103cr">
+<link rel="stylesheet" href="styles.css?v=20261103cs">
 </head>
 <body>
 
@@ -1963,6 +1963,27 @@
   </div>
 </div>
 
+<div id="vConciliacion" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Conciliación</div>
+        <div class="module-subtitle">Extractos bancarios y billeteras</div>
+      </div>
+    </div>
+    <div class="cierre-hint" style="margin-bottom:10px">Elegí la razón social y el banco/billetera, subí el extracto (.xls/.xlsx) y revisá la vista previa antes de importar. No se duplican movimientos ya cargados.</div>
+    <div style="display:flex;gap:8px">
+      <label class="field" style="flex:1"><span class="field-label">Razón social</span><select id="concRazon" onchange="concRazonChange()"></select></label>
+      <label class="field" style="flex:1"><span class="field-label">Fuente</span><select id="concFuente"></select></label>
+    </div>
+    <label class="field"><span class="field-label">Cuenta / billetera (opcional)</span><select id="concMedio"></select></label>
+    <label class="field"><span class="field-label">Archivo del extracto</span><input type="file" id="concArchivo" accept=".xls,.xlsx,.csv" onchange="concOnArchivo(this)"></label>
+    <div id="concPreview"></div>
+    <div id="concLista"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalCompSimple">
   <div class="modal-card cierre-card">
     <div class="modal-header">
@@ -2743,6 +2764,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261103cr"></script>
+<script src="app.js?v=20261103cs"></script>
 </body>
 </html>

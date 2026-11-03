@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CR | ULTIMA | Comprobante Simple: tipo "Factura" agregado; medios filtrados por la razon social elegida (sin duplicados); cuenta OBLIGATORIA; si la cuenta es Cta Cte Socios el local no aplica (retiro de socio). Pagos: nueva solapa "Simples" y los simples aprobados aparecen en la bandeja. Cta Cte Socios en comprobante normal tampoco exige local. Antes: Fase C (estado de cuenta, comp simple, es_socios) ===== */
+/* ===== BUILD 2026-11-03-CS | ULTIMA | Fase B tramo 1: modulo Conciliacion. Subir extractos (.xls/.xlsx) de Credicoop/Macro/MercadoPago -> parser tolerante (detecta fecha/debito/credito/importe/concepto/referencia, fechas serial o dd/mm) -> vista previa -> importar a movimientos_bancarios sin duplicar (hash). Lista de movimientos pendientes/conciliados. Requiere conciliacion.sql. Proximo: matcheo automatico con pagos emitidos. Antes: comp simple (Factura, medios por razon, cuenta oblig.), solapa Simples ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -563,6 +563,15 @@ const MODULES = [
     desc: 'Comprobantes y saldo por proveedor',
     visible: () => isMaster() || isAdmin(),
     action: () => openEstadoCuenta()
+  },
+  {
+    id: 'conciliacion',
+    icon: 'ti-arrows-exchange',
+    color: '#3E86C7',
+    title: 'Conciliación',
+    desc: 'Extractos bancarios y billeteras',
+    visible: () => isMaster() || isAdmin(),
+    action: () => openConciliacion()
   },
   {
     id: 'compsimple',
@@ -6926,6 +6935,152 @@ window.aprobarComprobante = async function(id) {
   try { await api('comprobantes?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ estado: 'pago_completado', actualizado_en: new Date().toISOString() }) }); toast('✓ Aprobado', 'success'); await openComprobantes(); }
   catch (e) { toast('No se pudo: ' + ((e && e.message) || e), 'error'); }
 };
+
+// ============================================
+// CONCILIACIÓN BANCARIA (Fase B — tramo 1: importar extractos)
+// ============================================
+let CONC_PREVIEW = [], CONC_LISTA = [], CONC_MEDIOS = [];
+const CONC_FUENTES = { credicoop: 'Banco Credicoop', macro: 'Banco Macro', mercadopago: 'Mercado Pago' };
+async function openConciliacion() {
+  if (!(isMaster() || isAdmin())) { showDashboard(); return; }
+  showView('vConciliacion');
+  if (!PLAN_CUENTAS.length) { try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || []; } catch (e) {} }
+  CMP_RAZONES = await api('razones_sociales?activo=eq.true&order=nombre.asc') || [];
+  CONC_MEDIOS = await api('medios_pago?activo=eq.true&order=razon_social_id,nombre') || [];
+  document.getElementById('concRazon').innerHTML = '<option value="">—</option>' + CMP_RAZONES.map(function(r){ return '<option value="' + r.id + '">' + esc(r.nombre) + '</option>'; }).join('');
+  document.getElementById('concFuente').innerHTML = Object.keys(CONC_FUENTES).map(function(k){ return '<option value="' + k + '">' + CONC_FUENTES[k] + '</option>'; }).join('');
+  CONC_PREVIEW = [];
+  document.getElementById('concPreview').innerHTML = '';
+  document.getElementById('concArchivo').value = '';
+  concRazonChange();
+}
+window.openConciliacion = openConciliacion;
+window.concRazonChange = function() {
+  const rz = document.getElementById('concRazon').value;
+  const sel = document.getElementById('concMedio');
+  const medios = CONC_MEDIOS.filter(function(m){ return !rz || String(m.razon_social_id) === String(rz); });
+  sel.innerHTML = '<option value="">— (cuenta/billetera, opcional)</option>' + medios.map(function(m){ return '<option value="' + m.id + '">' + esc(m.nombre) + '</option>'; }).join('');
+  concCargarLista();
+};
+function _concDate(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') { const d = new Date(Math.round((v - 25569) * 86400000)); return isNaN(d) ? null : d.toISOString().slice(0, 10); }
+  const s = String(v).trim();
+  let m = s.match(/(\d{4})-(\d{2})-(\d{2})/); if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  m = s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (m) { let y = m[3]; if (y.length === 2) y = '20' + y; return y + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0'); }
+  return null;
+}
+function _concCol(headers, keys) {
+  for (let i = 0; i < headers.length; i++) { const h = String(headers[i] || '').toLowerCase().replace(/\s+/g, ''); for (let k = 0; k < keys.length; k++) { if (h.indexOf(keys[k]) >= 0) return i; } }
+  return -1;
+}
+function _concParse(fuente, rows) {
+  let hi = -1, headers = [];
+  for (let i = 0; i < Math.min(rows.length, 30); i++) {
+    const joined = (rows[i] || []).map(function(x){ return String(x || '').toLowerCase(); }).join('|');
+    if (/fecha|date/.test(joined) && /(importe|debito|débito|credito|crédito|amount|monto|net)/.test(joined)) { hi = i; headers = rows[i]; break; }
+  }
+  if (hi < 0) return [];
+  const cF = _concCol(headers, ['fecha', 'date']);
+  const cDeb = _concCol(headers, ['debito', 'débito', 'debit']);
+  const cCred = _concCol(headers, ['credito', 'crédito', 'credit']);
+  let cImp = _concCol(headers, ['net']); if (cImp < 0) cImp = _concCol(headers, ['importe', 'amount', 'monto']);
+  const cDesc = _concCol(headers, ['concepto', 'descrip', 'description', 'detalle', 'movimiento']);
+  const cRef = _concCol(headers, ['referencia', 'comprobante', 'reference', 'cheque', 'operacion', 'nro', 'id']);
+  const out = [];
+  for (let i = hi + 1; i < rows.length; i++) {
+    const r = rows[i]; if (!r || !r.length) continue;
+    const fecha = _concDate(cF >= 0 ? r[cF] : null); if (!fecha) continue;
+    let importe = 0;
+    if (cDeb >= 0 || cCred >= 0) { importe = _parseMoney(cCred >= 0 ? r[cCred] : 0) - Math.abs(_parseMoney(cDeb >= 0 ? r[cDeb] : 0)); }
+    else if (cImp >= 0) { importe = _parseMoney(r[cImp]); }
+    if (!importe) continue;
+    out.push({ fecha: fecha, descripcion: String(cDesc >= 0 ? r[cDesc] : '').trim().slice(0, 200), referencia: String(cRef >= 0 ? r[cRef] : '').trim().slice(0, 80), importe: importe, tipo: importe < 0 ? 'debito' : 'credito' });
+  }
+  return out;
+}
+window.concOnArchivo = async function(input) {
+  const file = input.files && input.files[0]; if (!file) return;
+  const prev = document.getElementById('concPreview');
+  prev.innerHTML = '<div class="loading">Leyendo archivo...</div>';
+  try {
+    const XLSX = await ensureXLSX();
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+    CONC_PREVIEW = _concParse(document.getElementById('concFuente').value, rows);
+    concRenderPreview();
+  } catch (e) { prev.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo leer: ' + esc((e && e.message) || e) + '</div>'; }
+};
+function _concRow(m) {
+  const neg = m.importe < 0;
+  return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:5px 2px;border-bottom:1px solid var(--c-cream-border)">' +
+    '<span style="color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pagoFecha(m.fecha) + ' · ' + esc(m.descripcion || m.referencia || '—') + '</span>' +
+    '<span style="white-space:nowrap;color:' + (neg ? '#E5534B' : '#3BA55D') + '">' + _money2(m.importe) + '</span></div>';
+}
+function concRenderPreview() {
+  const prev = document.getElementById('concPreview');
+  if (!CONC_PREVIEW.length) { prev.innerHTML = '<div class="empty-list">No se detectaron movimientos. Revisá la fuente elegida o el archivo.</div>'; return; }
+  const deb = CONC_PREVIEW.filter(function(m){ return m.importe < 0; }).reduce(function(s, m){ return s + m.importe; }, 0);
+  const cred = CONC_PREVIEW.filter(function(m){ return m.importe > 0; }).reduce(function(s, m){ return s + m.importe; }, 0);
+  let html = '<div class="cierre-hint" style="margin:8px 0"><b>' + CONC_PREVIEW.length + '</b> movimientos · débitos ' + _money2(deb) + ' · créditos ' + _money2(cred) + '</div>';
+  html += '<button class="btn-primary" style="width:100%;margin-bottom:10px" onclick="concImportar()"><i class="ti ti-download"></i> Importar ' + CONC_PREVIEW.length + ' movimientos</button>';
+  html += CONC_PREVIEW.slice(0, 100).map(_concRow).join('');
+  if (CONC_PREVIEW.length > 100) html += '<div class="cierre-hint">… y ' + (CONC_PREVIEW.length - 100) + ' más (se importan todos).</div>';
+  prev.innerHTML = html;
+}
+function _concHash(m) { return (m.fecha || '') + '|' + Math.round(m.importe * 100) + '|' + (m.referencia || '').slice(0, 30) + '|' + (m.descripcion || '').slice(0, 30); }
+window.concImportar = async function() {
+  const razonId = document.getElementById('concRazon').value;
+  if (!razonId) { toast('Elegí la razón social del extracto', 'error'); return; }
+  if (!CONC_PREVIEW.length) return;
+  const medioId = document.getElementById('concMedio').value || null;
+  const fuente = document.getElementById('concFuente').value;
+  let existentes = new Set();
+  try { const ex = await api('movimientos_bancarios?razon_social_id=eq.' + razonId + '&select=hash') || []; ex.forEach(function(x){ existentes.add(x.hash); }); } catch (e) {}
+  const nuevos = CONC_PREVIEW.map(function(m){ return { razon_social_id: parseInt(razonId, 10), medio_pago_id: medioId ? parseInt(medioId, 10) : null, fuente: fuente, fecha: m.fecha, descripcion: m.descripcion || null, referencia: m.referencia || null, importe: m.importe, tipo: m.tipo, estado: 'pendiente', hash: _concHash(m), creado_por: currentUser ? currentUser.id : null }; })
+    .filter(function(m){ return !existentes.has(m.hash); });
+  if (!nuevos.length) { toast('Esos movimientos ya estaban importados', 'info'); return; }
+  try {
+    for (let i = 0; i < nuevos.length; i += 200) { await api('movimientos_bancarios', { method: 'POST', body: JSON.stringify(nuevos.slice(i, i + 200)) }); }
+    const rep = CONC_PREVIEW.length - nuevos.length;
+    toast('✓ ' + nuevos.length + ' movimientos importados' + (rep ? ' (' + rep + ' ya estaban)' : ''), 'success');
+    CONC_PREVIEW = []; document.getElementById('concPreview').innerHTML = ''; document.getElementById('concArchivo').value = '';
+    await concCargarLista();
+  } catch (e) { toast('No se pudo importar: ' + ((e && e.message) || e), 'error'); }
+};
+async function concCargarLista() {
+  const cont = document.getElementById('concLista'); if (!cont) return;
+  cont.innerHTML = '<div class="loading">Cargando...</div>';
+  const razonId = document.getElementById('concRazon').value;
+  try {
+    let q = 'movimientos_bancarios?select=*&order=fecha.desc&limit=200';
+    if (razonId) q += '&razon_social_id=eq.' + razonId;
+    CONC_LISTA = await api(q) || [];
+  } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar. ¿Corriste conciliacion.sql?</div>'; return; }
+  concRenderLista();
+}
+window.concCargarLista = concCargarLista;
+function concRenderLista() {
+  const cont = document.getElementById('concLista');
+  if (!CONC_LISTA.length) { cont.innerHTML = '<div class="empty-list">Sin movimientos importados todavía.</div>'; return; }
+  const pend = CONC_LISTA.filter(function(m){ return m.estado === 'pendiente'; }).length;
+  let html = '<div style="font-weight:700;color:var(--c-cream);margin:12px 0 6px">Movimientos importados <span style="font-weight:400;color:var(--c-sand);font-size:12px">(' + pend + ' pendientes)</span></div>';
+  html += CONC_LISTA.map(function(m){
+    const neg = m.importe < 0;
+    const estColor = m.estado === 'conciliado' ? '#3BA55D' : '#C87A2C';
+    return '<div class="ped-card" style="padding:7px 10px;margin-bottom:5px;border-left:3px solid ' + estColor + '">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px">' +
+        '<span style="font-size:12px;color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pagoFecha(m.fecha) + ' · ' + esc(m.descripcion || m.referencia || '—') + '</span>' +
+        '<span style="white-space:nowrap;font-weight:700;color:' + (neg ? '#E5534B' : '#3BA55D') + '">' + _money2(m.importe) + '</span>' +
+      '</div>' +
+      '<div style="margin-top:2px"><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:' + estColor + ';color:#fff">' + (m.estado === 'conciliado' ? 'Conciliado' : 'Pendiente') + '</span>' + (m.fuente ? '<span style="font-size:11px;color:var(--c-sand);margin-left:6px">' + esc(CONC_FUENTES[m.fuente] || m.fuente) + '</span>' : '') + '</div>' +
+    '</div>';
+  }).join('');
+  cont.innerHTML = html;
+}
 
 window.showDashboard = showDashboard;
 window.showChangePass = function() {
