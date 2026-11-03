@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-DF | ULTIMA | Compromisos: cada item muestra la razon social que paga; filtro de empresa arriba (Todas = juntos, o una sociedad por separado). Antes: saldo disponible por empresa en la ficha ===== */
+/* ===== BUILD 2026-11-03-DG | ULTIMA | Mis Finanzas: nueva pestaña Flujo de fondos (proyeccion de caja por semana/mes: saldo inicial + ingresos [ventas estimadas por promedio de cierres, editable, + extraordinarios manuales] - egresos [compromisos] = saldo proyectado; destaca el "Piso de caja" minimo para decidir inversion/retiro). Requiere flujo_fondos.sql. Compromisos: razon social que paga + filtro de empresa (Todas/por sociedad) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -7390,6 +7390,7 @@ window.eliminarRegla = async function(id) {
 // MIS FINANZAS (saldos + compromisos financieros)
 // ============================================
 let MF_CUENTAS = [], MF_SALDOS = [], MF_VISTA = 'saldos', MF_COMPROMISOS = null, MF_OPEN_M = null, MF_OPEN_W = null, MF_EMP = 'todas';
+let MF_FLUJO_GRAN = 'semanas', MF_VENTA_DIARIA = null, MF_INGRESOS = null;
 const MF_SIMB = { ARS: '$', USD: 'US$', BRL: 'R$', EUR: '€' };
 function _mfMoney(v, mon){ const n = parseFloat(v) || 0; return (MF_SIMB[mon] || '$') + n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 async function openMisFinanzas() {
@@ -7401,6 +7402,7 @@ async function openMisFinanzas() {
     MF_SALDOS = await apiAll('saldos_diarios?select=*&order=fecha.desc,id.desc') || [];
   } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar. ¿Corriste mis_finanzas.sql?</div>'; return; }
   MF_COMPROMISOS = null; MF_EMP = 'todas';
+  MF_VENTA_DIARIA = null; MF_INGRESOS = null; MF_FLUJO_GRAN = 'semanas';
   MF_OPEN_M = new Set([hoyStr().slice(0, 7)]); // mes actual abierto por defecto
   MF_OPEN_W = new Set();
   mfRender();
@@ -7419,11 +7421,12 @@ window.mfToggleSem = function(wk){ if (MF_OPEN_W.has(wk)) MF_OPEN_W.delete(wk); 
 window.mfSetVista = function(v){ MF_VISTA = v; mfRender(); };
 function _mfTabs() {
   const tab = function(v, lbl){ return '<button class="btn-ghost" style="padding:5px 14px;border-radius:14px;font-size:12px;' + (MF_VISTA === v ? 'background:var(--c-cream);color:#2b2017;font-weight:700' : '') + '" onclick="mfSetVista(\'' + v + '\')">' + lbl + '</button>'; };
-  return '<div style="display:flex;gap:6px;margin-bottom:12px">' + tab('saldos', 'Saldos') + tab('compromisos', 'Compromisos') + '</div>';
+  return '<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">' + tab('saldos', 'Saldos') + tab('compromisos', 'Compromisos') + tab('flujo', 'Flujo de fondos') + '</div>';
 }
 function mfRender() {
   const cont = document.getElementById('mfCont');
   if (MF_VISTA === 'compromisos') { cont.innerHTML = _mfTabs() + '<div id="mfComprom"></div>'; mfRenderCompromisos(); return; }
+  if (MF_VISTA === 'flujo') { cont.innerHTML = _mfTabs() + '<div id="mfFlujo"></div>'; mfRenderFlujo(); return; }
   cont.innerHTML = _mfTabs() + mfRenderSaldos();
 }
 // ---- Saldos ----
@@ -7500,26 +7503,28 @@ window.guardarSaldos = async function() {
   finally { btn.disabled = false; btn.textContent = t; }
 };
 // ---- Compromisos ----
+async function mfAsegurarCompromisos() {
+  if (MF_COMPROMISOS) return true;
+  try {
+    const medios = await api('orden_pago_medios?conciliado=eq.false&select=*') || [];
+    const opIds = Array.from(new Set(medios.map(function(m){ return m.orden_pago_id; }).filter(Boolean)));
+    let opMap = {};
+    if (opIds.length) { const ops = await api('ordenes_pago?id=in.(' + opIds.join(',') + ')&select=id,numero,proveedor_id,razon_social_id') || []; ops.forEach(function(o){ opMap[o.id] = o; }); }
+    const comps = await api('comprobantes?estado=in.(pendiente_pago,pagado_parcial,pago_programado)&fecha_vto=not.is.null&select=id,proveedor_id,razon_social_id,tipo,numero,total,fecha_vto,fecha_pago,estado') || [];
+    const rzMap = {}; (await api('razones_sociales?select=id,nombre') || []).forEach(function(r){ rzMap[r.id] = r.nombre; });
+    const pids = Array.from(new Set(medios.map(function(m){ return opMap[m.orden_pago_id] && opMap[m.orden_pago_id].proveedor_id; }).concat(comps.map(function(c){ return c.proveedor_id; })).filter(Boolean)));
+    if (pids.length) { const ps = await api('proveedores?id=in.(' + pids.join(',') + ')&select=id,razon_social') || []; ps.forEach(function(p){ CMP_PROV_MAP[p.id] = p; }); }
+    const items = [];
+    medios.forEach(function(m){ const op = opMap[m.orden_pago_id] || {}; const p = CMP_PROV_MAP[op.proveedor_id]; const emp = rzMap[op.razon_social_id] || '(sin empresa)'; items.push({ fecha: m.vencimiento, tipo: 'comprometido', emp: emp, detalle: emp + ' · ' + (op.numero || 'OP') + (p ? ' · ' + p.razon_social : '') + (m.documento ? ' · chq ' + m.documento : ''), importe: parseFloat(m.importe) || 0 }); });
+    comps.forEach(function(c){ const p = CMP_PROV_MAP[c.proveedor_id]; const emp = rzMap[c.razon_social_id] || '(sin empresa)'; items.push({ fecha: (c.estado === 'pago_programado' && c.fecha_pago) ? c.fecha_pago : c.fecha_vto, tipo: 'previsto', emp: emp, detalle: emp + ' · ' + (p ? p.razon_social : '') + ' · ' + (c.tipo || '') + ' ' + (c.numero || ''), importe: parseFloat(c.total) || 0 }); });
+    items.sort(function(a, b){ return (a.fecha || '9999').localeCompare(b.fecha || '9999'); });
+    MF_COMPROMISOS = items; return true;
+  } catch (e) { MF_COMPROMISOS = null; return false; }
+}
 async function mfRenderCompromisos() {
   const cont = document.getElementById('mfComprom'); if (!cont) return;
   cont.innerHTML = '<div class="loading">Cargando...</div>';
-  if (!MF_COMPROMISOS) {
-    try {
-      const medios = await api('orden_pago_medios?conciliado=eq.false&select=*') || [];
-      const opIds = Array.from(new Set(medios.map(function(m){ return m.orden_pago_id; }).filter(Boolean)));
-      let opMap = {};
-      if (opIds.length) { const ops = await api('ordenes_pago?id=in.(' + opIds.join(',') + ')&select=id,numero,proveedor_id,razon_social_id') || []; ops.forEach(function(o){ opMap[o.id] = o; }); }
-      const comps = await api('comprobantes?estado=in.(pendiente_pago,pagado_parcial,pago_programado)&fecha_vto=not.is.null&select=id,proveedor_id,razon_social_id,tipo,numero,total,fecha_vto,fecha_pago,estado') || [];
-      const rzMap = {}; (await api('razones_sociales?select=id,nombre') || []).forEach(function(r){ rzMap[r.id] = r.nombre; });
-      const pids = Array.from(new Set(medios.map(function(m){ return opMap[m.orden_pago_id] && opMap[m.orden_pago_id].proveedor_id; }).concat(comps.map(function(c){ return c.proveedor_id; })).filter(Boolean)));
-      if (pids.length) { const ps = await api('proveedores?id=in.(' + pids.join(',') + ')&select=id,razon_social') || []; ps.forEach(function(p){ CMP_PROV_MAP[p.id] = p; }); }
-      const items = [];
-      medios.forEach(function(m){ const op = opMap[m.orden_pago_id] || {}; const p = CMP_PROV_MAP[op.proveedor_id]; const emp = rzMap[op.razon_social_id] || '(sin empresa)'; items.push({ fecha: m.vencimiento, tipo: 'comprometido', emp: emp, detalle: emp + ' · ' + (op.numero || 'OP') + (p ? ' · ' + p.razon_social : '') + (m.documento ? ' · chq ' + m.documento : ''), importe: parseFloat(m.importe) || 0 }); });
-      comps.forEach(function(c){ const p = CMP_PROV_MAP[c.proveedor_id]; const emp = rzMap[c.razon_social_id] || '(sin empresa)'; items.push({ fecha: (c.estado === 'pago_programado' && c.fecha_pago) ? c.fecha_pago : c.fecha_vto, tipo: 'previsto', emp: emp, detalle: emp + ' · ' + (p ? p.razon_social : '') + ' · ' + (c.tipo || '') + ' ' + (c.numero || ''), importe: parseFloat(c.total) || 0 }); });
-      items.sort(function(a, b){ return (a.fecha || '9999').localeCompare(b.fecha || '9999'); });
-      MF_COMPROMISOS = items;
-    } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar.</div>'; return; }
-  }
+  if (!(await mfAsegurarCompromisos())) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar.</div>'; return; }
   const emps = Array.from(new Set(MF_COMPROMISOS.map(function(x){ return x.emp; }).filter(Boolean))).sort();
   const items = MF_COMPROMISOS.filter(function(x){ return x.fecha && (MF_EMP === 'todas' || x.emp === MF_EMP); });
   const hoy = hoyStr(); const curMk = hoy.slice(0, 7); const lunHoy = _mfMonday(hoy);
@@ -7613,6 +7618,96 @@ async function mfRenderCompromisos() {
   }
   cont.innerHTML = html;
 }
+// ---- Flujo de fondos (proyección de caja) ----
+function _mfDiffDays(a, b){ return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000); }
+async function mfCalcVentaDiaria() {
+  const hoy = hoyStr(); const desde = _mfAddDays(hoy, -60);
+  try {
+    const ci = await apiAll('cierres_caja?fecha=gte.' + desde + '&fecha=lt.' + hoy + '&select=*') || [];
+    let bruto = 0; ci.forEach(function(c){ bruto += (salonPesos(c) || 0) + (mostradorPesos(c) || 0); });
+    return Math.round(bruto / 60);
+  } catch (e) { return 0; }
+}
+function _mfPeriodos(gran){
+  const hoy = hoyStr(); const out = [];
+  if (gran === 'meses') {
+    let mk = hoy.slice(0, 7);
+    for (let i = 0; i < 6; i++) { const mStart = mk + '-01'; const mEnd = _mfAddDays(_mfMonthAdd(mk, 1) + '-01', -1); const ini = (mStart < hoy) ? hoy : mStart; out.push({ label: _mfMesNombre(mk), start: ini, end: mEnd, dias: _mfDiffDays(ini, mEnd) + 1 }); mk = _mfMonthAdd(mk, 1); }
+  } else {
+    let wm = _mfMonday(hoy);
+    for (let i = 0; i < 12; i++) { const end = _mfAddDays(wm, 6); const ini = (wm < hoy) ? hoy : wm; out.push({ label: 'S ' + _mfDDMM(ini) + ' al ' + _mfDDMM(end), start: ini, end: end, dias: _mfDiffDays(ini, end) + 1 }); wm = _mfAddDays(wm, 7); }
+  }
+  return out;
+}
+async function mfRenderFlujo() {
+  const cont = document.getElementById('mfFlujo'); if (!cont) return;
+  cont.innerHTML = '<div class="loading">Cargando...</div>';
+  if (!(await mfAsegurarCompromisos())) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar.</div>'; return; }
+  if (MF_VENTA_DIARIA === null) MF_VENTA_DIARIA = await mfCalcVentaDiaria();
+  if (MF_INGRESOS === null) { try { MF_INGRESOS = await api('ingresos_previstos?select=*&order=fecha.asc') || []; } catch (e) { MF_INGRESOS = []; } }
+  mfPintarFlujo();
+}
+window.mfSetGran = function(g){ MF_FLUJO_GRAN = g; mfPintarFlujo(); };
+window.mfSetVentaDiaria = function(v){ MF_VENTA_DIARIA = _parseMoney(v); mfPintarFlujo(); };
+window.mfAgregarIngreso = async function() {
+  const fecha = (window.prompt('Fecha del ingreso (AAAA-MM-DD):', hoyStr()) || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) { if (fecha) toast('Fecha inválida', 'error'); return; }
+  const imp = _parseMoney(window.prompt('Importe:') || '');
+  if (imp <= 0) return;
+  const desc = (window.prompt('Descripción (opcional):') || '').trim() || null;
+  try {
+    const r = await api('ingresos_previstos', { method: 'POST', body: JSON.stringify({ fecha: fecha, importe: imp, descripcion: desc, creado_por: currentUser ? currentUser.id : null }) });
+    MF_INGRESOS.push(Array.isArray(r) ? r[0] : r);
+    toast('✓ Ingreso agregado', 'success'); mfPintarFlujo();
+  } catch (e) { toast('No se pudo: ' + ((e && e.message) || e), 'error'); }
+};
+window.mfEliminarIngreso = async function(id) {
+  try { await api('ingresos_previstos?id=eq.' + id, { method: 'DELETE' }); MF_INGRESOS = MF_INGRESOS.filter(function(g){ return g.id !== id; }); mfPintarFlujo(); }
+  catch (e) { toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error'); }
+};
+function mfPintarFlujo() {
+  const cont = document.getElementById('mfFlujo'); if (!cont) return;
+  const hoy = hoyStr();
+  const smap = _mfSaldoMap(); let saldoHoy = 0;
+  MF_CUENTAS.forEach(function(c){ if (c.moneda === 'ARS') { const v = _mfUltSaldo(c.id, smap); if (v != null) saldoHoy += parseFloat(v) || 0; } });
+  const vd = parseFloat(MF_VENTA_DIARIA) || 0;
+  const periodos = _mfPeriodos(MF_FLUJO_GRAN);
+  let saldoIni = saldoHoy, minSaldo = saldoHoy;
+  const th = 'padding:6px 8px;white-space:nowrap';
+  let filas = '<tr><td style="' + th + ';text-align:left;color:var(--c-sand)">Hoy</td><td style="' + th + ';text-align:right;color:var(--c-sand)">—</td><td style="' + th + ';text-align:right;color:var(--c-sand)">—</td><td style="' + th + ';text-align:right;font-weight:700;color:var(--c-cream)">' + _mfMoney(saldoHoy, 'ARS') + '</td></tr>';
+  periodos.forEach(function(p){
+    const egr = MF_COMPROMISOS.filter(function(x){ return x.fecha && x.fecha >= p.start && x.fecha <= p.end; }).reduce(function(s, x){ return s + x.importe; }, 0);
+    const ingV = vd * p.dias;
+    const ingM = (MF_INGRESOS || []).filter(function(g){ return g.fecha >= p.start && g.fecha <= p.end; }).reduce(function(s, g){ return s + (parseFloat(g.importe) || 0); }, 0);
+    const ing = ingV + ingM;
+    const saldoFin = saldoIni + ing - egr;
+    if (saldoFin < minSaldo) minSaldo = saldoFin;
+    filas += '<tr>' +
+      '<td style="' + th + ';text-align:left;color:var(--c-cream)">' + esc(p.label) + '</td>' +
+      '<td style="' + th + ';text-align:right;color:#3BA55D">+' + _mfMoney(ing, 'ARS') + '</td>' +
+      '<td style="' + th + ';text-align:right;color:#E5534B">−' + _mfMoney(egr, 'ARS') + '</td>' +
+      '<td style="' + th + ';text-align:right;font-weight:700;color:' + (saldoFin < 0 ? '#E5534B' : 'var(--c-cream)') + '">' + _mfMoney(saldoFin, 'ARS') + '</td></tr>';
+    saldoIni = saldoFin;
+  });
+  const gchip = function(v, lbl){ return '<button class="btn-ghost" style="padding:4px 11px;border-radius:12px;font-size:12px;' + (MF_FLUJO_GRAN === v ? 'background:var(--c-cream);color:#2b2017;font-weight:700' : '') + '" onclick="mfSetGran(\'' + v + '\')">' + lbl + '</button>'; };
+  let html = '<div style="display:flex;gap:6px;margin-bottom:10px">' + gchip('semanas', 'Por semana') + gchip('meses', 'Por mes') + '</div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">' +
+    '<div style="flex:1;min-width:120px;background:rgba(255,255,255,.04);border:1px solid var(--c-cream-border);border-radius:8px;padding:7px 10px"><div style="font-size:11px;color:var(--c-sand)">Saldo hoy (ARS)</div><div style="font-weight:800;font-size:15px;color:var(--c-cream)">' + _mfMoney(saldoHoy, 'ARS') + '</div></div>' +
+    '<div style="flex:1;min-width:120px;background:' + (minSaldo < 0 ? 'rgba(229,83,75,.12)' : 'rgba(59,165,93,.12)') + ';border:1px solid ' + (minSaldo < 0 ? '#E5534B' : '#3BA55D') + ';border-radius:8px;padding:7px 10px"><div style="font-size:11px;color:var(--c-sand)">Piso de caja (mínimo)</div><div style="font-weight:800;font-size:15px;color:' + (minSaldo < 0 ? '#E5534B' : '#3BA55D') + '">' + _mfMoney(minSaldo, 'ARS') + '</div></div>' +
+  '</div>';
+  html += '<label class="field" style="margin-bottom:10px"><span class="field-label">Venta diaria estimada (editable) — prom. últimos 60 días</span>' +
+    '<input type="text" inputmode="decimal" value="' + esc(_fmtMoneyStr(vd)) + '" onfocus="moneyFocus(this)" onblur="moneyBlur(this)" onchange="mfSetVentaDiaria(this.value)" style="text-align:right"></label>';
+  html += '<div style="overflow-x:auto;border:1px solid var(--c-cream-border);border-radius:9px"><table style="border-collapse:collapse;font-size:12px;min-width:100%">' +
+    '<thead><tr style="background:rgba(255,255,255,.05)"><th style="' + th + ';text-align:left;color:var(--c-sand)">Período</th><th style="' + th + ';text-align:right;color:var(--c-sand)">Ingresos</th><th style="' + th + ';text-align:right;color:var(--c-sand)">Egresos</th><th style="' + th + ';text-align:right;color:var(--c-sand)">Saldo proyectado</th></tr></thead>' +
+    '<tbody>' + filas + '</tbody></table></div>';
+  // Ingresos extraordinarios (manuales)
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 4px"><span style="font-weight:700;color:var(--c-cream);font-size:13px">Ingresos extraordinarios</span><button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="mfAgregarIngreso()"><i class="ti ti-plus"></i> Agregar</button></div>';
+  const futuros = (MF_INGRESOS || []).filter(function(g){ return g.fecha >= hoy; });
+  html += futuros.length ? futuros.map(function(g){ return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;padding:5px 0;border-bottom:1px solid var(--c-cream-border)"><span style="color:var(--c-sand)">' + _pagoFecha(g.fecha) + ' · ' + esc(g.descripcion || '') + '</span><span style="display:flex;gap:8px;align-items:center"><b style="color:#3BA55D">' + _mfMoney(g.importe, 'ARS') + '</b><button class="btn-ghost" style="padding:2px 6px;color:var(--c-error)" onclick="mfEliminarIngreso(' + g.id + ')"><i class="ti ti-trash"></i></button></span></div>'; }).join('') : '<div class="cierre-hint">Sin ingresos extraordinarios. Las ventas estimadas ya están contempladas arriba.</div>';
+  html += '<div class="cierre-hint" style="margin-top:10px">El <b>Piso de caja</b> es el saldo proyectado más bajo del horizonte: aproxima cuánto podrías invertir o retirar sin quedar corto. Ingresos = ventas estimadas + extraordinarios. Egresos = compromisos (pagos emitidos + vencimientos).</div>';
+  cont.innerHTML = html;
+}
+
 // ---- Editar catálogo de cuentas ----
 window.mfEditarCuentas = function() {
   let html = (MF_CUENTAS.length ? MF_CUENTAS.map(function(c){
