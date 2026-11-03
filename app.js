@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CW | ULTIMA | Fix import conciliacion: huella con contador de repeticiones (movimientos identicos conviven; ya no da error 409 duplicate key) y re-subir el mismo extracto sigue sin duplicar. Las pestañas Debitos/Creditos se ocultan hasta que haya movimientos (una sola importacion trae todo). Antes: pestañas Debitos / Creditos. Creditos: seccion aparte para Silvina (tarjetas/propinas/transfer de clientes); NO suman a ventas (las ventas salen de los cierres). Conciliar por tipo + nota (sin impacto P&L) o en masa "Conciliar pendientes como ventas". Antes: saque el selector Cuenta/billetera; tramo 3 categorizar debitos (cuenta del plan + local o "sin local"/Socios + nota + adjunto) -> movimiento conciliado que impacta el Panel; sirve para sueldos/prestamos/impuestos que no son comprobantes pendientes. Reglas por palabra clave (autocategorizan: boton "Aplicar reglas" + ABM de reglas + crear regla al categorizar). Requiere conciliacion.sql + fase_b_tramo3.sql. Antes: tramo 1 (importar extractos) ===== */
+/* ===== BUILD 2026-11-03-CX | ULTIMA | Conciliacion: toggle Pendientes/Conciliados en cada pestaña (el listado principal muestra solo lo pendiente; los conciliados quedan en su historial). Carga completa de movimientos (apiAll). Anti-duplicados ahora por razon social + banco (fuente). Antes: huella con contador de repeticiones (movimientos identicos conviven; ya no da error 409 duplicate key) y re-subir el mismo extracto sigue sin duplicar. Las pestañas Debitos/Creditos se ocultan hasta que haya movimientos (una sola importacion trae todo). Antes: pestañas Debitos / Creditos. Creditos: seccion aparte para Silvina (tarjetas/propinas/transfer de clientes); NO suman a ventas (las ventas salen de los cierres). Conciliar por tipo + nota (sin impacto P&L) o en masa "Conciliar pendientes como ventas". Antes: saque el selector Cuenta/billetera; tramo 3 categorizar debitos (cuenta del plan + local o "sin local"/Socios + nota + adjunto) -> movimiento conciliado que impacta el Panel; sirve para sueldos/prestamos/impuestos que no son comprobantes pendientes. Reglas por palabra clave (autocategorizan: boton "Aplicar reglas" + ABM de reglas + crear regla al categorizar). Requiere conciliacion.sql + fase_b_tramo3.sql. Antes: tramo 1 (importar extractos) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -6939,7 +6939,7 @@ window.aprobarComprobante = async function(id) {
 // ============================================
 // CONCILIACIÓN BANCARIA (Fase B — tramo 1: importar extractos)
 // ============================================
-let CONC_PREVIEW = [], CONC_LISTA = [], CONC_MEDIOS = [], CONC_REGLAS = [], CONC_CAT_ID = null, CONC_VISTA = 'debitos', CONC_CRED_ID = null;
+let CONC_PREVIEW = [], CONC_LISTA = [], CONC_MEDIOS = [], CONC_REGLAS = [], CONC_CAT_ID = null, CONC_VISTA = 'debitos', CONC_CRED_ID = null, CONC_ESTADO = 'pendiente';
 const CONC_FUENTES = { credicoop: 'Banco Credicoop', macro: 'Banco Macro', mercadopago: 'Mercado Pago' };
 const CONC_CRED_TIPOS = ['Acreditación de ventas (tarjetas/QR)', 'Propinas', 'Transferencia de cliente', 'Préstamo recibido', 'Reintegro', 'Otro'];
 async function openConciliacion() {
@@ -7032,7 +7032,7 @@ window.concImportar = async function() {
   if (!CONC_PREVIEW.length) return;
   const fuente = document.getElementById('concFuente').value;
   let existentes = new Set();
-  try { const ex = await api('movimientos_bancarios?razon_social_id=eq.' + razonId + '&select=hash') || []; ex.forEach(function(x){ existentes.add(x.hash); }); } catch (e) {}
+  try { const ex = await api('movimientos_bancarios?razon_social_id=eq.' + razonId + '&fuente=eq.' + fuente + '&select=hash') || []; ex.forEach(function(x){ existentes.add(x.hash); }); } catch (e) {}
   // La huella incluye un contador de repeticiones: dos movimientos idénticos (misma fecha/importe/concepto) conviven, y al re-subir el mismo extracto siguen deduplicándose.
   const vistos = {};
   const nuevos = CONC_PREVIEW.map(function(m){
@@ -7053,9 +7053,9 @@ async function concCargarLista() {
   cont.innerHTML = '<div class="loading">Cargando...</div>';
   const razonId = document.getElementById('concRazon').value;
   try {
-    let q = 'movimientos_bancarios?select=*&order=fecha.desc&limit=200';
+    let q = 'movimientos_bancarios?select=*&order=fecha.desc,id.desc';
     if (razonId) q += '&razon_social_id=eq.' + razonId;
-    CONC_LISTA = await api(q) || [];
+    CONC_LISTA = await apiAll(q) || [];
   } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar. ¿Corriste conciliacion.sql?</div>'; return; }
   concRenderLista();
 }
@@ -7069,6 +7069,13 @@ function _concReglaMatch(m) {
   });
 }
 window.concSetVista = function(v){ CONC_VISTA = v; concRenderLista(); };
+window.concSetEstado = function(v){ CONC_ESTADO = v; concRenderLista(); };
+function _concEstadoToggle(arr){
+  const p = arr.filter(function(m){ return m.estado === 'pendiente'; }).length;
+  const c = arr.filter(function(m){ return m.estado === 'conciliado'; }).length;
+  const b = function(v, lbl){ return '<button class="btn-ghost" style="padding:4px 11px;font-size:12px;border-radius:12px;' + (CONC_ESTADO === v ? 'background:var(--c-cream);color:#2b2017;font-weight:700' : '') + '" onclick="concSetEstado(\'' + v + '\')">' + lbl + '</button>'; };
+  return '<div style="display:flex;gap:6px;margin-bottom:8px">' + b('pendiente', 'Pendientes (' + p + ')') + b('conciliado', 'Conciliados (' + c + ')') + '</div>';
+}
 function _concTabs() {
   const tab = function(v, lbl){ return '<button class="btn-ghost" style="padding:5px 14px;border-radius:14px;font-size:12px;' + (CONC_VISTA === v ? 'background:var(--c-cream);color:#2b2017;font-weight:700' : '') + '" onclick="concSetVista(\'' + v + '\')">' + lbl + '</button>'; };
   return '<div style="display:flex;gap:6px;margin:14px 0 8px">' + tab('debitos', 'Débitos (pagos/gastos)') + tab('creditos', 'Créditos (ingresos)') + '</div>';
@@ -7079,17 +7086,16 @@ function concRenderLista() {
   cont.innerHTML = _concTabs() + (CONC_VISTA === 'creditos' ? _concRenderCreditos() : _concRenderDebitos());
 }
 function _concRenderDebitos() {
-  const arr = CONC_LISTA.filter(function(m){ return m.importe < 0; });
-  if (!arr.length) return '<div class="empty-list">Sin débitos.</div>';
-  const pend = arr.filter(function(m){ return m.estado === 'pendiente'; }).length;
-  const conRegla = arr.filter(function(m){ return m.estado === 'pendiente' && _concReglaMatch(m); }).length;
-  let html = '<div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 6px;gap:8px">' +
-      '<span style="font-size:12px;color:var(--c-sand)">' + pend + ' pendientes de ' + arr.length + '</span>' +
-      '<span style="display:flex;gap:6px">' +
-        (conRegla ? '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="concAplicarReglas()"><i class="ti ti-wand"></i> Aplicar reglas (' + conRegla + ')</button>' : '') +
+  const all = CONC_LISTA.filter(function(m){ return m.importe < 0; });
+  if (!all.length) return '<div class="empty-list">Sin débitos.</div>';
+  const conRegla = all.filter(function(m){ return m.estado === 'pendiente' && _concReglaMatch(m); }).length;
+  const arr = all.filter(function(m){ return m.estado === CONC_ESTADO; });
+  let html = _concEstadoToggle(all) +
+    '<div style="display:flex;align-items:center;justify-content:flex-end;margin:0 0 6px;gap:6px">' +
+        (CONC_ESTADO === 'pendiente' && conRegla ? '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="concAplicarReglas()"><i class="ti ti-wand"></i> Aplicar reglas (' + conRegla + ')</button>' : '') +
         '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="concAbrirReglas()"><i class="ti ti-adjustments"></i> Reglas</button>' +
-      '</span>' +
     '</div>';
+  if (!arr.length) return html + '<div class="empty-list">No hay débitos ' + (CONC_ESTADO === 'pendiente' ? 'pendientes' : 'conciliados') + '.</div>';
   html += arr.map(function(m){
     const estColor = m.estado === 'conciliado' ? '#3BA55D' : '#C87A2C';
     const regla = m.estado === 'pendiente' ? _concReglaMatch(m) : null;
@@ -7114,14 +7120,14 @@ function _concRenderDebitos() {
   return html;
 }
 function _concRenderCreditos() {
-  const arr = CONC_LISTA.filter(function(m){ return m.importe > 0; });
-  if (!arr.length) return '<div class="empty-list">Sin créditos.</div>';
-  const pend = arr.filter(function(m){ return m.estado === 'pendiente'; }).length;
+  const all = CONC_LISTA.filter(function(m){ return m.importe > 0; });
+  if (!all.length) return '<div class="empty-list">Sin créditos.</div>';
+  const pend = all.filter(function(m){ return m.estado === 'pendiente'; }).length;
+  const arr = all.filter(function(m){ return m.estado === CONC_ESTADO; });
   let html = '<div class="cierre-hint" style="margin-bottom:8px">Los créditos NO suman a ventas (las ventas salen solo de los cierres de caja). Acá se concilian para que cuadre el banco.</div>' +
-    '<div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 6px;gap:8px">' +
-      '<span style="font-size:12px;color:var(--c-sand)">' + pend + ' pendientes de ' + arr.length + '</span>' +
-      (pend ? '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="concConciliarVentas()"><i class="ti ti-credit-card"></i> Conciliar pendientes como ventas</button>' : '') +
-    '</div>';
+    _concEstadoToggle(all) +
+    (CONC_ESTADO === 'pendiente' && pend ? '<div style="display:flex;justify-content:flex-end;margin-bottom:6px"><button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="concConciliarVentas()"><i class="ti ti-credit-card"></i> Conciliar pendientes como ventas</button></div>' : '');
+  if (!arr.length) return html + '<div class="empty-list">No hay créditos ' + (CONC_ESTADO === 'pendiente' ? 'pendientes' : 'conciliados') + '.</div>';
   html += arr.map(function(m){
     const estColor = m.estado === 'conciliado' ? '#3BA55D' : '#C87A2C';
     return '<div class="ped-card" style="padding:7px 10px;margin-bottom:5px;border-left:3px solid ' + estColor + '">' +
