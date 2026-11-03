@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CV | ULTIMA | Conciliacion con pestañas Debitos / Creditos. Creditos: seccion aparte para Silvina (tarjetas/propinas/transfer de clientes); NO suman a ventas (las ventas salen de los cierres). Conciliar por tipo + nota (sin impacto P&L) o en masa "Conciliar pendientes como ventas". Antes: saque el selector Cuenta/billetera; tramo 3 categorizar debitos (cuenta del plan + local o "sin local"/Socios + nota + adjunto) -> movimiento conciliado que impacta el Panel; sirve para sueldos/prestamos/impuestos que no son comprobantes pendientes. Reglas por palabra clave (autocategorizan: boton "Aplicar reglas" + ABM de reglas + crear regla al categorizar). Requiere conciliacion.sql + fase_b_tramo3.sql. Antes: tramo 1 (importar extractos) ===== */
+/* ===== BUILD 2026-11-03-CW | ULTIMA | Fix import conciliacion: huella con contador de repeticiones (movimientos identicos conviven; ya no da error 409 duplicate key) y re-subir el mismo extracto sigue sin duplicar. Las pestañas Debitos/Creditos se ocultan hasta que haya movimientos (una sola importacion trae todo). Antes: pestañas Debitos / Creditos. Creditos: seccion aparte para Silvina (tarjetas/propinas/transfer de clientes); NO suman a ventas (las ventas salen de los cierres). Conciliar por tipo + nota (sin impacto P&L) o en masa "Conciliar pendientes como ventas". Antes: saque el selector Cuenta/billetera; tramo 3 categorizar debitos (cuenta del plan + local o "sin local"/Socios + nota + adjunto) -> movimiento conciliado que impacta el Panel; sirve para sueldos/prestamos/impuestos que no son comprobantes pendientes. Reglas por palabra clave (autocategorizan: boton "Aplicar reglas" + ABM de reglas + crear regla al categorizar). Requiere conciliacion.sql + fase_b_tramo3.sql. Antes: tramo 1 (importar extractos) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -7033,8 +7033,12 @@ window.concImportar = async function() {
   const fuente = document.getElementById('concFuente').value;
   let existentes = new Set();
   try { const ex = await api('movimientos_bancarios?razon_social_id=eq.' + razonId + '&select=hash') || []; ex.forEach(function(x){ existentes.add(x.hash); }); } catch (e) {}
-  const nuevos = CONC_PREVIEW.map(function(m){ return { razon_social_id: parseInt(razonId, 10), fuente: fuente, fecha: m.fecha, descripcion: m.descripcion || null, referencia: m.referencia || null, importe: m.importe, tipo: m.tipo, estado: 'pendiente', hash: _concHash(m), creado_por: currentUser ? currentUser.id : null }; })
-    .filter(function(m){ return !existentes.has(m.hash); });
+  // La huella incluye un contador de repeticiones: dos movimientos idénticos (misma fecha/importe/concepto) conviven, y al re-subir el mismo extracto siguen deduplicándose.
+  const vistos = {};
+  const nuevos = CONC_PREVIEW.map(function(m){
+    const base = _concHash(m); vistos[base] = (vistos[base] || 0) + 1;
+    return { razon_social_id: parseInt(razonId, 10), fuente: fuente, fecha: m.fecha, descripcion: m.descripcion || null, referencia: m.referencia || null, importe: m.importe, tipo: m.tipo, estado: 'pendiente', hash: base + '#' + vistos[base], creado_por: currentUser ? currentUser.id : null };
+  }).filter(function(m){ return !existentes.has(m.hash); });
   if (!nuevos.length) { toast('Esos movimientos ya estaban importados', 'info'); return; }
   try {
     for (let i = 0; i < nuevos.length; i += 200) { await api('movimientos_bancarios', { method: 'POST', body: JSON.stringify(nuevos.slice(i, i + 200)) }); }
@@ -7071,7 +7075,7 @@ function _concTabs() {
 }
 function concRenderLista() {
   const cont = document.getElementById('concLista');
-  if (!CONC_LISTA.length) { cont.innerHTML = _concTabs() + '<div class="empty-list">Sin movimientos importados todavía.</div>'; return; }
+  if (!CONC_LISTA.length) { cont.innerHTML = '<div class="empty-list" style="margin-top:16px">Sin movimientos importados todavía. Subí un extracto arriba.</div>'; return; }
   cont.innerHTML = _concTabs() + (CONC_VISTA === 'creditos' ? _concRenderCreditos() : _concRenderDebitos());
 }
 function _concRenderDebitos() {
