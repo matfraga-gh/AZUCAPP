@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-DC | ULTIMA | Mis Finanzas: Saldos con Caja como primera columna. Compromisos muestra TODAS las semanas del mes y, al desplegar, todos los dias habiles (lun-vie) aunque esten sin movimientos. Antes: Saldos doble entrada + Compromisos jerarquico ===== */
+/* ===== BUILD 2026-11-03-DE | ULTIMA | Compromisos: la ficha del mes muestra el saldo disponible por empresa (Caja + sociedades) ademas del total. Antes: semana entera al mes con mas dias habiles, etiqueta "S", Caja primera columna ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -7519,60 +7519,71 @@ async function mfRenderCompromisos() {
     } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar.</div>'; return; }
   }
   const items = MF_COMPROMISOS.filter(function(x){ return x.fecha; });
-  const hoy = hoyStr(); const curMk = hoy.slice(0, 7);
-  // Agregación mes → semana (lunes) → día
-  const byM = {};
-  function bucket(mk){ return byM[mk] || (byM[mk] = { comp: 0, prev: 0, weeks: {} }); }
+  const hoy = hoyStr(); const curMk = hoy.slice(0, 7); const lunHoy = _mfMonday(hoy);
+  // Semanas completas (lun-vie) desde la semana en curso. Cada semana pertenece ENTERA a un mes:
+  // el mes donde caen más de sus días hábiles (la semana en curso va al mes actual).
+  const weeks = []; const wkIndex = {};
+  let wm = lunHoy;
+  for (let i = 0; i < 31; i++) {
+    const bus = []; for (let k = 0; k < 5; k++) bus.push(_mfAddDays(wm, k));
+    const cnt = {}; bus.forEach(function(d){ const mk = d.slice(0, 7); cnt[mk] = (cnt[mk] || 0) + 1; });
+    let mes = null, best = -1; Object.keys(cnt).forEach(function(mk){ if (cnt[mk] > best) { best = cnt[mk]; mes = mk; } });
+    if (wm === lunHoy) mes = curMk; // la semana en curso siempre al mes actual
+    const w = { wk: wm, bus: bus, mes: mes, comp: 0, prev: 0, days: {} };
+    weeks.push(w); wkIndex[wm] = w; wm = _mfAddDays(wm, 7);
+  }
+  // Agregar movimientos a su semana
   items.forEach(function(x){
-    if (x.fecha < hoy) return; // solo de hoy en adelante
-    const mk = x.fecha.slice(0, 7), wk = _mfMonday(x.fecha);
-    const M = bucket(mk); const W = M.weeks[wk] || (M.weeks[wk] = { comp: 0, prev: 0, days: {} });
-    const D = W.days[x.fecha] || (W.days[x.fecha] = { comp: 0, prev: 0, items: [] });
+    if (x.fecha < hoy) return;
+    const w = wkIndex[_mfMonday(x.fecha)]; if (!w) return;
     const campo = x.tipo === 'comprometido' ? 'comp' : 'prev';
-    M[campo] += x.importe; W[campo] += x.importe; D[campo] += x.importe; D.items.push(x);
+    w[campo] += x.importe;
+    const D = w.days[x.fecha] || (w.days[x.fecha] = { comp: 0, prev: 0, items: [] });
+    D[campo] += x.importe; D.items.push(x);
   });
-  // Saldo disponible (último ARS)
-  const smap = _mfSaldoMap(); let dispo = 0;
-  MF_CUENTAS.forEach(function(c){ if (c.moneda === 'ARS') { const v = _mfUltSaldo(c.id, smap); if (v != null) dispo += parseFloat(v) || 0; } });
+  // Totales por mes (según la semana a la que pertenece)
+  const mesTot = {};
+  weeks.forEach(function(w){ const t = mesTot[w.mes] || (mesTot[w.mes] = { comp: 0, prev: 0, weeks: [] }); t.comp += w.comp; t.prev += w.prev; t.weeks.push(w); });
+  // Saldo disponible (último ARS) — total y por empresa
+  const smap = _mfSaldoMap(); let dispo = 0; const grSaldo = {};
+  MF_CUENTAS.forEach(function(c){ if (c.moneda === 'ARS') { grSaldo[c.grupo] = grSaldo[c.grupo] || 0; const v = _mfUltSaldo(c.id, smap); if (v != null) { dispo += parseFloat(v) || 0; grSaldo[c.grupo] += parseFloat(v) || 0; } } });
+  const grOrden = Object.keys(grSaldo).sort(function(a, b){ if (a === 'Caja') return -1; if (b === 'Caja') return 1; return 0; });
 
   const monto = function(comp, prev){ return (comp ? '<span style="color:#E5534B;font-weight:700">' + _mfMoney(comp, 'ARS') + '</span>' : '') + (comp && prev ? '&nbsp;·&nbsp;' : '') + (prev ? '<span style="color:#C87A2C;font-weight:700">' + _mfMoney(prev, 'ARS') + '</span>' : '') + (!comp && !prev ? '<span style="color:var(--c-sand)">—</span>' : ''); };
   const fin = _mfAddDays(_mfMonthAdd(curMk, 1) + '-01', -1);
-  const cur = byM[curMk] || { comp: 0, prev: 0, weeks: {} };
+  const cur = mesTot[curMk] || { comp: 0, prev: 0, weeks: [] };
 
   // Ficha del mes actual
   let html = '<div style="background:rgba(255,255,255,.04);border:1px solid var(--c-cream-border);border-radius:10px;padding:11px 13px;margin-bottom:8px">' +
     '<div style="font-weight:800;color:var(--c-cream);font-size:15px">' + _mfMesNombre(curMk) + ' <span style="font-weight:400;color:var(--c-sand);font-size:12px">· ' + _mfDDMM(hoy) + ' al ' + _mfDDMM(fin) + '</span></div>' +
-    '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:13px">' +
+    '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:6px;font-size:13px">' +
       '<span><span style="color:var(--c-sand);font-size:11px">Comprometido</span><br><b style="color:#E5534B;font-size:15px">' + _mfMoney(cur.comp, 'ARS') + '</b></span>' +
       '<span><span style="color:var(--c-sand);font-size:11px">Previsto</span><br><b style="color:#C87A2C;font-size:15px">' + _mfMoney(cur.prev, 'ARS') + '</b></span>' +
-      '<span><span style="color:var(--c-sand);font-size:11px">Saldo disp. (ARS)</span><br><b style="color:var(--c-cream);font-size:15px">' + _mfMoney(dispo, 'ARS') + '</b></span>' +
+    '</div>' +
+    '<div style="margin-top:8px;border-top:1px solid var(--c-cream-border);padding-top:7px">' +
+      '<div style="font-size:11px;color:var(--c-sand);margin-bottom:3px">Saldo disponible por empresa (ARS)</div>' +
+      '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px">' +
+        grOrden.map(function(g){ return '<span style="color:var(--c-sand)">' + esc(g) + ' <b style="color:var(--c-cream)">' + _mfMoney(grSaldo[g], 'ARS') + '</b></span>'; }).join('') +
+        '<span style="color:var(--c-sand);border-left:1px solid var(--c-cream-border);padding-left:14px">Total <b style="color:var(--c-cream)">' + _mfMoney(dispo, 'ARS') + '</b></span>' +
+      '</div>' +
     '</div></div>' +
     '<div class="cierre-hint" style="margin-bottom:8px"><span style="color:#E5534B">■</span> Comprometido (cheque/OP emitida) &nbsp; <span style="color:#C87A2C">■</span> Previsto (vence, sin pago comprometido aún)</div>';
 
-  // Genera TODAS las semanas de un mes con sus días hábiles (lun-vie), aunque no haya movimientos.
-  const semanasDeMes = function(mk){
-    const first = (mk === curMk) ? hoy : (mk + '-01');
-    const last = _mfAddDays(_mfMonthAdd(mk, 1) + '-01', -1);
-    const out = []; let wm = _mfMonday(first);
-    while (wm <= last) {
-      const dias = [];
-      for (let k = 0; k < 5; k++) { const d = _mfAddDays(wm, k); if (d >= first && d <= last) dias.push(d); }
-      if (dias.length) out.push({ wk: wm, dias: dias });
-      wm = _mfAddDays(wm, 7);
-    }
-    return out;
-  };
-  // Render de semanas de un mes (todas), con días al desplegar
+  // Render de las semanas de un mes (ya asignadas), con días hábiles al desplegar
   const renderSemanas = function(mk){
-    const M = byM[mk] || { weeks: {} };
-    return semanasDeMes(mk).map(function(sem){
-      const wk = sem.wk; const W = (M.weeks && M.weeks[wk]) || { comp: 0, prev: 0, days: {} }; const open = MF_OPEN_W.has(wk);
-      let h = '<div onclick="mfToggleSem(\'' + wk + '\')" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;margin:4px 0 0 10px;border-left:2px solid var(--c-cream-border)">' +
-        '<span style="font-size:12px;color:var(--c-cream)"><i class="ti ti-' + (open ? 'chevron-down' : 'chevron-right') + '" style="font-size:12px"></i> Semana ' + _mfDDMM(sem.dias[0]) + ' al ' + _mfDDMM(sem.dias[sem.dias.length - 1]) + '</span>' +
-        '<span style="font-size:12px">' + monto(W.comp, W.prev) + '</span></div>';
+    const t = mesTot[mk]; if (!t || !t.weeks.length) return '<div class="cierre-hint" style="margin:0 0 8px 12px">Sin semanas.</div>';
+    return t.weeks.map(function(w){
+      const open = MF_OPEN_W.has(w.wk);
+      let dias = w.bus.filter(function(d){ return d >= hoy; });
+      Object.keys(w.days).forEach(function(d){ if (d >= hoy && dias.indexOf(d) < 0) dias.push(d); });
+      dias.sort(); if (!dias.length) dias = w.bus.slice();
+      const lbl = _mfDDMM(dias[0]) + ' al ' + _mfDDMM(dias[dias.length - 1]);
+      let h = '<div onclick="mfToggleSem(\'' + w.wk + '\')" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;margin:4px 0 0 10px;border-left:2px solid var(--c-cream-border)">' +
+        '<span style="font-size:12px;color:var(--c-cream)"><i class="ti ti-' + (open ? 'chevron-down' : 'chevron-right') + '" style="font-size:12px"></i> S ' + lbl + '</span>' +
+        '<span style="font-size:12px">' + monto(w.comp, w.prev) + '</span></div>';
       if (open) {
-        h += sem.dias.map(function(d){
-          const D = (W.days && W.days[d]) || { comp: 0, prev: 0, items: [] };
+        h += dias.map(function(d){
+          const D = w.days[d] || { comp: 0, prev: 0, items: [] };
           return '<div style="margin:3px 0 3px 22px;padding:5px 9px;border-left:2px solid var(--c-cream-border)">' +
             '<div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:12px;color:' + (D.items.length ? 'var(--c-cream)' : 'var(--c-sand)') + '">' + _pagoFecha(d) + '</b><span style="font-size:12px">' + monto(D.comp, D.prev) + '</span></div>' +
             D.items.map(function(x){ const col = x.tipo === 'comprometido' ? '#E5534B' : '#C87A2C'; return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--c-sand);margin-top:2px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(x.detalle) + '</span><span style="white-space:nowrap;color:' + col + '">' + _mfMoney(x.importe, 'ARS') + '</span></div>'; }).join('') +
@@ -7589,7 +7600,7 @@ async function mfRenderCompromisos() {
   // Próximos 6 meses (colapsables)
   html += '<div style="font-size:12px;color:var(--c-sand);margin:14px 0 4px">Próximos meses</div>';
   for (let i = 1; i <= 6; i++) {
-    const mk = _mfMonthAdd(curMk, i); const M = byM[mk] || { comp: 0, prev: 0, weeks: {} }; const open = MF_OPEN_M.has(mk);
+    const mk = _mfMonthAdd(curMk, i); const M = mesTot[mk] || { comp: 0, prev: 0, weeks: [] }; const open = MF_OPEN_M.has(mk);
     html += '<div onclick="mfToggleMes(\'' + mk + '\')" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;margin-top:5px;background:rgba(255,255,255,.03);border:1px solid var(--c-cream-border);border-radius:8px">' +
       '<span style="font-weight:700;color:var(--c-cream);font-size:13px"><i class="ti ti-' + (open ? 'chevron-down' : 'chevron-right') + '"></i> ' + _mfMesNombre(mk) + '</span>' +
       '<span style="font-size:12px">' + monto(M.comp, M.prev) + '</span></div>';
