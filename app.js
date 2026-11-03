@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CY | ULTIMA | Fase B tramo 2: matcheo automatico de debitos con pagos emitidos. Boton "Matchear pagos" (pestaña Debitos): cheque por nro en el concepto, resto por importe + fecha (±5 dias); vista previa con checkboxes para confirmar; al aplicar, los medios de la OP quedan conciliados y, cuando estan todos, los comprobantes pasan a Pago completado con la fecha real del debito. Desconciliar revierte. Requiere fase_b_tramo2.sql. Antes: toggle Pendientes/Conciliados en cada pestaña (el listado principal muestra solo lo pendiente; los conciliados quedan en su historial). Carga completa de movimientos (apiAll). Anti-duplicados ahora por razon social + banco (fuente). Antes: huella con contador de repeticiones (movimientos identicos conviven; ya no da error 409 duplicate key) y re-subir el mismo extracto sigue sin duplicar. Las pestañas Debitos/Creditos se ocultan hasta que haya movimientos (una sola importacion trae todo). Antes: pestañas Debitos / Creditos. Creditos: seccion aparte para Silvina (tarjetas/propinas/transfer de clientes); NO suman a ventas (las ventas salen de los cierres). Conciliar por tipo + nota (sin impacto P&L) o en masa "Conciliar pendientes como ventas". Antes: saque el selector Cuenta/billetera; tramo 3 categorizar debitos (cuenta del plan + local o "sin local"/Socios + nota + adjunto) -> movimiento conciliado que impacta el Panel; sirve para sueldos/prestamos/impuestos que no son comprobantes pendientes. Reglas por palabra clave (autocategorizan: boton "Aplicar reglas" + ABM de reglas + crear regla al categorizar). Requiere conciliacion.sql + fase_b_tramo3.sql. Antes: tramo 1 (importar extractos) ===== */
+/* ===== BUILD 2026-11-03-CZ | ULTIMA | Modulo Mis Finanzas (admin): pestaña Saldos (parte diario manual que carga Silvina: grilla por cuenta/grupo + evolucion ultimos 3 dias + total ARS por grupo; catalogo de cuentas editable, sembrado Frayep/Algarroba/Imajo/Caja) y pestaña Compromisos (egresos futuros: cheques/OP emitidas = comprometido rojo, comprobantes con vencimiento = previsto ambar; vs saldo disponible). Requiere mis_finanzas.sql. Antes: Fase B tramo 2 matcheo ===== */ de debitos con pagos emitidos. Boton "Matchear pagos" (pestaña Debitos): cheque por nro en el concepto, resto por importe + fecha (±5 dias); vista previa con checkboxes para confirmar; al aplicar, los medios de la OP quedan conciliados y, cuando estan todos, los comprobantes pasan a Pago completado con la fecha real del debito. Desconciliar revierte. Requiere fase_b_tramo2.sql. Antes: toggle Pendientes/Conciliados en cada pestaña (el listado principal muestra solo lo pendiente; los conciliados quedan en su historial). Carga completa de movimientos (apiAll). Anti-duplicados ahora por razon social + banco (fuente). Antes: huella con contador de repeticiones (movimientos identicos conviven; ya no da error 409 duplicate key) y re-subir el mismo extracto sigue sin duplicar. Las pestañas Debitos/Creditos se ocultan hasta que haya movimientos (una sola importacion trae todo). Antes: pestañas Debitos / Creditos. Creditos: seccion aparte para Silvina (tarjetas/propinas/transfer de clientes); NO suman a ventas (las ventas salen de los cierres). Conciliar por tipo + nota (sin impacto P&L) o en masa "Conciliar pendientes como ventas". Antes: saque el selector Cuenta/billetera; tramo 3 categorizar debitos (cuenta del plan + local o "sin local"/Socios + nota + adjunto) -> movimiento conciliado que impacta el Panel; sirve para sueldos/prestamos/impuestos que no son comprobantes pendientes. Reglas por palabra clave (autocategorizan: boton "Aplicar reglas" + ABM de reglas + crear regla al categorizar). Requiere conciliacion.sql + fase_b_tramo3.sql. Antes: tramo 1 (importar extractos) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -572,6 +572,15 @@ const MODULES = [
     desc: 'Extractos bancarios y billeteras',
     visible: () => isMaster() || isAdmin(),
     action: () => openConciliacion()
+  },
+  {
+    id: 'misfinanzas',
+    icon: 'ti-wallet',
+    color: '#2E7D32',
+    title: 'Mis Finanzas',
+    desc: 'Saldos y compromisos financieros',
+    visible: () => isMaster() || isAdmin(),
+    action: () => openMisFinanzas()
   },
   {
     id: 'compsimple',
@@ -7374,6 +7383,171 @@ window.guardarRegla = async function() {
 };
 window.eliminarRegla = async function(id) {
   try { await api('reglas_conciliacion?id=eq.' + id, { method: 'DELETE' }); CONC_REGLAS = CONC_REGLAS.filter(function(r){ return r.id !== id; }); concRenderReglas(); concRenderLista(); }
+  catch (e) { toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error'); }
+};
+
+// ============================================
+// MIS FINANZAS (saldos + compromisos financieros)
+// ============================================
+let MF_CUENTAS = [], MF_SALDOS = [], MF_VISTA = 'saldos', MF_COMPROMISOS = null;
+const MF_SIMB = { ARS: '$', USD: 'US$', BRL: 'R$', EUR: '€' };
+function _mfMoney(v, mon){ const n = parseFloat(v) || 0; return (MF_SIMB[mon] || '$') + n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+async function openMisFinanzas() {
+  if (!(isMaster() || isAdmin())) { showDashboard(); return; }
+  showView('vMisFinanzas');
+  const cont = document.getElementById('mfCont'); cont.innerHTML = '<div class="loading">Cargando...</div>';
+  try {
+    MF_CUENTAS = await api('cuentas_financieras?activo=eq.true&order=grupo,orden,nombre') || [];
+    MF_SALDOS = await apiAll('saldos_diarios?select=*&order=fecha.desc,id.desc') || [];
+  } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar. ¿Corriste mis_finanzas.sql?</div>'; return; }
+  MF_COMPROMISOS = null;
+  mfRender();
+}
+window.openMisFinanzas = openMisFinanzas;
+window.mfSetVista = function(v){ MF_VISTA = v; mfRender(); };
+function _mfTabs() {
+  const tab = function(v, lbl){ return '<button class="btn-ghost" style="padding:5px 14px;border-radius:14px;font-size:12px;' + (MF_VISTA === v ? 'background:var(--c-cream);color:#2b2017;font-weight:700' : '') + '" onclick="mfSetVista(\'' + v + '\')">' + lbl + '</button>'; };
+  return '<div style="display:flex;gap:6px;margin-bottom:12px">' + tab('saldos', 'Saldos') + tab('compromisos', 'Compromisos') + '</div>';
+}
+function mfRender() {
+  const cont = document.getElementById('mfCont');
+  if (MF_VISTA === 'compromisos') { cont.innerHTML = _mfTabs() + '<div id="mfComprom"></div>'; mfRenderCompromisos(); return; }
+  cont.innerHTML = _mfTabs() + mfRenderSaldos();
+}
+// ---- Saldos ----
+function _mfFechas() { return Array.from(new Set(MF_SALDOS.map(function(s){ return s.fecha; }))).sort().reverse().slice(0, 3); }
+function _mfSaldoMap() { const m = {}; MF_SALDOS.forEach(function(s){ (m[s.cuenta_id] = m[s.cuenta_id] || {})[s.fecha] = s.saldo; }); return m; }
+function mfRenderSaldos() {
+  if (!MF_CUENTAS.length) return '<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="btn-ghost" style="padding:5px 11px;font-size:12px" onclick="mfEditarCuentas()"><i class="ti ti-settings"></i> Editar cuentas</button></div><div class="empty-list">No hay cuentas cargadas. Tocá “Editar cuentas”.</div>';
+  const fechas = _mfFechas(); const smap = _mfSaldoMap();
+  const grupos = Array.from(new Set(MF_CUENTAS.map(function(c){ return c.grupo; })));
+  let html = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">' +
+    '<button class="btn-primary" style="padding:8px 14px" onclick="mfCargarSaldos()"><i class="ti ti-pencil-plus"></i> Cargar saldos de hoy</button>' +
+    '<button class="btn-ghost" style="padding:5px 11px;font-size:12px" onclick="mfEditarCuentas()"><i class="ti ti-settings"></i> Editar cuentas</button>' +
+  '</div>';
+  const fmtFe = function(f){ return f ? f.slice(5).split('-').reverse().join('/') : ''; };
+  grupos.forEach(function(g){
+    const cuentas = MF_CUENTAS.filter(function(c){ return c.grupo === g; });
+    let totales = {}; // por fecha, solo ARS
+    html += '<div style="margin-top:12px;border:1px solid var(--c-cream-border);border-radius:9px;overflow:hidden">' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+      '<thead><tr style="background:rgba(255,255,255,.04)"><th style="text-align:left;padding:6px 9px;color:var(--c-cream);font-weight:700">' + esc(g) + '</th>' +
+        fechas.map(function(f){ return '<th style="text-align:right;padding:6px 9px;color:var(--c-sand);white-space:nowrap">' + fmtFe(f) + '</th>'; }).join('') + '</tr></thead><tbody>';
+    cuentas.forEach(function(c){
+      html += '<tr><td style="padding:5px 9px;color:var(--c-cream)">' + esc(c.nombre) + (c.moneda !== 'ARS' ? ' <span style="color:var(--c-sand)">(' + c.moneda + ')</span>' : '') + '</td>' +
+        fechas.map(function(f){ const v = smap[c.id] && smap[c.id][f]; if (c.moneda === 'ARS' && v != null) totales[f] = (totales[f] || 0) + (parseFloat(v) || 0); return '<td style="text-align:right;padding:5px 9px;white-space:nowrap;color:' + (v != null ? 'var(--c-cream)' : 'var(--c-sand)') + '">' + (v != null ? _mfMoney(v, c.moneda) : '—') + '</td>'; }).join('') + '</tr>';
+    });
+    const hayArs = cuentas.some(function(c){ return c.moneda === 'ARS'; });
+    if (hayArs) html += '<tr style="border-top:2px solid var(--c-cream-border)"><td style="padding:6px 9px;font-weight:700;color:var(--c-cream)">Total ARS</td>' + fechas.map(function(f){ return '<td style="text-align:right;padding:6px 9px;font-weight:700;white-space:nowrap;color:var(--c-cream)">' + (totales[f] != null ? _mfMoney(totales[f], 'ARS') : '—') + '</td>'; }).join('') + '</tr>';
+    html += '</tbody></table></div>';
+  });
+  return html;
+}
+window.mfCargarSaldos = function() {
+  const hoy = hoyStr(); const smap = _mfSaldoMap();
+  const grupos = Array.from(new Set(MF_CUENTAS.map(function(c){ return c.grupo; })));
+  let html = '<div class="cierre-hint" style="margin-bottom:8px">Ingresá el saldo de cierre de cada cuenta al ' + hoy.slice(8) + '/' + hoy.slice(5, 7) + '. Lo vacío se omite.</div>';
+  grupos.forEach(function(g){
+    html += '<div style="font-weight:700;color:var(--c-cream);margin:10px 0 4px">' + esc(g) + '</div>';
+    MF_CUENTAS.filter(function(c){ return c.grupo === g; }).forEach(function(c){
+      const prev = (smap[c.id] && (smap[c.id][hoy] != null ? smap[c.id][hoy] : smap[c.id][_mfFechas()[0]]));
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="flex:1;font-size:13px;color:var(--c-cream)">' + esc(c.nombre) + ' <span style="color:var(--c-sand);font-size:11px">' + c.moneda + '</span></span>' +
+        '<input type="text" inputmode="decimal" data-cuenta="' + c.id + '" value="' + (prev != null ? esc(_fmtMoneyStr(prev)) : '') + '" placeholder="—" onfocus="moneyFocus(this)" onblur="moneyBlur(this)" style="width:150px;padding:6px;font-size:13px;text-align:right"></div>';
+    });
+  });
+  document.getElementById('mfSaldosForm').innerHTML = html;
+  document.getElementById('mfSaldosError').textContent = '';
+  document.getElementById('modalCargarSaldos').classList.add('show');
+};
+window.closeCargarSaldos = function(){ document.getElementById('modalCargarSaldos').classList.remove('show'); };
+window.guardarSaldos = async function() {
+  const hoy = hoyStr();
+  const rows = [];
+  document.querySelectorAll('#mfSaldosForm input[data-cuenta]').forEach(function(el){
+    const val = el.value.trim(); if (val === '') return;
+    rows.push({ cuenta_id: parseInt(el.getAttribute('data-cuenta'), 10), fecha: hoy, saldo: _parseMoney(val), creado_por: currentUser ? currentUser.id : null });
+  });
+  if (!rows.length) { document.getElementById('mfSaldosError').textContent = 'Cargá al menos un saldo.'; return; }
+  const btn = document.getElementById('mfSaldosBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
+  try {
+    await api('saldos_diarios?fecha=eq.' + hoy, { method: 'DELETE' });
+    await api('saldos_diarios', { method: 'POST', body: JSON.stringify(rows) });
+    closeCargarSaldos();
+    toast('✓ Saldos del día guardados', 'success');
+    await openMisFinanzas();
+  } catch (e) { document.getElementById('mfSaldosError').textContent = 'No se pudo guardar: ' + ((e && e.message) || e); }
+  finally { btn.disabled = false; btn.textContent = t; }
+};
+// ---- Compromisos ----
+async function mfRenderCompromisos() {
+  const cont = document.getElementById('mfComprom'); if (!cont) return;
+  cont.innerHTML = '<div class="loading">Cargando...</div>';
+  if (!MF_COMPROMISOS) {
+    try {
+      const medios = await api('orden_pago_medios?conciliado=eq.false&select=*') || [];
+      const opIds = Array.from(new Set(medios.map(function(m){ return m.orden_pago_id; }).filter(Boolean)));
+      let opMap = {};
+      if (opIds.length) { const ops = await api('ordenes_pago?id=in.(' + opIds.join(',') + ')&select=id,numero,proveedor_id') || []; ops.forEach(function(o){ opMap[o.id] = o; }); }
+      const comps = await api('comprobantes?estado=in.(pendiente_pago,pagado_parcial,pago_programado)&fecha_vto=not.is.null&select=id,proveedor_id,tipo,numero,total,fecha_vto,fecha_pago,estado') || [];
+      const pids = Array.from(new Set(medios.map(function(m){ return opMap[m.orden_pago_id] && opMap[m.orden_pago_id].proveedor_id; }).concat(comps.map(function(c){ return c.proveedor_id; })).filter(Boolean)));
+      if (pids.length) { const ps = await api('proveedores?id=in.(' + pids.join(',') + ')&select=id,razon_social') || []; ps.forEach(function(p){ CMP_PROV_MAP[p.id] = p; }); }
+      const items = [];
+      medios.forEach(function(m){ const op = opMap[m.orden_pago_id] || {}; const p = CMP_PROV_MAP[op.proveedor_id]; items.push({ fecha: m.vencimiento, tipo: 'comprometido', detalle: (op.numero || 'OP') + (p ? ' · ' + p.razon_social : '') + (m.documento ? ' · chq ' + m.documento : ''), importe: parseFloat(m.importe) || 0 }); });
+      comps.forEach(function(c){ const p = CMP_PROV_MAP[c.proveedor_id]; items.push({ fecha: (c.estado === 'pago_programado' && c.fecha_pago) ? c.fecha_pago : c.fecha_vto, tipo: 'previsto', detalle: (p ? p.razon_social : '') + ' · ' + (c.tipo || '') + ' ' + (c.numero || ''), importe: parseFloat(c.total) || 0 }); });
+      items.sort(function(a, b){ return (a.fecha || '9999').localeCompare(b.fecha || '9999'); });
+      MF_COMPROMISOS = items;
+    } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar.</div>'; return; }
+  }
+  const items = MF_COMPROMISOS;
+  if (!items.length) { cont.innerHTML = '<div class="empty-list">Sin compromisos futuros cargados.</div>'; return; }
+  const totComp = items.filter(function(x){ return x.tipo === 'comprometido'; }).reduce(function(s, x){ return s + x.importe; }, 0);
+  const totPrev = items.filter(function(x){ return x.tipo === 'previsto'; }).reduce(function(s, x){ return s + x.importe; }, 0);
+  const fechas = _mfFechas(); const smap = _mfSaldoMap();
+  let dispo = 0; MF_CUENTAS.forEach(function(c){ if (c.moneda === 'ARS' && smap[c.id] && smap[c.id][fechas[0]] != null) dispo += parseFloat(smap[c.id][fechas[0]]) || 0; });
+  let html = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">' +
+    '<div style="flex:1;min-width:110px;background:rgba(62,134,199,.12);border:1px solid #3E86C7;border-radius:8px;padding:7px 10px"><div style="font-size:11px;color:var(--c-sand)">Saldo disponible (ARS)</div><div style="font-weight:800;font-size:15px;color:var(--c-cream)">' + _mfMoney(dispo, 'ARS') + '</div></div>' +
+    '<div style="flex:1;min-width:110px;background:rgba(229,83,75,.10);border:1px solid #E5534B;border-radius:8px;padding:7px 10px"><div style="font-size:11px;color:var(--c-sand)">Comprometido</div><div style="font-weight:800;font-size:15px;color:#E5534B">' + _mfMoney(totComp, 'ARS') + '</div></div>' +
+    '<div style="flex:1;min-width:110px;background:rgba(200,122,44,.12);border:1px solid #C87A2C;border-radius:8px;padding:7px 10px"><div style="font-size:11px;color:var(--c-sand)">Previsto</div><div style="font-weight:800;font-size:15px;color:#C87A2C">' + _mfMoney(totPrev, 'ARS') + '</div></div>' +
+  '</div>';
+  html += '<div class="cierre-hint" style="margin-bottom:8px"><span style="color:#E5534B">■</span> Comprometido = pago ya emitido (cheque/OP). <span style="color:#C87A2C">■</span> Previsto = vence pero todavía sin pago comprometido.</div>';
+  html += items.map(function(x){
+    const col = x.tipo === 'comprometido' ? '#E5534B' : '#C87A2C';
+    return '<div class="ped-card" style="padding:7px 10px;margin-bottom:5px;border-left:3px solid ' + col + '">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px">' +
+        '<span style="font-size:12px;color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b style="color:var(--c-cream)">' + (x.fecha ? _pagoFecha(x.fecha) : 's/fecha') + '</b> · ' + esc(x.detalle) + '</span>' +
+        '<span style="white-space:nowrap;font-weight:700;color:' + col + '">' + _mfMoney(x.importe, 'ARS') + '</span>' +
+      '</div></div>';
+  }).join('');
+  cont.innerHTML = html;
+}
+// ---- Editar catálogo de cuentas ----
+window.mfEditarCuentas = function() {
+  let html = (MF_CUENTAS.length ? MF_CUENTAS.map(function(c){
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--c-cream-border)">' +
+      '<span style="font-size:12px"><b style="color:var(--c-cream)">' + esc(c.grupo) + '</b> · ' + esc(c.nombre) + ' <span style="color:var(--c-sand)">(' + c.moneda + ')</span></span>' +
+      '<button class="btn-ghost" style="flex:0 0 auto;padding:3px 7px;color:var(--c-error)" onclick="mfEliminarCuenta(' + c.id + ')"><i class="ti ti-trash"></i></button>' +
+    '</div>';
+  }).join('') : '<div class="empty-list">Sin cuentas.</div>');
+  document.getElementById('mfCuentasLista').innerHTML = html;
+  document.getElementById('mfcGrupo').value = ''; document.getElementById('mfcNombre').value = '';
+  document.getElementById('mfcMoneda').innerHTML = ['ARS', 'USD', 'BRL', 'EUR'].map(function(m){ return '<option value="' + m + '">' + m + '</option>'; }).join('');
+  document.getElementById('mfcTipo').innerHTML = ['banco', 'fci', 'billetera', 'efectivo'].map(function(t){ return '<option value="' + t + '">' + t + '</option>'; }).join('');
+  document.getElementById('modalCuentasFin').classList.add('show');
+};
+window.closeCuentasFin = function(){ document.getElementById('modalCuentasFin').classList.remove('show'); };
+window.mfAgregarCuenta = async function() {
+  const grupo = document.getElementById('mfcGrupo').value.trim(), nombre = document.getElementById('mfcNombre').value.trim();
+  if (!grupo || !nombre) { toast('Cargá grupo y nombre', 'error'); return; }
+  try {
+    const r = await api('cuentas_financieras', { method: 'POST', body: JSON.stringify({ grupo: grupo, nombre: nombre, tipo: document.getElementById('mfcTipo').value, moneda: document.getElementById('mfcMoneda').value, orden: MF_CUENTAS.filter(function(c){ return c.grupo === grupo; }).length + 1 }) });
+    const nuevo = Array.isArray(r) ? r[0] : r; MF_CUENTAS.push(nuevo);
+    mfEditarCuentas(); toast('✓ Cuenta agregada', 'success');
+  } catch (e) { toast('No se pudo: ' + ((e && e.message) || e), 'error'); }
+};
+window.mfEliminarCuenta = async function(id) {
+  const ok = await showConfirm({ title: 'Eliminar cuenta', msg: 'Se elimina la cuenta y sus saldos cargados. ¿Confirmás?', type: 'warning', okLabel: 'Sí, eliminar', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  try { await api('cuentas_financieras?id=eq.' + id, { method: 'DELETE' }); MF_CUENTAS = MF_CUENTAS.filter(function(c){ return c.id !== id; }); mfEditarCuentas(); }
   catch (e) { toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error'); }
 };
 
