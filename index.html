@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261103cu">
+<link rel="stylesheet" href="styles.css?v=20261103cv">
 </head>
 <body>
 
@@ -2010,6 +2010,26 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modalCredito">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Conciliar crédito</h2>
+      <button class="modal-close" onclick="closeCredito()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+      <div id="credMovInfo" class="cierre-hint" style="margin-bottom:10px"></div>
+      <div class="cierre-hint" style="margin-bottom:10px">Este ingreso NO suma a ventas (las ventas salen de los cierres). Solo se concilia para el saldo bancario.</div>
+      <label class="field"><span class="field-label">Tipo de crédito</span><select id="credTipo"></select></label>
+      <label class="field"><span class="field-label">Nota (opcional)</span><input type="text" id="credNota" placeholder="Ej.: cliente Pérez / lote tarjetas"></label>
+      <div class="login-error" id="credError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeCredito()">Cancelar</button>
+      <button class="btn-primary" id="credBtn" onclick="guardarCredito()">Conciliar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalReglas">
   <div class="modal-card cierre-card">
     <div class="modal-header">
@@ -2816,6 +2836,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261103cu"></script>
+<script src="app.js?v=20261103cv"></script>
 </body>
 </html>

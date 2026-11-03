@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CU | ULTIMA | Conciliacion: saque el selector "Cuenta/billetera" (sobraba y confundia; la Fuente ya identifica el banco, y un extracto trae cheques/transferencias/debitos juntos). Fase B tramo 3: categorizar debitos sin match (cuenta del plan + local o "sin local"/Socios + nota + adjunto) -> movimiento conciliado que impacta el Panel; sirve para sueldos/prestamos/impuestos que no son comprobantes pendientes. Reglas por palabra clave (autocategorizan: boton "Aplicar reglas" + ABM de reglas + crear regla al categorizar). Requiere conciliacion.sql + fase_b_tramo3.sql. Antes: tramo 1 (importar extractos) ===== */
+/* ===== BUILD 2026-11-03-CV | ULTIMA | Conciliacion con pestañas Debitos / Creditos. Creditos: seccion aparte para Silvina (tarjetas/propinas/transfer de clientes); NO suman a ventas (las ventas salen de los cierres). Conciliar por tipo + nota (sin impacto P&L) o en masa "Conciliar pendientes como ventas". Antes: saque el selector Cuenta/billetera; tramo 3 categorizar debitos (cuenta del plan + local o "sin local"/Socios + nota + adjunto) -> movimiento conciliado que impacta el Panel; sirve para sueldos/prestamos/impuestos que no son comprobantes pendientes. Reglas por palabra clave (autocategorizan: boton "Aplicar reglas" + ABM de reglas + crear regla al categorizar). Requiere conciliacion.sql + fase_b_tramo3.sql. Antes: tramo 1 (importar extractos) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -6939,8 +6939,9 @@ window.aprobarComprobante = async function(id) {
 // ============================================
 // CONCILIACIÓN BANCARIA (Fase B — tramo 1: importar extractos)
 // ============================================
-let CONC_PREVIEW = [], CONC_LISTA = [], CONC_MEDIOS = [], CONC_REGLAS = [], CONC_CAT_ID = null;
+let CONC_PREVIEW = [], CONC_LISTA = [], CONC_MEDIOS = [], CONC_REGLAS = [], CONC_CAT_ID = null, CONC_VISTA = 'debitos', CONC_CRED_ID = null;
 const CONC_FUENTES = { credicoop: 'Banco Credicoop', macro: 'Banco Macro', mercadopago: 'Mercado Pago' };
+const CONC_CRED_TIPOS = ['Acreditación de ventas (tarjetas/QR)', 'Propinas', 'Transferencia de cliente', 'Préstamo recibido', 'Reintegro', 'Otro'];
 async function openConciliacion() {
   if (!(isMaster() || isAdmin())) { showDashboard(); return; }
   showView('vConciliacion');
@@ -7063,27 +7064,36 @@ function _concReglaMatch(m) {
     return txt.indexOf(String(r.palabra_clave).toLowerCase()) >= 0;
   });
 }
+window.concSetVista = function(v){ CONC_VISTA = v; concRenderLista(); };
+function _concTabs() {
+  const tab = function(v, lbl){ return '<button class="btn-ghost" style="padding:5px 14px;border-radius:14px;font-size:12px;' + (CONC_VISTA === v ? 'background:var(--c-cream);color:#2b2017;font-weight:700' : '') + '" onclick="concSetVista(\'' + v + '\')">' + lbl + '</button>'; };
+  return '<div style="display:flex;gap:6px;margin:14px 0 8px">' + tab('debitos', 'Débitos (pagos/gastos)') + tab('creditos', 'Créditos (ingresos)') + '</div>';
+}
 function concRenderLista() {
   const cont = document.getElementById('concLista');
-  if (!CONC_LISTA.length) { cont.innerHTML = '<div class="empty-list">Sin movimientos importados todavía.</div>'; return; }
-  const pend = CONC_LISTA.filter(function(m){ return m.estado === 'pendiente'; }).length;
-  const conRegla = CONC_LISTA.filter(function(m){ return m.estado === 'pendiente' && _concReglaMatch(m); }).length;
-  let html = '<div style="display:flex;align-items:center;justify-content:space-between;margin:12px 0 6px;gap:8px">' +
-      '<span style="font-weight:700;color:var(--c-cream)">Movimientos <span style="font-weight:400;color:var(--c-sand);font-size:12px">(' + pend + ' pendientes)</span></span>' +
+  if (!CONC_LISTA.length) { cont.innerHTML = _concTabs() + '<div class="empty-list">Sin movimientos importados todavía.</div>'; return; }
+  cont.innerHTML = _concTabs() + (CONC_VISTA === 'creditos' ? _concRenderCreditos() : _concRenderDebitos());
+}
+function _concRenderDebitos() {
+  const arr = CONC_LISTA.filter(function(m){ return m.importe < 0; });
+  if (!arr.length) return '<div class="empty-list">Sin débitos.</div>';
+  const pend = arr.filter(function(m){ return m.estado === 'pendiente'; }).length;
+  const conRegla = arr.filter(function(m){ return m.estado === 'pendiente' && _concReglaMatch(m); }).length;
+  let html = '<div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 6px;gap:8px">' +
+      '<span style="font-size:12px;color:var(--c-sand)">' + pend + ' pendientes de ' + arr.length + '</span>' +
       '<span style="display:flex;gap:6px">' +
         (conRegla ? '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="concAplicarReglas()"><i class="ti ti-wand"></i> Aplicar reglas (' + conRegla + ')</button>' : '') +
         '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="concAbrirReglas()"><i class="ti ti-adjustments"></i> Reglas</button>' +
       '</span>' +
     '</div>';
-  html += CONC_LISTA.map(function(m){
-    const neg = m.importe < 0;
+  html += arr.map(function(m){
     const estColor = m.estado === 'conciliado' ? '#3BA55D' : '#C87A2C';
     const regla = m.estado === 'pendiente' ? _concReglaMatch(m) : null;
     const catTxt = m.estado === 'conciliado' ? (m.comprobante_id ? 'Pago de comprobante' : (_nombreCuenta(m.cuenta_id) + (m.local ? ' · ' + localLabel(m.local) : ''))) : '';
     return '<div class="ped-card" style="padding:7px 10px;margin-bottom:5px;border-left:3px solid ' + estColor + '">' +
       '<div style="display:flex;justify-content:space-between;gap:8px">' +
         '<span style="font-size:12px;color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pagoFecha(m.fecha) + ' · ' + esc(m.descripcion || m.referencia || '—') + '</span>' +
-        '<span style="white-space:nowrap;font-weight:700;color:' + (neg ? '#E5534B' : '#3BA55D') + '">' + _money2(m.importe) + '</span>' +
+        '<span style="white-space:nowrap;font-weight:700;color:#E5534B">' + _money2(m.importe) + '</span>' +
       '</div>' +
       '<div style="margin-top:3px;display:flex;align-items:center;justify-content:space-between;gap:6px">' +
         '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
@@ -7097,8 +7107,74 @@ function concRenderLista() {
       '</div>' +
     '</div>';
   }).join('');
-  cont.innerHTML = html;
+  return html;
 }
+function _concRenderCreditos() {
+  const arr = CONC_LISTA.filter(function(m){ return m.importe > 0; });
+  if (!arr.length) return '<div class="empty-list">Sin créditos.</div>';
+  const pend = arr.filter(function(m){ return m.estado === 'pendiente'; }).length;
+  let html = '<div class="cierre-hint" style="margin-bottom:8px">Los créditos NO suman a ventas (las ventas salen solo de los cierres de caja). Acá se concilian para que cuadre el banco.</div>' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 6px;gap:8px">' +
+      '<span style="font-size:12px;color:var(--c-sand)">' + pend + ' pendientes de ' + arr.length + '</span>' +
+      (pend ? '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="concConciliarVentas()"><i class="ti ti-credit-card"></i> Conciliar pendientes como ventas</button>' : '') +
+    '</div>';
+  html += arr.map(function(m){
+    const estColor = m.estado === 'conciliado' ? '#3BA55D' : '#C87A2C';
+    return '<div class="ped-card" style="padding:7px 10px;margin-bottom:5px;border-left:3px solid ' + estColor + '">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px">' +
+        '<span style="font-size:12px;color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pagoFecha(m.fecha) + ' · ' + esc(m.descripcion || m.referencia || '—') + '</span>' +
+        '<span style="white-space:nowrap;font-weight:700;color:#3BA55D">' + _money2(m.importe) + '</span>' +
+      '</div>' +
+      '<div style="margin-top:3px;display:flex;align-items:center;justify-content:space-between;gap:6px">' +
+        '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+          '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:' + estColor + ';color:#fff">' + (m.estado === 'conciliado' ? 'Conciliado' : 'Pendiente') + '</span>' +
+          (m.estado === 'conciliado' && m.nota ? '<span style="font-size:11px;color:#3BA55D;margin-left:6px">' + esc(m.nota) + '</span>' : '') +
+        '</span>' +
+        (m.estado === 'pendiente'
+          ? '<button class="btn-ghost" style="flex:0 0 auto;padding:3px 9px;font-size:12px" onclick="conciliarCredito(' + m.id + ')">Conciliar</button>'
+          : '<button class="btn-ghost" style="flex:0 0 auto;padding:3px 7px;font-size:12px;color:var(--c-error)" title="Volver a pendiente" onclick="desconciliarMov(' + m.id + ')"><i class="ti ti-arrow-back-up"></i></button>') +
+      '</div>' +
+    '</div>';
+  }).join('');
+  return html;
+}
+// ---- Conciliar un crédito (ingreso): tipo + nota, sin impacto en el P&L ----
+window.conciliarCredito = function(id) {
+  const m = CONC_LISTA.find(function(x){ return x.id === id; }); if (!m) return;
+  CONC_CRED_ID = id;
+  document.getElementById('credMovInfo').innerHTML = _pagoFecha(m.fecha) + ' · ' + esc(m.descripcion || m.referencia || '—') + ' · <b style="color:#3BA55D">' + _money2(m.importe) + '</b>';
+  document.getElementById('credTipo').innerHTML = CONC_CRED_TIPOS.map(function(t){ return '<option value="' + esc(t) + '">' + esc(t) + '</option>'; }).join('');
+  document.getElementById('credNota').value = '';
+  document.getElementById('credError').textContent = '';
+  document.getElementById('modalCredito').classList.add('show');
+};
+window.closeCredito = function(){ document.getElementById('modalCredito').classList.remove('show'); };
+window.guardarCredito = async function() {
+  const m = CONC_LISTA.find(function(x){ return x.id === CONC_CRED_ID; }); if (!m) return;
+  const tipo = document.getElementById('credTipo').value;
+  const extra = document.getElementById('credNota').value.trim();
+  const nota = tipo + (extra ? ' · ' + extra : '');
+  const btn = document.getElementById('credBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
+  try {
+    await api('movimientos_bancarios?id=eq.' + CONC_CRED_ID, { method: 'PATCH', body: JSON.stringify({ estado: 'conciliado', cuenta_id: null, local: null, nota: nota }) });
+    closeCredito();
+    toast('✓ Crédito conciliado', 'success');
+    await concCargarLista();
+  } catch (e) { document.getElementById('credError').textContent = 'No se pudo: ' + ((e && e.message) || e); }
+  finally { btn.disabled = false; btn.textContent = t; }
+};
+window.concConciliarVentas = async function() {
+  const pend = CONC_LISTA.filter(function(m){ return m.importe > 0 && m.estado === 'pendiente'; });
+  if (!pend.length) return;
+  const ok = await showConfirm({ title: 'Conciliar como ventas', msg: 'Se marcan ' + pend.length + ' créditos pendientes como "Acreditación de ventas" (no impactan el P&L). ¿Confirmás?', type: 'info', okLabel: 'Sí', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  let n = 0;
+  for (let i = 0; i < pend.length; i++) {
+    try { await api('movimientos_bancarios?id=eq.' + pend[i].id, { method: 'PATCH', body: JSON.stringify({ estado: 'conciliado', cuenta_id: null, local: null, nota: 'Acreditación de ventas' }) }); n++; } catch (e) {}
+  }
+  toast('✓ ' + n + ' créditos conciliados', 'success');
+  await concCargarLista();
+};
 // ---- Categorizar un movimiento (cuenta + local + nota + adjunto) ----
 let CONC_CAT_ADJ = null;
 function _concLocalOptions(sel) {
