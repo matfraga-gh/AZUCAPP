@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261103cs">
+<link rel="stylesheet" href="styles.css?v=20261103cu">
 </head>
 <body>
 
@@ -1974,13 +1974,65 @@
     </div>
     <div class="cierre-hint" style="margin-bottom:10px">Elegí la razón social y el banco/billetera, subí el extracto (.xls/.xlsx) y revisá la vista previa antes de importar. No se duplican movimientos ya cargados.</div>
     <div style="display:flex;gap:8px">
-      <label class="field" style="flex:1"><span class="field-label">Razón social</span><select id="concRazon" onchange="concRazonChange()"></select></label>
-      <label class="field" style="flex:1"><span class="field-label">Fuente</span><select id="concFuente"></select></label>
+      <label class="field" style="flex:1"><span class="field-label">Razón social</span><select id="concRazon" onchange="concCargarLista()"></select></label>
+      <label class="field" style="flex:1"><span class="field-label">Banco / billetera</span><select id="concFuente"></select></label>
     </div>
-    <label class="field"><span class="field-label">Cuenta / billetera (opcional)</span><select id="concMedio"></select></label>
     <label class="field"><span class="field-label">Archivo del extracto</span><input type="file" id="concArchivo" accept=".xls,.xlsx,.csv" onchange="concOnArchivo(this)"></label>
     <div id="concPreview"></div>
     <div id="concLista"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalCategorizar">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Categorizar movimiento</h2>
+      <button class="modal-close" onclick="closeCategorizar()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+      <div id="catMovInfo" class="cierre-hint" style="margin-bottom:10px"></div>
+      <label class="field"><span class="field-label">Concepto / cuenta</span><select id="catCuenta" onchange="_concCuentaChange()"></select></label>
+      <label class="field"><span class="field-label">Local</span><select id="catLocal"></select></label>
+      <label class="field"><span class="field-label">Nota</span><input type="text" id="catNota" placeholder="Ej.: Sueldo Juan octubre"></label>
+      <label class="field"><span class="field-label">Comprobante / respaldo (opcional)</span><input type="file" id="catArchivo" accept="application/pdf,image/*" onchange="catOnArchivo(this)"></label>
+      <div id="catAdjEstado" style="font-size:12px;margin:-4px 0 8px"></div>
+      <label class="switch-row" style="display:flex;align-items:center;gap:8px;margin-top:4px;cursor:pointer">
+        <input type="checkbox" id="catRegla" style="width:17px;height:17px">
+        <span style="font-size:13px;color:var(--c-cream)">Crear regla: aplicar siempre a movimientos que contengan</span>
+      </label>
+      <input type="text" id="catPalabra" placeholder="palabra clave (ej.: PRESTAMO MACRO)" style="margin-top:6px">
+      <div class="login-error" id="catError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeCategorizar()">Cancelar</button>
+      <button class="btn-primary" id="catBtn" onclick="guardarCategorizar()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalReglas">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Reglas de categorización</h2>
+      <button class="modal-close" onclick="closeReglas()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+      <div class="cierre-hint" style="margin-bottom:10px">Los débitos cuyo concepto contenga la palabra clave se categorizan solos con la cuenta y el local indicados.</div>
+      <div id="reglasLista" style="margin-bottom:12px"></div>
+      <div style="border-top:1px solid var(--c-cream-border);padding-top:10px">
+        <div class="field-label" style="margin-bottom:4px">Nueva regla</div>
+        <label class="field"><span class="field-label">Palabra clave</span><input type="text" id="reglaPalabra" placeholder="Ej.: PRESTAMO MACRO"></label>
+        <div style="display:flex;gap:8px">
+          <label class="field" style="flex:1.3"><span class="field-label">Cuenta</span><select id="reglaCuenta"></select></label>
+          <label class="field" style="flex:1"><span class="field-label">Local</span><select id="reglaLocal"></select></label>
+        </div>
+        <label class="field"><span class="field-label">Razón social</span><select id="reglaRazon"></select></label>
+        <button class="btn-primary" style="width:100%;margin-top:4px" onclick="guardarRegla()"><i class="ti ti-plus"></i> Agregar regla</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeReglas()">Cerrar</button>
+    </div>
   </div>
 </div>
 
@@ -2764,6 +2816,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261103cs"></script>
+<script src="app.js?v=20261103cu"></script>
 </body>
 </html>

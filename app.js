@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CS | ULTIMA | Fase B tramo 1: modulo Conciliacion. Subir extractos (.xls/.xlsx) de Credicoop/Macro/MercadoPago -> parser tolerante (detecta fecha/debito/credito/importe/concepto/referencia, fechas serial o dd/mm) -> vista previa -> importar a movimientos_bancarios sin duplicar (hash). Lista de movimientos pendientes/conciliados. Requiere conciliacion.sql. Proximo: matcheo automatico con pagos emitidos. Antes: comp simple (Factura, medios por razon, cuenta oblig.), solapa Simples ===== */
+/* ===== BUILD 2026-11-03-CU | ULTIMA | Conciliacion: saque el selector "Cuenta/billetera" (sobraba y confundia; la Fuente ya identifica el banco, y un extracto trae cheques/transferencias/debitos juntos). Fase B tramo 3: categorizar debitos sin match (cuenta del plan + local o "sin local"/Socios + nota + adjunto) -> movimiento conciliado que impacta el Panel; sirve para sueldos/prestamos/impuestos que no son comprobantes pendientes. Reglas por palabra clave (autocategorizan: boton "Aplicar reglas" + ABM de reglas + crear regla al categorizar). Requiere conciliacion.sql + fase_b_tramo3.sql. Antes: tramo 1 (importar extractos) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -6939,29 +6939,22 @@ window.aprobarComprobante = async function(id) {
 // ============================================
 // CONCILIACIÓN BANCARIA (Fase B — tramo 1: importar extractos)
 // ============================================
-let CONC_PREVIEW = [], CONC_LISTA = [], CONC_MEDIOS = [];
+let CONC_PREVIEW = [], CONC_LISTA = [], CONC_MEDIOS = [], CONC_REGLAS = [], CONC_CAT_ID = null;
 const CONC_FUENTES = { credicoop: 'Banco Credicoop', macro: 'Banco Macro', mercadopago: 'Mercado Pago' };
 async function openConciliacion() {
   if (!(isMaster() || isAdmin())) { showDashboard(); return; }
   showView('vConciliacion');
   if (!PLAN_CUENTAS.length) { try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || []; } catch (e) {} }
   CMP_RAZONES = await api('razones_sociales?activo=eq.true&order=nombre.asc') || [];
-  CONC_MEDIOS = await api('medios_pago?activo=eq.true&order=razon_social_id,nombre') || [];
+  try { CONC_REGLAS = await api('reglas_conciliacion?activo=eq.true&select=*') || []; } catch (e) { CONC_REGLAS = []; }
   document.getElementById('concRazon').innerHTML = '<option value="">—</option>' + CMP_RAZONES.map(function(r){ return '<option value="' + r.id + '">' + esc(r.nombre) + '</option>'; }).join('');
   document.getElementById('concFuente').innerHTML = Object.keys(CONC_FUENTES).map(function(k){ return '<option value="' + k + '">' + CONC_FUENTES[k] + '</option>'; }).join('');
   CONC_PREVIEW = [];
   document.getElementById('concPreview').innerHTML = '';
   document.getElementById('concArchivo').value = '';
-  concRazonChange();
+  concCargarLista();
 }
 window.openConciliacion = openConciliacion;
-window.concRazonChange = function() {
-  const rz = document.getElementById('concRazon').value;
-  const sel = document.getElementById('concMedio');
-  const medios = CONC_MEDIOS.filter(function(m){ return !rz || String(m.razon_social_id) === String(rz); });
-  sel.innerHTML = '<option value="">— (cuenta/billetera, opcional)</option>' + medios.map(function(m){ return '<option value="' + m.id + '">' + esc(m.nombre) + '</option>'; }).join('');
-  concCargarLista();
-};
 function _concDate(v) {
   if (v == null || v === '') return null;
   if (typeof v === 'number') { const d = new Date(Math.round((v - 25569) * 86400000)); return isNaN(d) ? null : d.toISOString().slice(0, 10); }
@@ -7036,11 +7029,10 @@ window.concImportar = async function() {
   const razonId = document.getElementById('concRazon').value;
   if (!razonId) { toast('Elegí la razón social del extracto', 'error'); return; }
   if (!CONC_PREVIEW.length) return;
-  const medioId = document.getElementById('concMedio').value || null;
   const fuente = document.getElementById('concFuente').value;
   let existentes = new Set();
   try { const ex = await api('movimientos_bancarios?razon_social_id=eq.' + razonId + '&select=hash') || []; ex.forEach(function(x){ existentes.add(x.hash); }); } catch (e) {}
-  const nuevos = CONC_PREVIEW.map(function(m){ return { razon_social_id: parseInt(razonId, 10), medio_pago_id: medioId ? parseInt(medioId, 10) : null, fuente: fuente, fecha: m.fecha, descripcion: m.descripcion || null, referencia: m.referencia || null, importe: m.importe, tipo: m.tipo, estado: 'pendiente', hash: _concHash(m), creado_por: currentUser ? currentUser.id : null }; })
+  const nuevos = CONC_PREVIEW.map(function(m){ return { razon_social_id: parseInt(razonId, 10), fuente: fuente, fecha: m.fecha, descripcion: m.descripcion || null, referencia: m.referencia || null, importe: m.importe, tipo: m.tipo, estado: 'pendiente', hash: _concHash(m), creado_por: currentUser ? currentUser.id : null }; })
     .filter(function(m){ return !existentes.has(m.hash); });
   if (!nuevos.length) { toast('Esos movimientos ya estaban importados', 'info'); return; }
   try {
@@ -7063,24 +7055,155 @@ async function concCargarLista() {
   concRenderLista();
 }
 window.concCargarLista = concCargarLista;
+function _concReglaMatch(m) {
+  const txt = ((m.descripcion || '') + ' ' + (m.referencia || '')).toLowerCase();
+  return CONC_REGLAS.find(function(r){
+    if (!r.palabra_clave) return false;
+    if (r.razon_social_id && String(r.razon_social_id) !== String(m.razon_social_id)) return false;
+    return txt.indexOf(String(r.palabra_clave).toLowerCase()) >= 0;
+  });
+}
 function concRenderLista() {
   const cont = document.getElementById('concLista');
   if (!CONC_LISTA.length) { cont.innerHTML = '<div class="empty-list">Sin movimientos importados todavía.</div>'; return; }
   const pend = CONC_LISTA.filter(function(m){ return m.estado === 'pendiente'; }).length;
-  let html = '<div style="font-weight:700;color:var(--c-cream);margin:12px 0 6px">Movimientos importados <span style="font-weight:400;color:var(--c-sand);font-size:12px">(' + pend + ' pendientes)</span></div>';
+  const conRegla = CONC_LISTA.filter(function(m){ return m.estado === 'pendiente' && _concReglaMatch(m); }).length;
+  let html = '<div style="display:flex;align-items:center;justify-content:space-between;margin:12px 0 6px;gap:8px">' +
+      '<span style="font-weight:700;color:var(--c-cream)">Movimientos <span style="font-weight:400;color:var(--c-sand);font-size:12px">(' + pend + ' pendientes)</span></span>' +
+      '<span style="display:flex;gap:6px">' +
+        (conRegla ? '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="concAplicarReglas()"><i class="ti ti-wand"></i> Aplicar reglas (' + conRegla + ')</button>' : '') +
+        '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="concAbrirReglas()"><i class="ti ti-adjustments"></i> Reglas</button>' +
+      '</span>' +
+    '</div>';
   html += CONC_LISTA.map(function(m){
     const neg = m.importe < 0;
     const estColor = m.estado === 'conciliado' ? '#3BA55D' : '#C87A2C';
+    const regla = m.estado === 'pendiente' ? _concReglaMatch(m) : null;
+    const catTxt = m.estado === 'conciliado' ? (m.comprobante_id ? 'Pago de comprobante' : (_nombreCuenta(m.cuenta_id) + (m.local ? ' · ' + localLabel(m.local) : ''))) : '';
     return '<div class="ped-card" style="padding:7px 10px;margin-bottom:5px;border-left:3px solid ' + estColor + '">' +
       '<div style="display:flex;justify-content:space-between;gap:8px">' +
         '<span style="font-size:12px;color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pagoFecha(m.fecha) + ' · ' + esc(m.descripcion || m.referencia || '—') + '</span>' +
         '<span style="white-space:nowrap;font-weight:700;color:' + (neg ? '#E5534B' : '#3BA55D') + '">' + _money2(m.importe) + '</span>' +
       '</div>' +
-      '<div style="margin-top:2px"><span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:' + estColor + ';color:#fff">' + (m.estado === 'conciliado' ? 'Conciliado' : 'Pendiente') + '</span>' + (m.fuente ? '<span style="font-size:11px;color:var(--c-sand);margin-left:6px">' + esc(CONC_FUENTES[m.fuente] || m.fuente) + '</span>' : '') + '</div>' +
+      '<div style="margin-top:3px;display:flex;align-items:center;justify-content:space-between;gap:6px">' +
+        '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+          '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:' + estColor + ';color:#fff">' + (m.estado === 'conciliado' ? 'Conciliado' : 'Pendiente') + '</span>' +
+          (catTxt ? '<span style="font-size:11px;color:#3BA55D;margin-left:6px">' + esc(catTxt) + '</span>' : '') +
+          (regla ? '<span style="font-size:11px;color:#3E86C7;margin-left:6px">Regla: ' + esc(_nombreCuenta(regla.cuenta_id)) + '</span>' : '') +
+        '</span>' +
+        (m.estado === 'pendiente'
+          ? '<button class="btn-ghost" style="flex:0 0 auto;padding:3px 9px;font-size:12px" onclick="categorizarMov(' + m.id + ')">Categorizar</button>'
+          : '<button class="btn-ghost" style="flex:0 0 auto;padding:3px 7px;font-size:12px;color:var(--c-error)" title="Volver a pendiente" onclick="desconciliarMov(' + m.id + ')"><i class="ti ti-arrow-back-up"></i></button>') +
+      '</div>' +
     '</div>';
   }).join('');
   cont.innerHTML = html;
 }
+// ---- Categorizar un movimiento (cuenta + local + nota + adjunto) ----
+let CONC_CAT_ADJ = null;
+function _concLocalOptions(sel) {
+  const locs = (typeof getLocalesActivos === 'function') ? getLocalesActivos() : Object.keys(LOCAL_LABELS || {});
+  return '<option value="">— Sin local (gasto general) —</option>' + locs.map(function(l){ return '<option value="' + esc(l) + '"' + (sel === l ? ' selected' : '') + '>' + esc(localLabel(l)) + '</option>'; }).join('');
+}
+window.categorizarMov = function(id) {
+  const m = CONC_LISTA.find(function(x){ return x.id === id; }); if (!m) return;
+  CONC_CAT_ID = id; CONC_CAT_ADJ = m.adjunto_path || null;
+  const regla = _concReglaMatch(m);
+  document.getElementById('catMovInfo').innerHTML = _pagoFecha(m.fecha) + ' · ' + esc(m.descripcion || m.referencia || '—') + ' · <b style="color:' + (m.importe < 0 ? '#E5534B' : '#3BA55D') + '">' + _money2(m.importe) + '</b>';
+  document.getElementById('catCuenta').innerHTML = _cuentaOptionsHTML(regla ? regla.cuenta_id : (m.cuenta_id || ''), 'Elegí la cuenta…');
+  document.getElementById('catLocal').innerHTML = _concLocalOptions(regla ? regla.local : (m.local || ''));
+  document.getElementById('catNota').value = m.nota || (regla ? regla.nota : '') || '';
+  document.getElementById('catAdjEstado').innerHTML = CONC_CAT_ADJ ? '<a href="#" onclick="cmpVerAdjunto(\'' + esc(CONC_CAT_ADJ) + '\');return false;" style="color:var(--c-sand)">Ver adjunto</a>' : '';
+  document.getElementById('catArchivo').value = '';
+  document.getElementById('catRegla').checked = false;
+  document.getElementById('catPalabra').value = _concSugerirPalabra(m);
+  document.getElementById('catError').textContent = '';
+  _concCuentaChange();
+  document.getElementById('modalCategorizar').classList.add('show');
+};
+function _concSugerirPalabra(m){ const s = (m.descripcion || m.referencia || '').trim(); return s.split(/\s+/).slice(0, 2).join(' '); }
+window.closeCategorizar = function(){ document.getElementById('modalCategorizar').classList.remove('show'); };
+window._concCuentaChange = function(){
+  const cuentaVal = document.getElementById('catCuenta').value;
+  const esSocio = PLAN_CUENTAS.some(function(c){ return String(c.id) === String(cuentaVal) && c.grupo === 'SOCIOS'; });
+  const loc = document.getElementById('catLocal');
+  if (esSocio) { loc.value = ''; loc.disabled = true; } else { loc.disabled = false; }
+};
+window.catOnArchivo = async function(input){
+  const file = input.files && input.files[0]; if (!file) return;
+  const est = document.getElementById('catAdjEstado'); est.innerHTML = '<span style="color:var(--c-muted)">Subiendo...</span>';
+  try { CONC_CAT_ADJ = await cmpSubirArchivo(file); est.innerHTML = '<span style="color:#3BA55D">✓ Adjunto cargado</span>'; }
+  catch (e) { est.innerHTML = '<span style="color:var(--c-error)">No se pudo subir</span>'; }
+};
+window.guardarCategorizar = async function() {
+  const err = document.getElementById('catError'); err.textContent = '';
+  const m = CONC_LISTA.find(function(x){ return x.id === CONC_CAT_ID; }); if (!m) return;
+  const cuentaVal = document.getElementById('catCuenta').value;
+  if (!cuentaVal) { err.textContent = 'Elegí la cuenta del gasto.'; return; }
+  const esSocio = PLAN_CUENTAS.some(function(c){ return String(c.id) === String(cuentaVal) && c.grupo === 'SOCIOS'; });
+  const local = esSocio ? null : (document.getElementById('catLocal').value || null);
+  const nota = document.getElementById('catNota').value.trim() || null;
+  const btn = document.getElementById('catBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
+  try {
+    await api('movimientos_bancarios?id=eq.' + CONC_CAT_ID, { method: 'PATCH', body: JSON.stringify({ estado: 'conciliado', cuenta_id: parseInt(cuentaVal, 10), local: local, nota: nota, adjunto_path: CONC_CAT_ADJ || null }) });
+    if (document.getElementById('catRegla').checked) {
+      const palabra = document.getElementById('catPalabra').value.trim();
+      if (palabra) { await api('reglas_conciliacion', { method: 'POST', body: JSON.stringify({ razon_social_id: m.razon_social_id || null, palabra_clave: palabra, cuenta_id: parseInt(cuentaVal, 10), local: local, nota: nota }) }); CONC_REGLAS = await api('reglas_conciliacion?activo=eq.true&select=*') || []; }
+    }
+    closeCategorizar();
+    toast('✓ Movimiento categorizado', 'success');
+    await concCargarLista();
+  } catch (e) { err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e); }
+  finally { btn.disabled = false; btn.textContent = t; }
+};
+window.desconciliarMov = async function(id) {
+  const ok = await showConfirm({ title: 'Volver a pendiente', msg: 'El movimiento vuelve a “Pendiente” y se borra su categorización. ¿Confirmás?', type: 'warning', okLabel: 'Sí', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  try { await api('movimientos_bancarios?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ estado: 'pendiente', cuenta_id: null, local: null, nota: null }) }); toast('✓ Actualizado', 'success'); await concCargarLista(); }
+  catch (e) { toast('No se pudo: ' + ((e && e.message) || e), 'error'); }
+};
+window.concAplicarReglas = async function() {
+  const pend = CONC_LISTA.filter(function(m){ return m.estado === 'pendiente'; });
+  let n = 0;
+  for (let i = 0; i < pend.length; i++) {
+    const r = _concReglaMatch(pend[i]); if (!r) continue;
+    try { await api('movimientos_bancarios?id=eq.' + pend[i].id, { method: 'PATCH', body: JSON.stringify({ estado: 'conciliado', cuenta_id: r.cuenta_id, local: r.local || null, nota: r.nota || null }) }); n++; } catch (e) {}
+  }
+  toast('✓ ' + n + ' movimientos categorizados por reglas', 'success');
+  await concCargarLista();
+};
+// ---- Administración de reglas ----
+window.concAbrirReglas = function(){ concRenderReglas(); document.getElementById('modalReglas').classList.add('show'); };
+window.closeReglas = function(){ document.getElementById('modalReglas').classList.remove('show'); };
+function concRenderReglas() {
+  const cont = document.getElementById('reglasLista');
+  const rzName = {}; CMP_RAZONES.forEach(function(r){ rzName[r.id] = r.nombre; });
+  cont.innerHTML = (CONC_REGLAS.length ? CONC_REGLAS.map(function(r){
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--c-cream-border)">' +
+      '<span style="font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis"><b style="color:var(--c-cream)">“' + esc(r.palabra_clave) + '”</b> → ' + esc(_nombreCuenta(r.cuenta_id)) + (r.local ? ' · ' + esc(localLabel(r.local)) : '') + (r.razon_social_id ? ' <span style="color:var(--c-sand)">(' + esc(rzName[r.razon_social_id] || '') + ')</span>' : '') + '</span>' +
+      '<button class="btn-ghost" style="flex:0 0 auto;padding:3px 7px;color:var(--c-error)" onclick="eliminarRegla(' + r.id + ')"><i class="ti ti-trash"></i></button>' +
+    '</div>';
+  }).join('') : '<div class="empty-list">Sin reglas todavía.</div>');
+  document.getElementById('reglaRazon').innerHTML = '<option value="">Todas las razones</option>' + CMP_RAZONES.map(function(r){ return '<option value="' + r.id + '">' + esc(r.nombre) + '</option>'; }).join('');
+  document.getElementById('reglaCuenta').innerHTML = _cuentaOptionsHTML('', 'Cuenta…');
+  document.getElementById('reglaLocal').innerHTML = _concLocalOptions('');
+}
+window.guardarRegla = async function() {
+  const palabra = document.getElementById('reglaPalabra').value.trim();
+  const cuentaVal = document.getElementById('reglaCuenta').value;
+  if (!palabra || !cuentaVal) { toast('Cargá la palabra clave y la cuenta', 'error'); return; }
+  try {
+    await api('reglas_conciliacion', { method: 'POST', body: JSON.stringify({ palabra_clave: palabra, cuenta_id: parseInt(cuentaVal, 10), local: document.getElementById('reglaLocal').value || null, razon_social_id: document.getElementById('reglaRazon').value ? parseInt(document.getElementById('reglaRazon').value, 10) : null }) });
+    CONC_REGLAS = await api('reglas_conciliacion?activo=eq.true&select=*') || [];
+    document.getElementById('reglaPalabra').value = '';
+    concRenderReglas();
+    toast('✓ Regla agregada', 'success');
+  } catch (e) { toast('No se pudo: ' + ((e && e.message) || e), 'error'); }
+};
+window.eliminarRegla = async function(id) {
+  try { await api('reglas_conciliacion?id=eq.' + id, { method: 'DELETE' }); CONC_REGLAS = CONC_REGLAS.filter(function(r){ return r.id !== id; }); concRenderReglas(); concRenderLista(); }
+  catch (e) { toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error'); }
+};
 
 window.showDashboard = showDashboard;
 window.showChangePass = function() {
