@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-DE | ULTIMA | Compromisos: la ficha del mes muestra el saldo disponible por empresa (Caja + sociedades) ademas del total. Antes: semana entera al mes con mas dias habiles, etiqueta "S", Caja primera columna ===== */
+/* ===== BUILD 2026-11-03-DF | ULTIMA | Compromisos: cada item muestra la razon social que paga; filtro de empresa arriba (Todas = juntos, o una sociedad por separado). Antes: saldo disponible por empresa en la ficha ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -7389,7 +7389,7 @@ window.eliminarRegla = async function(id) {
 // ============================================
 // MIS FINANZAS (saldos + compromisos financieros)
 // ============================================
-let MF_CUENTAS = [], MF_SALDOS = [], MF_VISTA = 'saldos', MF_COMPROMISOS = null, MF_OPEN_M = null, MF_OPEN_W = null;
+let MF_CUENTAS = [], MF_SALDOS = [], MF_VISTA = 'saldos', MF_COMPROMISOS = null, MF_OPEN_M = null, MF_OPEN_W = null, MF_EMP = 'todas';
 const MF_SIMB = { ARS: '$', USD: 'US$', BRL: 'R$', EUR: '€' };
 function _mfMoney(v, mon){ const n = parseFloat(v) || 0; return (MF_SIMB[mon] || '$') + n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 async function openMisFinanzas() {
@@ -7400,12 +7400,13 @@ async function openMisFinanzas() {
     MF_CUENTAS = await api('cuentas_financieras?activo=eq.true&order=grupo,orden,nombre') || [];
     MF_SALDOS = await apiAll('saldos_diarios?select=*&order=fecha.desc,id.desc') || [];
   } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar. ¿Corriste mis_finanzas.sql?</div>'; return; }
-  MF_COMPROMISOS = null;
+  MF_COMPROMISOS = null; MF_EMP = 'todas';
   MF_OPEN_M = new Set([hoyStr().slice(0, 7)]); // mes actual abierto por defecto
   MF_OPEN_W = new Set();
   mfRender();
 }
 window.openMisFinanzas = openMisFinanzas;
+window.mfSetEmp = function(e){ MF_EMP = e; mfRenderCompromisos(); };
 // Helpers de fechas para el árbol de compromisos
 function _mfMonthAdd(mk, n){ let p = mk.split('-'); let y = parseInt(p[0], 10), m = parseInt(p[1], 10) - 1 + n; y += Math.floor(m / 12); m = ((m % 12) + 12) % 12; return y + '-' + String(m + 1).padStart(2, '0'); }
 function _mfMonday(iso){ const d = new Date(iso + 'T00:00:00'); const off = (d.getDay() + 6) % 7; d.setDate(d.getDate() - off); return d.toISOString().slice(0, 10); }
@@ -7507,19 +7508,23 @@ async function mfRenderCompromisos() {
       const medios = await api('orden_pago_medios?conciliado=eq.false&select=*') || [];
       const opIds = Array.from(new Set(medios.map(function(m){ return m.orden_pago_id; }).filter(Boolean)));
       let opMap = {};
-      if (opIds.length) { const ops = await api('ordenes_pago?id=in.(' + opIds.join(',') + ')&select=id,numero,proveedor_id') || []; ops.forEach(function(o){ opMap[o.id] = o; }); }
-      const comps = await api('comprobantes?estado=in.(pendiente_pago,pagado_parcial,pago_programado)&fecha_vto=not.is.null&select=id,proveedor_id,tipo,numero,total,fecha_vto,fecha_pago,estado') || [];
+      if (opIds.length) { const ops = await api('ordenes_pago?id=in.(' + opIds.join(',') + ')&select=id,numero,proveedor_id,razon_social_id') || []; ops.forEach(function(o){ opMap[o.id] = o; }); }
+      const comps = await api('comprobantes?estado=in.(pendiente_pago,pagado_parcial,pago_programado)&fecha_vto=not.is.null&select=id,proveedor_id,razon_social_id,tipo,numero,total,fecha_vto,fecha_pago,estado') || [];
+      const rzMap = {}; (await api('razones_sociales?select=id,nombre') || []).forEach(function(r){ rzMap[r.id] = r.nombre; });
       const pids = Array.from(new Set(medios.map(function(m){ return opMap[m.orden_pago_id] && opMap[m.orden_pago_id].proveedor_id; }).concat(comps.map(function(c){ return c.proveedor_id; })).filter(Boolean)));
       if (pids.length) { const ps = await api('proveedores?id=in.(' + pids.join(',') + ')&select=id,razon_social') || []; ps.forEach(function(p){ CMP_PROV_MAP[p.id] = p; }); }
       const items = [];
-      medios.forEach(function(m){ const op = opMap[m.orden_pago_id] || {}; const p = CMP_PROV_MAP[op.proveedor_id]; items.push({ fecha: m.vencimiento, tipo: 'comprometido', detalle: (op.numero || 'OP') + (p ? ' · ' + p.razon_social : '') + (m.documento ? ' · chq ' + m.documento : ''), importe: parseFloat(m.importe) || 0 }); });
-      comps.forEach(function(c){ const p = CMP_PROV_MAP[c.proveedor_id]; items.push({ fecha: (c.estado === 'pago_programado' && c.fecha_pago) ? c.fecha_pago : c.fecha_vto, tipo: 'previsto', detalle: (p ? p.razon_social : '') + ' · ' + (c.tipo || '') + ' ' + (c.numero || ''), importe: parseFloat(c.total) || 0 }); });
+      medios.forEach(function(m){ const op = opMap[m.orden_pago_id] || {}; const p = CMP_PROV_MAP[op.proveedor_id]; const emp = rzMap[op.razon_social_id] || '(sin empresa)'; items.push({ fecha: m.vencimiento, tipo: 'comprometido', emp: emp, detalle: emp + ' · ' + (op.numero || 'OP') + (p ? ' · ' + p.razon_social : '') + (m.documento ? ' · chq ' + m.documento : ''), importe: parseFloat(m.importe) || 0 }); });
+      comps.forEach(function(c){ const p = CMP_PROV_MAP[c.proveedor_id]; const emp = rzMap[c.razon_social_id] || '(sin empresa)'; items.push({ fecha: (c.estado === 'pago_programado' && c.fecha_pago) ? c.fecha_pago : c.fecha_vto, tipo: 'previsto', emp: emp, detalle: emp + ' · ' + (p ? p.razon_social : '') + ' · ' + (c.tipo || '') + ' ' + (c.numero || ''), importe: parseFloat(c.total) || 0 }); });
       items.sort(function(a, b){ return (a.fecha || '9999').localeCompare(b.fecha || '9999'); });
       MF_COMPROMISOS = items;
     } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar.</div>'; return; }
   }
-  const items = MF_COMPROMISOS.filter(function(x){ return x.fecha; });
+  const emps = Array.from(new Set(MF_COMPROMISOS.map(function(x){ return x.emp; }).filter(Boolean))).sort();
+  const items = MF_COMPROMISOS.filter(function(x){ return x.fecha && (MF_EMP === 'todas' || x.emp === MF_EMP); });
   const hoy = hoyStr(); const curMk = hoy.slice(0, 7); const lunHoy = _mfMonday(hoy);
+  const chipE = function(v, lbl){ return '<button class="btn-ghost" style="padding:4px 11px;border-radius:12px;font-size:12px;' + (MF_EMP === v ? 'background:var(--c-cream);color:#2b2017;font-weight:700' : '') + '" onclick="mfSetEmp(\'' + String(v).replace(/'/g, "\\'") + '\')">' + esc(lbl) + '</button>'; };
+  const chipsEmp = emps.length ? ('<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">' + chipE('todas', 'Todas') + emps.map(function(e){ return chipE(e, e); }).join('') + '</div>') : '';
   // Semanas completas (lun-vie) desde la semana en curso. Cada semana pertenece ENTERA a un mes:
   // el mes donde caen más de sus días hábiles (la semana en curso va al mes actual).
   const weeks = []; const wkIndex = {};
@@ -7553,8 +7558,8 @@ async function mfRenderCompromisos() {
   const fin = _mfAddDays(_mfMonthAdd(curMk, 1) + '-01', -1);
   const cur = mesTot[curMk] || { comp: 0, prev: 0, weeks: [] };
 
-  // Ficha del mes actual
-  let html = '<div style="background:rgba(255,255,255,.04);border:1px solid var(--c-cream-border);border-radius:10px;padding:11px 13px;margin-bottom:8px">' +
+  // Ficha del mes actual (con filtro de empresa arriba)
+  let html = chipsEmp + '<div style="background:rgba(255,255,255,.04);border:1px solid var(--c-cream-border);border-radius:10px;padding:11px 13px;margin-bottom:8px">' +
     '<div style="font-weight:800;color:var(--c-cream);font-size:15px">' + _mfMesNombre(curMk) + ' <span style="font-weight:400;color:var(--c-sand);font-size:12px">· ' + _mfDDMM(hoy) + ' al ' + _mfDDMM(fin) + '</span></div>' +
     '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:6px;font-size:13px">' +
       '<span><span style="color:var(--c-sand);font-size:11px">Comprometido</span><br><b style="color:#E5534B;font-size:15px">' + _mfMoney(cur.comp, 'ARS') + '</b></span>' +
