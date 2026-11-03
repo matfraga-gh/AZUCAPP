@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-DA | ULTIMA | FIX: el cartel de version anterior tenia un cierre de comentario de mas que rompia todo el archivo (login no cargaba). Modulo Mis Finanzas (admin): Saldos (parte diario manual + evolucion + total ARS por grupo, cuentas editables) y Compromisos (cheques/OP emitidas = comprometido rojo; comprobantes con vencimiento = previsto ambar; vs saldo disponible). Requiere mis_finanzas.sql ===== */
+/* ===== BUILD 2026-11-03-DB | ULTIMA | Mis Finanzas: Saldos como cuadro de doble entrada (empresas en columnas, cuentas/cajas en filas, ultimo saldo + Total ARS). Compromisos jerarquico: ficha del mes actual (comprometido/previsto/saldo), semanas del mes desplegadas, y los proximos 6 meses colapsables (mes -> semanas -> dias). Requiere mis_finanzas.sql ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -7389,7 +7389,7 @@ window.eliminarRegla = async function(id) {
 // ============================================
 // MIS FINANZAS (saldos + compromisos financieros)
 // ============================================
-let MF_CUENTAS = [], MF_SALDOS = [], MF_VISTA = 'saldos', MF_COMPROMISOS = null;
+let MF_CUENTAS = [], MF_SALDOS = [], MF_VISTA = 'saldos', MF_COMPROMISOS = null, MF_OPEN_M = null, MF_OPEN_W = null;
 const MF_SIMB = { ARS: '$', USD: 'US$', BRL: 'R$', EUR: '€' };
 function _mfMoney(v, mon){ const n = parseFloat(v) || 0; return (MF_SIMB[mon] || '$') + n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 async function openMisFinanzas() {
@@ -7401,9 +7401,20 @@ async function openMisFinanzas() {
     MF_SALDOS = await apiAll('saldos_diarios?select=*&order=fecha.desc,id.desc') || [];
   } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar. ¿Corriste mis_finanzas.sql?</div>'; return; }
   MF_COMPROMISOS = null;
+  MF_OPEN_M = new Set([hoyStr().slice(0, 7)]); // mes actual abierto por defecto
+  MF_OPEN_W = new Set();
   mfRender();
 }
 window.openMisFinanzas = openMisFinanzas;
+// Helpers de fechas para el árbol de compromisos
+function _mfMonthAdd(mk, n){ let p = mk.split('-'); let y = parseInt(p[0], 10), m = parseInt(p[1], 10) - 1 + n; y += Math.floor(m / 12); m = ((m % 12) + 12) % 12; return y + '-' + String(m + 1).padStart(2, '0'); }
+function _mfMonday(iso){ const d = new Date(iso + 'T00:00:00'); const off = (d.getDay() + 6) % 7; d.setDate(d.getDate() - off); return d.toISOString().slice(0, 10); }
+function _mfAddDays(iso, n){ const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+const MF_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+function _mfMesNombre(mk){ const p = mk.split('-'); return MF_MESES[parseInt(p[1], 10) - 1] + ' ' + p[0]; }
+function _mfDDMM(iso){ return iso.slice(8) + '/' + iso.slice(5, 7); }
+window.mfToggleMes = function(mk){ if (MF_OPEN_M.has(mk)) MF_OPEN_M.delete(mk); else MF_OPEN_M.add(mk); mfRenderCompromisos(); };
+window.mfToggleSem = function(wk){ if (MF_OPEN_W.has(wk)) MF_OPEN_W.delete(wk); else MF_OPEN_W.add(wk); mfRenderCompromisos(); };
 window.mfSetVista = function(v){ MF_VISTA = v; mfRender(); };
 function _mfTabs() {
   const tab = function(v, lbl){ return '<button class="btn-ghost" style="padding:5px 14px;border-radius:14px;font-size:12px;' + (MF_VISTA === v ? 'background:var(--c-cream);color:#2b2017;font-weight:700' : '') + '" onclick="mfSetVista(\'' + v + '\')">' + lbl + '</button>'; };
@@ -7417,30 +7428,38 @@ function mfRender() {
 // ---- Saldos ----
 function _mfFechas() { return Array.from(new Set(MF_SALDOS.map(function(s){ return s.fecha; }))).sort().reverse().slice(0, 3); }
 function _mfSaldoMap() { const m = {}; MF_SALDOS.forEach(function(s){ (m[s.cuenta_id] = m[s.cuenta_id] || {})[s.fecha] = s.saldo; }); return m; }
+function _mfUltSaldo(cuentaId, smap) { const m = smap[cuentaId]; if (!m) return null; const fs = Object.keys(m).sort(); return fs.length ? m[fs[fs.length - 1]] : null; }
 function mfRenderSaldos() {
-  if (!MF_CUENTAS.length) return '<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="btn-ghost" style="padding:5px 11px;font-size:12px" onclick="mfEditarCuentas()"><i class="ti ti-settings"></i> Editar cuentas</button></div><div class="empty-list">No hay cuentas cargadas. Tocá “Editar cuentas”.</div>';
-  const fechas = _mfFechas(); const smap = _mfSaldoMap();
-  const grupos = Array.from(new Set(MF_CUENTAS.map(function(c){ return c.grupo; })));
-  let html = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">' +
+  let botones = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">' +
     '<button class="btn-primary" style="padding:8px 14px" onclick="mfCargarSaldos()"><i class="ti ti-pencil-plus"></i> Cargar saldos de hoy</button>' +
     '<button class="btn-ghost" style="padding:5px 11px;font-size:12px" onclick="mfEditarCuentas()"><i class="ti ti-settings"></i> Editar cuentas</button>' +
   '</div>';
-  const fmtFe = function(f){ return f ? f.slice(5).split('-').reverse().join('/') : ''; };
-  grupos.forEach(function(g){
-    const cuentas = MF_CUENTAS.filter(function(c){ return c.grupo === g; });
-    let totales = {}; // por fecha, solo ARS
-    html += '<div style="margin-top:12px;border:1px solid var(--c-cream-border);border-radius:9px;overflow:hidden">' +
-      '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
-      '<thead><tr style="background:rgba(255,255,255,.04)"><th style="text-align:left;padding:6px 9px;color:var(--c-cream);font-weight:700">' + esc(g) + '</th>' +
-        fechas.map(function(f){ return '<th style="text-align:right;padding:6px 9px;color:var(--c-sand);white-space:nowrap">' + fmtFe(f) + '</th>'; }).join('') + '</tr></thead><tbody>';
-    cuentas.forEach(function(c){
-      html += '<tr><td style="padding:5px 9px;color:var(--c-cream)">' + esc(c.nombre) + (c.moneda !== 'ARS' ? ' <span style="color:var(--c-sand)">(' + c.moneda + ')</span>' : '') + '</td>' +
-        fechas.map(function(f){ const v = smap[c.id] && smap[c.id][f]; if (c.moneda === 'ARS' && v != null) totales[f] = (totales[f] || 0) + (parseFloat(v) || 0); return '<td style="text-align:right;padding:5px 9px;white-space:nowrap;color:' + (v != null ? 'var(--c-cream)' : 'var(--c-sand)') + '">' + (v != null ? _mfMoney(v, c.moneda) : '—') + '</td>'; }).join('') + '</tr>';
-    });
-    const hayArs = cuentas.some(function(c){ return c.moneda === 'ARS'; });
-    if (hayArs) html += '<tr style="border-top:2px solid var(--c-cream-border)"><td style="padding:6px 9px;font-weight:700;color:var(--c-cream)">Total ARS</td>' + fechas.map(function(f){ return '<td style="text-align:right;padding:6px 9px;font-weight:700;white-space:nowrap;color:var(--c-cream)">' + (totales[f] != null ? _mfMoney(totales[f], 'ARS') : '—') + '</td>'; }).join('') + '</tr>';
-    html += '</tbody></table></div>';
+  if (!MF_CUENTAS.length) return botones + '<div class="empty-list">No hay cuentas cargadas. Tocá “Editar cuentas”.</div>';
+  const smap = _mfSaldoMap();
+  const grupos = Array.from(new Set(MF_CUENTAS.map(function(c){ return c.grupo; })));
+  const nombres = Array.from(new Set(MF_CUENTAS.map(function(c){ return c.nombre; })));
+  const cmap = {}; MF_CUENTAS.forEach(function(c){ cmap[c.grupo + '|' + c.nombre] = c; });
+  const ultF = _mfFechas()[0];
+  const fechaLbl = ultF ? (' · al ' + ultF.slice(8) + '/' + ultF.slice(5, 7)) : '';
+  const th = 'padding:7px 9px;white-space:nowrap';
+  let html = botones + '<div style="font-size:12px;color:var(--c-sand);margin-bottom:6px">Último saldo cargado por cuenta' + fechaLbl + '</div>';
+  html += '<div style="overflow-x:auto;border:1px solid var(--c-cream-border);border-radius:9px"><table style="border-collapse:collapse;font-size:12px;min-width:100%">';
+  html += '<thead><tr style="background:rgba(255,255,255,.05)"><th style="' + th + ';text-align:left;color:var(--c-sand);position:sticky;left:0;background:#241f1b">Cuenta</th>' +
+    grupos.map(function(g){ return '<th style="' + th + ';text-align:right;color:var(--c-cream);font-weight:700">' + esc(g) + '</th>'; }).join('') + '</tr></thead><tbody>';
+  const totales = {}; // por grupo, solo ARS
+  nombres.forEach(function(nom){
+    html += '<tr><td style="' + th + ';text-align:left;color:var(--c-cream);position:sticky;left:0;background:#1f1b18">' + esc(nom) + '</td>' +
+      grupos.map(function(g){
+        const c = cmap[g + '|' + nom];
+        if (!c) return '<td style="' + th + ';text-align:right;color:var(--c-sand)"></td>';
+        const v = _mfUltSaldo(c.id, smap);
+        if (c.moneda === 'ARS' && v != null) totales[g] = (totales[g] || 0) + (parseFloat(v) || 0);
+        return '<td style="' + th + ';text-align:right;color:' + (v != null ? 'var(--c-cream)' : 'var(--c-sand)') + '">' + (v != null ? _mfMoney(v, c.moneda) : '—') + '</td>';
+      }).join('') + '</tr>';
   });
+  html += '<tr style="border-top:2px solid var(--c-cream-border)"><td style="' + th + ';text-align:left;font-weight:700;color:var(--c-cream);position:sticky;left:0;background:#1f1b18">Total ARS</td>' +
+    grupos.map(function(g){ return '<td style="' + th + ';text-align:right;font-weight:700;color:var(--c-cream)">' + (totales[g] != null ? _mfMoney(totales[g], 'ARS') : '—') + '</td>'; }).join('') + '</tr>';
+  html += '</tbody></table></div>';
   return html;
 }
 window.mfCargarSaldos = function() {
@@ -7498,26 +7517,70 @@ async function mfRenderCompromisos() {
       MF_COMPROMISOS = items;
     } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar.</div>'; return; }
   }
-  const items = MF_COMPROMISOS;
-  if (!items.length) { cont.innerHTML = '<div class="empty-list">Sin compromisos futuros cargados.</div>'; return; }
-  const totComp = items.filter(function(x){ return x.tipo === 'comprometido'; }).reduce(function(s, x){ return s + x.importe; }, 0);
-  const totPrev = items.filter(function(x){ return x.tipo === 'previsto'; }).reduce(function(s, x){ return s + x.importe; }, 0);
-  const fechas = _mfFechas(); const smap = _mfSaldoMap();
-  let dispo = 0; MF_CUENTAS.forEach(function(c){ if (c.moneda === 'ARS' && smap[c.id] && smap[c.id][fechas[0]] != null) dispo += parseFloat(smap[c.id][fechas[0]]) || 0; });
-  let html = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">' +
-    '<div style="flex:1;min-width:110px;background:rgba(62,134,199,.12);border:1px solid #3E86C7;border-radius:8px;padding:7px 10px"><div style="font-size:11px;color:var(--c-sand)">Saldo disponible (ARS)</div><div style="font-weight:800;font-size:15px;color:var(--c-cream)">' + _mfMoney(dispo, 'ARS') + '</div></div>' +
-    '<div style="flex:1;min-width:110px;background:rgba(229,83,75,.10);border:1px solid #E5534B;border-radius:8px;padding:7px 10px"><div style="font-size:11px;color:var(--c-sand)">Comprometido</div><div style="font-weight:800;font-size:15px;color:#E5534B">' + _mfMoney(totComp, 'ARS') + '</div></div>' +
-    '<div style="flex:1;min-width:110px;background:rgba(200,122,44,.12);border:1px solid #C87A2C;border-radius:8px;padding:7px 10px"><div style="font-size:11px;color:var(--c-sand)">Previsto</div><div style="font-weight:800;font-size:15px;color:#C87A2C">' + _mfMoney(totPrev, 'ARS') + '</div></div>' +
-  '</div>';
-  html += '<div class="cierre-hint" style="margin-bottom:8px"><span style="color:#E5534B">■</span> Comprometido = pago ya emitido (cheque/OP). <span style="color:#C87A2C">■</span> Previsto = vence pero todavía sin pago comprometido.</div>';
-  html += items.map(function(x){
-    const col = x.tipo === 'comprometido' ? '#E5534B' : '#C87A2C';
-    return '<div class="ped-card" style="padding:7px 10px;margin-bottom:5px;border-left:3px solid ' + col + '">' +
-      '<div style="display:flex;justify-content:space-between;gap:8px">' +
-        '<span style="font-size:12px;color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b style="color:var(--c-cream)">' + (x.fecha ? _pagoFecha(x.fecha) : 's/fecha') + '</b> · ' + esc(x.detalle) + '</span>' +
-        '<span style="white-space:nowrap;font-weight:700;color:' + col + '">' + _mfMoney(x.importe, 'ARS') + '</span>' +
-      '</div></div>';
-  }).join('');
+  const items = MF_COMPROMISOS.filter(function(x){ return x.fecha; });
+  const hoy = hoyStr(); const curMk = hoy.slice(0, 7);
+  // Agregación mes → semana (lunes) → día
+  const byM = {};
+  function bucket(mk){ return byM[mk] || (byM[mk] = { comp: 0, prev: 0, weeks: {} }); }
+  items.forEach(function(x){
+    if (x.fecha < hoy) return; // solo de hoy en adelante
+    const mk = x.fecha.slice(0, 7), wk = _mfMonday(x.fecha);
+    const M = bucket(mk); const W = M.weeks[wk] || (M.weeks[wk] = { comp: 0, prev: 0, days: {} });
+    const D = W.days[x.fecha] || (W.days[x.fecha] = { comp: 0, prev: 0, items: [] });
+    const campo = x.tipo === 'comprometido' ? 'comp' : 'prev';
+    M[campo] += x.importe; W[campo] += x.importe; D[campo] += x.importe; D.items.push(x);
+  });
+  // Saldo disponible (último ARS)
+  const smap = _mfSaldoMap(); let dispo = 0;
+  MF_CUENTAS.forEach(function(c){ if (c.moneda === 'ARS') { const v = _mfUltSaldo(c.id, smap); if (v != null) dispo += parseFloat(v) || 0; } });
+
+  const monto = function(comp, prev){ return (comp ? '<span style="color:#E5534B;font-weight:700">' + _mfMoney(comp, 'ARS') + '</span>' : '') + (comp && prev ? '&nbsp;·&nbsp;' : '') + (prev ? '<span style="color:#C87A2C;font-weight:700">' + _mfMoney(prev, 'ARS') + '</span>' : '') + (!comp && !prev ? '<span style="color:var(--c-sand)">—</span>' : ''); };
+  const fin = _mfAddDays(_mfMonthAdd(curMk, 1) + '-01', -1);
+  const cur = byM[curMk] || { comp: 0, prev: 0, weeks: {} };
+
+  // Ficha del mes actual
+  let html = '<div style="background:rgba(255,255,255,.04);border:1px solid var(--c-cream-border);border-radius:10px;padding:11px 13px;margin-bottom:8px">' +
+    '<div style="font-weight:800;color:var(--c-cream);font-size:15px">' + _mfMesNombre(curMk) + ' <span style="font-weight:400;color:var(--c-sand);font-size:12px">· ' + _mfDDMM(hoy) + ' al ' + _mfDDMM(fin) + '</span></div>' +
+    '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:13px">' +
+      '<span><span style="color:var(--c-sand);font-size:11px">Comprometido</span><br><b style="color:#E5534B;font-size:15px">' + _mfMoney(cur.comp, 'ARS') + '</b></span>' +
+      '<span><span style="color:var(--c-sand);font-size:11px">Previsto</span><br><b style="color:#C87A2C;font-size:15px">' + _mfMoney(cur.prev, 'ARS') + '</b></span>' +
+      '<span><span style="color:var(--c-sand);font-size:11px">Saldo disp. (ARS)</span><br><b style="color:var(--c-cream);font-size:15px">' + _mfMoney(dispo, 'ARS') + '</b></span>' +
+    '</div></div>' +
+    '<div class="cierre-hint" style="margin-bottom:8px"><span style="color:#E5534B">■</span> Comprometido (cheque/OP emitida) &nbsp; <span style="color:#C87A2C">■</span> Previsto (vence, sin pago comprometido aún)</div>';
+
+  // Render de semanas de un mes
+  const renderSemanas = function(mk){
+    const M = byM[mk]; if (!M) return '<div class="cierre-hint" style="margin:0 0 8px 12px">Sin compromisos este mes.</div>';
+    return Object.keys(M.weeks).sort().map(function(wk){
+      const W = M.weeks[wk]; const open = MF_OPEN_W.has(wk);
+      let h = '<div onclick="mfToggleSem(\'' + wk + '\')" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;margin:4px 0 0 10px;border-left:2px solid var(--c-cream-border)">' +
+        '<span style="font-size:12px;color:var(--c-cream)"><i class="ti ti-' + (open ? 'chevron-down' : 'chevron-right') + '" style="font-size:12px"></i> Semana ' + _mfDDMM(wk) + ' al ' + _mfDDMM(_mfAddDays(wk, 6)) + '</span>' +
+        '<span style="font-size:12px">' + monto(W.comp, W.prev) + '</span></div>';
+      if (open) {
+        h += Object.keys(W.days).sort().map(function(d){
+          const D = W.days[d];
+          return '<div style="margin:3px 0 3px 22px;padding:5px 9px;border-left:2px solid var(--c-cream-border)">' +
+            '<div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:12px;color:var(--c-cream)">' + _pagoFecha(d) + '</b><span style="font-size:12px">' + monto(D.comp, D.prev) + '</span></div>' +
+            D.items.map(function(x){ const col = x.tipo === 'comprometido' ? '#E5534B' : '#C87A2C'; return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--c-sand);margin-top:2px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(x.detalle) + '</span><span style="white-space:nowrap;color:' + col + '">' + _mfMoney(x.importe, 'ARS') + '</span></div>'; }).join('') +
+          '</div>';
+        }).join('');
+      }
+      return h;
+    }).join('');
+  };
+
+  // Semanas del mes actual (siempre desplegadas)
+  html += renderSemanas(curMk);
+
+  // Próximos 6 meses (colapsables)
+  html += '<div style="font-size:12px;color:var(--c-sand);margin:14px 0 4px">Próximos meses</div>';
+  for (let i = 1; i <= 6; i++) {
+    const mk = _mfMonthAdd(curMk, i); const M = byM[mk] || { comp: 0, prev: 0, weeks: {} }; const open = MF_OPEN_M.has(mk);
+    html += '<div onclick="mfToggleMes(\'' + mk + '\')" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;margin-top:5px;background:rgba(255,255,255,.03);border:1px solid var(--c-cream-border);border-radius:8px">' +
+      '<span style="font-weight:700;color:var(--c-cream);font-size:13px"><i class="ti ti-' + (open ? 'chevron-down' : 'chevron-right') + '"></i> ' + _mfMesNombre(mk) + '</span>' +
+      '<span style="font-size:12px">' + monto(M.comp, M.prev) + '</span></div>';
+    if (open) html += renderSemanas(mk);
+  }
   cont.innerHTML = html;
 }
 // ---- Editar catálogo de cuentas ----
