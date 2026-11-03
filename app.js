@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-CX | ULTIMA | Conciliacion: toggle Pendientes/Conciliados en cada pestaña (el listado principal muestra solo lo pendiente; los conciliados quedan en su historial). Carga completa de movimientos (apiAll). Anti-duplicados ahora por razon social + banco (fuente). Antes: huella con contador de repeticiones (movimientos identicos conviven; ya no da error 409 duplicate key) y re-subir el mismo extracto sigue sin duplicar. Las pestañas Debitos/Creditos se ocultan hasta que haya movimientos (una sola importacion trae todo). Antes: pestañas Debitos / Creditos. Creditos: seccion aparte para Silvina (tarjetas/propinas/transfer de clientes); NO suman a ventas (las ventas salen de los cierres). Conciliar por tipo + nota (sin impacto P&L) o en masa "Conciliar pendientes como ventas". Antes: saque el selector Cuenta/billetera; tramo 3 categorizar debitos (cuenta del plan + local o "sin local"/Socios + nota + adjunto) -> movimiento conciliado que impacta el Panel; sirve para sueldos/prestamos/impuestos que no son comprobantes pendientes. Reglas por palabra clave (autocategorizan: boton "Aplicar reglas" + ABM de reglas + crear regla al categorizar). Requiere conciliacion.sql + fase_b_tramo3.sql. Antes: tramo 1 (importar extractos) ===== */
+/* ===== BUILD 2026-11-03-CY | ULTIMA | Fase B tramo 2: matcheo automatico de debitos con pagos emitidos. Boton "Matchear pagos" (pestaña Debitos): cheque por nro en el concepto, resto por importe + fecha (±5 dias); vista previa con checkboxes para confirmar; al aplicar, los medios de la OP quedan conciliados y, cuando estan todos, los comprobantes pasan a Pago completado con la fecha real del debito. Desconciliar revierte. Requiere fase_b_tramo2.sql. Antes: toggle Pendientes/Conciliados en cada pestaña (el listado principal muestra solo lo pendiente; los conciliados quedan en su historial). Carga completa de movimientos (apiAll). Anti-duplicados ahora por razon social + banco (fuente). Antes: huella con contador de repeticiones (movimientos identicos conviven; ya no da error 409 duplicate key) y re-subir el mismo extracto sigue sin duplicar. Las pestañas Debitos/Creditos se ocultan hasta que haya movimientos (una sola importacion trae todo). Antes: pestañas Debitos / Creditos. Creditos: seccion aparte para Silvina (tarjetas/propinas/transfer de clientes); NO suman a ventas (las ventas salen de los cierres). Conciliar por tipo + nota (sin impacto P&L) o en masa "Conciliar pendientes como ventas". Antes: saque el selector Cuenta/billetera; tramo 3 categorizar debitos (cuenta del plan + local o "sin local"/Socios + nota + adjunto) -> movimiento conciliado que impacta el Panel; sirve para sueldos/prestamos/impuestos que no son comprobantes pendientes. Reglas por palabra clave (autocategorizan: boton "Aplicar reglas" + ABM de reglas + crear regla al categorizar). Requiere conciliacion.sql + fase_b_tramo3.sql. Antes: tramo 1 (importar extractos) ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -7091,7 +7091,8 @@ function _concRenderDebitos() {
   const conRegla = all.filter(function(m){ return m.estado === 'pendiente' && _concReglaMatch(m); }).length;
   const arr = all.filter(function(m){ return m.estado === CONC_ESTADO; });
   let html = _concEstadoToggle(all) +
-    '<div style="display:flex;align-items:center;justify-content:flex-end;margin:0 0 6px;gap:6px">' +
+    '<div style="display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;margin:0 0 6px;gap:6px">' +
+        (CONC_ESTADO === 'pendiente' ? '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="concMatchearPagos()"><i class="ti ti-link"></i> Matchear pagos</button>' : '') +
         (CONC_ESTADO === 'pendiente' && conRegla ? '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="concAplicarReglas()"><i class="ti ti-wand"></i> Aplicar reglas (' + conRegla + ')</button>' : '') +
         '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="concAbrirReglas()"><i class="ti ti-adjustments"></i> Reglas</button>' +
     '</div>';
@@ -7099,7 +7100,7 @@ function _concRenderDebitos() {
   html += arr.map(function(m){
     const estColor = m.estado === 'conciliado' ? '#3BA55D' : '#C87A2C';
     const regla = m.estado === 'pendiente' ? _concReglaMatch(m) : null;
-    const catTxt = m.estado === 'conciliado' ? (m.comprobante_id ? 'Pago de comprobante' : (_nombreCuenta(m.cuenta_id) + (m.local ? ' · ' + localLabel(m.local) : ''))) : '';
+    const catTxt = m.estado === 'conciliado' ? (m.orden_pago_id ? (m.nota || 'Pago de orden') : (m.cuenta_id ? (_nombreCuenta(m.cuenta_id) + (m.local ? ' · ' + localLabel(m.local) : '')) : (m.nota || ''))) : '';
     return '<div class="ped-card" style="padding:7px 10px;margin-bottom:5px;border-left:3px solid ' + estColor + '">' +
       '<div style="display:flex;justify-content:space-between;gap:8px">' +
         '<span style="font-size:12px;color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pagoFecha(m.fecha) + ' · ' + esc(m.descripcion || m.referencia || '—') + '</span>' +
@@ -7185,6 +7186,81 @@ window.concConciliarVentas = async function() {
   toast('✓ ' + n + ' créditos conciliados', 'success');
   await concCargarLista();
 };
+// ---- Tramo 2: matcheo de débitos con pagos emitidos (órdenes de pago) ----
+let CONC_MATCHES = [];
+function _diasEntre(a, b){ if (!a || !b) return 999; return Math.abs((new Date(a) - new Date(b)) / 86400000); }
+function _soloDig(s){ return String(s || '').replace(/\D/g, ''); }
+function _matchMedio(mov, medios, opMap) {
+  const amt = Math.round(Math.abs(mov.importe) * 100);
+  const ref = _soloDig((mov.referencia || '') + (mov.descripcion || ''));
+  // 1) cheque: el nº de cheque aparece en la referencia/concepto del extracto
+  for (let i = 0; i < medios.length; i++) { const md = medios[i]; const doc = _soloDig(md.documento); if (doc && doc.length >= 4 && ref.indexOf(doc) >= 0) return md; }
+  // 2) por importe + fecha cercana (±5 días del vencimiento o la fecha de la OP)
+  for (let i = 0; i < medios.length; i++) { const md = medios[i]; const op = opMap[md.orden_pago_id] || {}; if (Math.abs(Math.round((parseFloat(md.importe) || 0) * 100) - amt) <= 100 && _diasEntre(mov.fecha, md.vencimiento || op.fecha) <= 5) return md; }
+  return null;
+}
+window.concMatchearPagos = async function() {
+  const razonId = document.getElementById('concRazon').value;
+  if (!razonId) { toast('Elegí la razón social', 'error'); return; }
+  const deb = CONC_LISTA.filter(function(m){ return m.importe < 0 && m.estado === 'pendiente'; });
+  if (!deb.length) { toast('No hay débitos pendientes', 'info'); return; }
+  let ops = [], medios = [];
+  try {
+    ops = await api('ordenes_pago?razon_social_id=eq.' + razonId + '&estado=eq.emitida&select=id,numero,fecha,proveedor_id,total') || [];
+    if (ops.length) { const ids = ops.map(function(o){ return o.id; }); medios = await api('orden_pago_medios?orden_pago_id=in.(' + ids.join(',') + ')&conciliado=eq.false&select=*') || []; }
+  } catch (e) { toast('No se pudieron cargar las órdenes de pago', 'error'); return; }
+  if (!medios.length) { toast('No hay pagos emitidos para conciliar', 'info'); return; }
+  const opMap = {}; ops.forEach(function(o){ opMap[o.id] = o; });
+  const usados = new Set(); CONC_MATCHES = [];
+  deb.forEach(function(m){
+    const med = _matchMedio(m, medios.filter(function(x){ return !usados.has(x.id); }), opMap);
+    if (med) { usados.add(med.id); CONC_MATCHES.push({ mov: m, medio: med, op: opMap[med.orden_pago_id] }); }
+  });
+  if (!CONC_MATCHES.length) { toast('No se encontraron coincidencias', 'info'); return; }
+  const provIds = Array.from(new Set(CONC_MATCHES.map(function(x){ return x.op && x.op.proveedor_id; }).filter(Boolean)));
+  if (provIds.length) { try { const ps = await api('proveedores?id=in.(' + provIds.join(',') + ')&select=id,razon_social') || []; ps.forEach(function(p){ CMP_PROV_MAP[p.id] = p; }); } catch (e) {} }
+  concRenderMatches();
+  document.getElementById('modalMatcheos').classList.add('show');
+};
+function concRenderMatches() {
+  document.getElementById('matchesLista').innerHTML = CONC_MATCHES.map(function(x, i){
+    const p = CMP_PROV_MAP[x.op && x.op.proveedor_id];
+    return '<label style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--c-cream-border)">' +
+      '<input type="checkbox" checked data-i="' + i + '" style="width:17px;height:17px;flex:0 0 auto">' +
+      '<span style="flex:1;min-width:0;font-size:12px">' +
+        '<span style="color:var(--c-sand)">' + _pagoFecha(x.mov.fecha) + ' · ' + esc((x.mov.descripcion || x.mov.referencia || '').slice(0, 42)) + '</span><br>' +
+        '<span style="color:var(--c-cream)">→ ' + esc(x.op ? x.op.numero : 'OP') + (p ? ' · ' + esc(p.razon_social) : '') + '</span>' +
+      '</span>' +
+      '<span style="white-space:nowrap;font-weight:700;color:#E5534B;flex:0 0 auto">' + _money2(x.mov.importe) + '</span>' +
+    '</label>';
+  }).join('');
+}
+window.closeMatcheos = function(){ document.getElementById('modalMatcheos').classList.remove('show'); };
+window.aplicarMatcheos = async function() {
+  const sel = [];
+  document.querySelectorAll('#matchesLista input[type=checkbox]').forEach(function(c){ if (c.checked) sel.push(CONC_MATCHES[parseInt(c.getAttribute('data-i'), 10)]); });
+  if (!sel.length) { closeMatcheos(); return; }
+  const btn = document.getElementById('matchBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Aplicando...';
+  let n = 0;
+  try {
+    for (let i = 0; i < sel.length; i++) {
+      const x = sel[i];
+      await api('orden_pago_medios?id=eq.' + x.medio.id, { method: 'PATCH', body: JSON.stringify({ conciliado: true, mov_id: x.mov.id }) });
+      await api('movimientos_bancarios?id=eq.' + x.mov.id, { method: 'PATCH', body: JSON.stringify({ estado: 'conciliado', orden_pago_id: x.op.id, nota: 'Pago ' + (x.op ? x.op.numero : 'OP') }) });
+      const rest = await api('orden_pago_medios?orden_pago_id=eq.' + x.op.id + '&conciliado=eq.false&select=id') || [];
+      if (!rest.length) {
+        const ocs = await api('orden_pago_comprobantes?orden_pago_id=eq.' + x.op.id + '&select=comprobante_id') || [];
+        const cids = ocs.map(function(o){ return o.comprobante_id; });
+        if (cids.length) await api('comprobantes?id=in.(' + cids.join(',') + ')', { method: 'PATCH', body: JSON.stringify({ estado: 'pago_completado', fecha_pago: x.mov.fecha, actualizado_en: new Date().toISOString() }) });
+      }
+      n++;
+    }
+    closeMatcheos();
+    toast('✓ ' + n + ' pagos conciliados', 'success');
+    await concCargarLista();
+  } catch (e) { toast('No se pudo aplicar: ' + ((e && e.message) || e), 'error'); }
+  finally { btn.disabled = false; btn.textContent = t; }
+};
 // ---- Categorizar un movimiento (cuenta + local + nota + adjunto) ----
 let CONC_CAT_ADJ = null;
 function _concLocalOptions(sel) {
@@ -7243,10 +7319,20 @@ window.guardarCategorizar = async function() {
   finally { btn.disabled = false; btn.textContent = t; }
 };
 window.desconciliarMov = async function(id) {
-  const ok = await showConfirm({ title: 'Volver a pendiente', msg: 'El movimiento vuelve a “Pendiente” y se borra su categorización. ¿Confirmás?', type: 'warning', okLabel: 'Sí', cancelLabel: 'Cancelar' });
+  const m = CONC_LISTA.find(function(x){ return x.id === id; });
+  const ok = await showConfirm({ title: 'Volver a pendiente', msg: 'El movimiento vuelve a “Pendiente” y se deshace su conciliación. ¿Confirmás?', type: 'warning', okLabel: 'Sí', cancelLabel: 'Cancelar' });
   if (!ok) return;
-  try { await api('movimientos_bancarios?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ estado: 'pendiente', cuenta_id: null, local: null, nota: null }) }); toast('✓ Actualizado', 'success'); await concCargarLista(); }
-  catch (e) { toast('No se pudo: ' + ((e && e.message) || e), 'error'); }
+  try {
+    if (m && m.orden_pago_id) {
+      // Deshacer el matcheo con la OP: liberar el medio y volver los comprobantes a Pago emitido.
+      await api('orden_pago_medios?mov_id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ conciliado: false, mov_id: null }) });
+      const ocs = await api('orden_pago_comprobantes?orden_pago_id=eq.' + m.orden_pago_id + '&select=comprobante_id') || [];
+      const cids = ocs.map(function(o){ return o.comprobante_id; });
+      if (cids.length) await api('comprobantes?id=in.(' + cids.join(',') + ')&estado=eq.pago_completado', { method: 'PATCH', body: JSON.stringify({ estado: 'pago_emitido', actualizado_en: new Date().toISOString() }) });
+    }
+    await api('movimientos_bancarios?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ estado: 'pendiente', cuenta_id: null, local: null, nota: null, orden_pago_id: null }) });
+    toast('✓ Actualizado', 'success'); await concCargarLista();
+  } catch (e) { toast('No se pudo: ' + ((e && e.message) || e), 'error'); }
 };
 window.concAplicarReglas = async function() {
   const pend = CONC_LISTA.filter(function(m){ return m.estado === 'pendiente'; });

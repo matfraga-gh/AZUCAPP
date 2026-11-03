@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261103cx">
+<link rel="stylesheet" href="styles.css?v=20261103cy">
 </head>
 <body>
 
@@ -2010,6 +2010,23 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modalMatcheos">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Coincidencias encontradas</h2>
+      <button class="modal-close" onclick="closeMatcheos()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+      <div class="cierre-hint" style="margin-bottom:8px">Revisá y destildá las que no correspondan. Los comprobantes de cada orden pagada pasan a “Pago completado” con la fecha real del débito.</div>
+      <div id="matchesLista"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeMatcheos()">Cancelar</button>
+      <button class="btn-primary" id="matchBtn" onclick="aplicarMatcheos()">Conciliar seleccionados</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalCredito">
   <div class="modal-card cierre-card">
     <div class="modal-header">
@@ -2836,6 +2853,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261103cx"></script>
+<script src="app.js?v=20261103cy"></script>
 </body>
 </html>
