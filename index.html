@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261104dh">
+<link rel="stylesheet" href="styles.css?v=20261104di">
 </head>
 <body>
 
@@ -2536,6 +2536,21 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modalCargarLista">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Elegí qué lista cargar</h2>
+      <button class="modal-close" onclick="closeCargarLista()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+      <div id="clLista"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeCargarLista()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============================================
      VISTA: EDITOR DE PEDIDO
 ============================================ -->
@@ -2927,6 +2942,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261104dh"></script>
+<script src="app.js?v=20261104di"></script>
 </body>
 </html>

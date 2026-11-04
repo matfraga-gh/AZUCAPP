@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-04-DH | ULTIMA | Pedidos: Listas de compra por local (articulos recurrentes editables) + boton "Cargar mi lista" en el pedido + "Ultima vez: cantidad y fecha" por articulo + sugerencias por frecuencia (lo que se pide seguido y no esta / lo que hace +60 dias no se pide). Requiere listas_compra.sql. Antes: Mis Finanzas Flujo de fondos ===== */
+/* ===== BUILD 2026-11-04-DI | ULTIMA | Pedidos: VARIAS listas de compra con nombre por local (Verduleria, Bebidas...). Crear/editar/eliminar listas; agregar/quitar articulos; al pedir "Cargar lista" (elegis cual) trae los articulos; "Ultima vez" por articulo; sugerencias por frecuencia por lista. Requiere listas_compra_v2.sql (migra la version anterior). Antes: una sola lista por local ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -10005,13 +10005,13 @@ let PED_ACTUAL = null, PED_ITEMS = [];
 // Listas de compra + historial (última vez / frecuencia) del local en curso
 let PED_HIST = {};          // ingrediente_id -> { cantidad, unidad, fecha }
 let PED_FREQ = {};          // ingrediente_id -> cantidad de pedidos (últimos 60 días)
-let PED_LISTA_SET = [];     // artículos de la lista del local en curso
+let PED_LISTAS = [];        // listas (cabecera) del local en curso: [{id,nombre,...}]
 let PED_CTX_LOCAL = '';     // local para el que se cargó el contexto
 async function cargarContextoPedido(local) {
-  PED_HIST = {}; PED_FREQ = {}; PED_LISTA_SET = []; PED_CTX_LOCAL = local || '';
+  PED_HIST = {}; PED_FREQ = {}; PED_LISTAS = []; PED_CTX_LOCAL = local || '';
   if (!local) return;
   try {
-    PED_LISTA_SET = await api('lista_compra?local=eq.' + encodeURIComponent(local) + '&select=*&order=orden.asc,id.asc') || [];
+    PED_LISTAS = await api('listas_compra?local=eq.' + encodeURIComponent(local) + '&select=*&order=orden.asc,id.asc') || [];
     const reqs = await apiAll('requerimientos?local=eq.' + encodeURIComponent(local) + '&activo=eq.true&select=id,fecha_creacion&order=fecha_creacion.desc&limit=300') || [];
     const fechaBy = {}; reqs.forEach(function(r){ fechaBy[r.id] = (r.fecha_creacion || '').slice(0, 10); });
     const ids = reqs.map(function(r){ return r.id; });
@@ -10182,12 +10182,23 @@ window.pedCambioLocal = async function(local) {
   await cargarContextoPedido(local);
   renderEditorPedido();
 };
-window.cargarMiLista = function() {
+window.abrirCargarLista = function() {
   leerHeaderDesdeDOM(); leerItemsDesdeDOM();
-  if (!PED_LISTA_SET.length) { toast('Este local todav\u00eda no tiene lista de compra. Armala en \u201cListas de compra\u201d.', 'info'); return; }
+  if (!PED_LISTAS.length) { toast('Este local todav\u00eda no tiene listas. Arm\u00e1 una en \u201cListas de compra\u201d.', 'info'); return; }
+  if (PED_LISTAS.length === 1) { cargarListaEnPedido(PED_LISTAS[0].id); return; }
+  document.getElementById('clLista').innerHTML = PED_LISTAS.map(function(l){
+    return '<button class="btn-ghost" style="width:100%;text-align:left;margin-bottom:6px;padding:10px 12px" onclick="cargarListaEnPedido(' + l.id + ')"><i class="ti ti-clipboard-list"></i> ' + esc(l.nombre || 'Lista') + '</button>';
+  }).join('');
+  document.getElementById('modalCargarLista').classList.add('show');
+};
+window.closeCargarLista = function(){ document.getElementById('modalCargarLista').classList.remove('show'); };
+window.cargarListaEnPedido = async function(listaId) {
+  closeCargarLista();
+  let items = [];
+  try { items = await api('lista_compra_items?lista_id=eq.' + listaId + '&select=*&order=orden.asc,id.asc') || []; } catch (e) {}
   const existentes = {}; PED_ITEMS.forEach(function(it){ if (it.ingrediente_id != null) existentes[it.ingrediente_id] = true; });
   let n = 0;
-  PED_LISTA_SET.forEach(function(l){
+  items.forEach(function(l){
     if (existentes[l.ingrediente_id]) return;
     const ing = PED_INSUMOS.find(function(x){ return x.id === l.ingrediente_id; }) || {};
     const h = PED_HIST[l.ingrediente_id];
@@ -10195,10 +10206,10 @@ window.cargarMiLista = function() {
     n++;
   });
   renderEditorPedido();
-  toast(n ? ('\u2713 ' + n + ' art\u00edculos de tu lista') : 'Ya ten\u00edas todos los de tu lista', 'success');
+  toast(n ? ('\u2713 ' + n + ' art\u00edculos cargados') : 'Ya ten\u00edas todos esos art\u00edculos', 'success');
 };
-// ---- Listas de compra (gesti\u00f3n + sugerencias) ----
-let LC_LOCAL = '';
+// ---- Listas de compra (varias por local, con nombre) ----
+let LC_LOCAL = '', LC_LISTA = null, LC_ITEMS_BY = {};
 window.openListaCompra = async function() {
   if (!puedeGestionarPedidos()) { showDashboard(); return; }
   showView('vListaCompra');
@@ -10206,55 +10217,87 @@ window.openListaCompra = async function() {
   const locs = pedLocalesPermitidos();
   const sel = document.getElementById('lcLocal');
   sel.innerHTML = locs.map(function(l){ return '<option value="' + esc(l) + '">' + esc(LOCAL_LABELS[l] || l) + '</option>'; }).join('');
-  LC_LOCAL = locs[0] || '';
+  LC_LOCAL = locs[0] || ''; LC_LISTA = null;
   document.getElementById('lcInsList').innerHTML = PED_INSUMOS.map(function(x){ return '<option value="' + esc(x.nombre) + '"></option>'; }).join('');
   await lcCargar();
 };
-window.lcCambioLocal = async function(l){ LC_LOCAL = l; await lcCargar(); };
+window.lcCambioLocal = async function(l){ LC_LOCAL = l; LC_LISTA = null; await lcCargar(); };
 async function lcCargar() {
   const c = document.getElementById('lcCont'); if (c) c.innerHTML = '<div class="loading">Cargando...</div>';
-  await cargarContextoPedido(LC_LOCAL);
-  lcRender();
+  await cargarContextoPedido(LC_LOCAL); // PED_LISTAS (cabeceras) + PED_HIST + PED_FREQ
+  LC_ITEMS_BY = {};
+  const ids = PED_LISTAS.map(function(l){ return l.id; });
+  if (ids.length) { try { const its = await apiAll('lista_compra_items?lista_id=in.(' + ids.join(',') + ')&select=*&order=orden.asc,id.asc') || []; its.forEach(function(it){ (LC_ITEMS_BY[it.lista_id] = LC_ITEMS_BY[it.lista_id] || []).push(it); }); } catch (e) {} }
+  if (LC_LISTA && !PED_LISTAS.find(function(l){ return l.id === LC_LISTA; })) LC_LISTA = null;
+  if (LC_LISTA) lcRenderEditor(); else lcRenderListas();
 }
-function lcRender() {
+function lcRenderListas() {
   const cont = document.getElementById('lcCont'); if (!cont) return;
-  const enLista = {}; PED_LISTA_SET.forEach(function(l){ enLista[l.ingrediente_id] = l; });
-  const lim60 = _mfAddDays(hoyStr(), -60);
-  let html = '<div class="ped-section-title" style="margin-bottom:6px">Art\u00edculos de la lista (' + PED_LISTA_SET.length + ')</div>';
-  html += PED_LISTA_SET.length ? PED_LISTA_SET.map(function(l){
-    const h = PED_HIST[l.ingrediente_id]; const viejo = h && h.fecha < lim60;
-    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--c-cream-border)">' +
-      '<span style="min-width:0;font-size:13px"><b style="color:var(--c-cream)">' + esc(pedInsumoNombre(l.ingrediente_id)) + '</b>' +
-        (h ? '<span style="color:var(--c-sand);font-size:11px"> \u00b7 \u00falt. ' + pedFecha(h.fecha) + '</span>' : '<span style="color:#C87A2C;font-size:11px"> \u00b7 nunca pedido</span>') +
-        (viejo ? ' <span style="color:#C87A2C;font-size:11px">\u00b7 hace +60 d\u00edas</span>' : '') +
-      '</span>' +
-      '<button class="btn-ghost" style="flex:0 0 auto;padding:3px 7px;color:var(--c-error)" onclick="lcQuitar(' + l.id + ')"><i class="ti ti-trash"></i></button>' +
+  let html = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px"><span class="ped-section-title">Listas de ' + esc(LOCAL_LABELS[LC_LOCAL] || LC_LOCAL) + '</span><button class="btn-primary" style="padding:7px 12px" onclick="lcNuevaLista()"><i class="ti ti-plus"></i> Nueva lista</button></div>';
+  html += PED_LISTAS.length ? PED_LISTAS.map(function(l){
+    const n = (LC_ITEMS_BY[l.id] || []).length;
+    return '<div class="ped-card" style="padding:10px 12px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px">' +
+      '<span onclick="lcEditarLista(' + l.id + ')" style="flex:1;min-width:0;cursor:pointer"><b style="color:var(--c-cream)">' + esc(l.nombre || 'Lista') + '</b> <span style="color:var(--c-sand);font-size:12px">\u00b7 ' + n + ' art\u00edculos</span></span>' +
+      '<span style="display:flex;gap:4px;flex:0 0 auto"><button class="btn-ghost" style="padding:4px 9px;font-size:12px" onclick="lcEditarLista(' + l.id + ')">Editar</button>' +
+        '<button class="btn-ghost" style="padding:4px 7px;color:var(--c-error)" onclick="lcEliminarLista(' + l.id + ')"><i class="ti ti-trash"></i></button></span>' +
     '</div>';
-  }).join('') : '<div class="empty-list">La lista est\u00e1 vac\u00eda. Agreg\u00e1 art\u00edculos abajo.</div>';
+  }).join('') : '<div class="empty-list">Este local no tiene listas. Cre\u00e1 la primera (ej. Verduler\u00eda, Bebidas, Limpieza).</div>';
+  cont.innerHTML = html;
+}
+window.lcNuevaLista = async function() {
+  const nombre = (window.prompt('Nombre de la lista (ej. Verduler\u00eda):') || '').trim();
+  if (!nombre) return;
+  try { await api('listas_compra', { method: 'POST', body: JSON.stringify({ local: LC_LOCAL, nombre: nombre, orden: PED_LISTAS.length + 1, creado_por: currentUser ? currentUser.id : null }) }); await lcCargar(); toast('\u2713 Lista creada', 'success'); }
+  catch (e) { toast('No se pudo crear: ' + ((e && e.message) || e), 'error'); }
+};
+window.lcEditarLista = function(id){ LC_LISTA = id; lcRenderEditor(); };
+window.lcVolver = function(){ LC_LISTA = null; lcRenderListas(); };
+window.lcEliminarLista = async function(id) {
+  const ok = await showConfirm({ title: 'Eliminar lista', msg: 'Se elimina la lista y sus art\u00edculos. \u00bfConfirm\u00e1s?', type: 'warning', okLabel: 'S\u00ed, eliminar', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  try { await api('listas_compra?id=eq.' + id, { method: 'DELETE' }); if (LC_LISTA === id) LC_LISTA = null; await lcCargar(); }
+  catch (e) { toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error'); }
+};
+function lcRenderEditor() {
+  const cont = document.getElementById('lcCont'); if (!cont) return;
+  const lista = PED_LISTAS.find(function(l){ return l.id === LC_LISTA; }) || {};
+  const items = LC_ITEMS_BY[LC_LISTA] || [];
+  const enLista = {}; items.forEach(function(it){ enLista[it.ingrediente_id] = it; });
+  const lim60 = _mfAddDays(hoyStr(), -60);
+  let html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><button class="btn-ghost" style="padding:4px 9px" onclick="lcVolver()"><i class="ti ti-arrow-left"></i></button><span class="ped-section-title" style="margin:0">' + esc(lista.nombre || 'Lista') + ' (' + items.length + ')</span></div>';
+  html += items.length ? items.map(function(it){
+    const h = PED_HIST[it.ingrediente_id]; const viejo = h && h.fecha < lim60;
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--c-cream-border)">' +
+      '<span style="min-width:0;font-size:13px"><b style="color:var(--c-cream)">' + esc(pedInsumoNombre(it.ingrediente_id)) + '</b>' +
+        (h ? '<span style="color:var(--c-sand);font-size:11px"> \u00b7 \u00falt. ' + pedFecha(h.fecha) + '</span>' : '<span style="color:#C87A2C;font-size:11px"> \u00b7 nunca pedido</span>') +
+        (viejo ? ' <span style="color:#C87A2C;font-size:11px">\u00b7 +60 d\u00edas</span>' : '') +
+      '</span>' +
+      '<button class="btn-ghost" style="flex:0 0 auto;padding:3px 7px;color:var(--c-error)" onclick="lcQuitarItem(' + it.id + ')"><i class="ti ti-trash"></i></button>' +
+    '</div>';
+  }).join('') : '<div class="empty-list">Lista vac\u00eda. Agreg\u00e1 art\u00edculos abajo.</div>';
   html += '<div style="margin-top:12px;display:flex;gap:8px"><input id="lcAddInput" list="lcInsList" placeholder="Busc\u00e1 un insumo\u2026" style="flex:1" autocomplete="off"><button class="btn-primary" style="padding:8px 14px" onclick="lcAgregarDesdeInput()">Agregar</button></div>';
   const sug = Object.keys(PED_FREQ).filter(function(id){ return PED_FREQ[id] >= 2 && !enLista[id]; }).sort(function(a, b){ return PED_FREQ[b] - PED_FREQ[a]; });
   if (sug.length) {
-    html += '<div class="ped-section-title" style="margin-top:16px;margin-bottom:4px">Sugerencias: lo ped\u00eds seguido y no est\u00e1 en tu lista</div>';
-    html += sug.slice(0, 20).map(function(id){ return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--c-cream-border)"><span style="font-size:13px;color:var(--c-cream)">' + esc(pedInsumoNombre(parseInt(id, 10))) + ' <span style="color:var(--c-sand);font-size:11px">\u00b7 ' + PED_FREQ[id] + ' pedidos (60d)</span></span><button class="btn-ghost" style="flex:0 0 auto;padding:3px 9px;font-size:12px;color:#3BA55D" onclick="lcAgregar(' + id + ')">+ Agregar</button></div>'; }).join('');
+    html += '<div class="ped-section-title" style="margin-top:16px;margin-bottom:4px">Sugerencias: lo ped\u00eds seguido y no est\u00e1 en esta lista</div>';
+    html += sug.slice(0, 20).map(function(id){ return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--c-cream-border)"><span style="font-size:13px;color:var(--c-cream)">' + esc(pedInsumoNombre(parseInt(id, 10))) + ' <span style="color:var(--c-sand);font-size:11px">\u00b7 ' + PED_FREQ[id] + ' pedidos (60d)</span></span><button class="btn-ghost" style="flex:0 0 auto;padding:3px 9px;font-size:12px;color:#3BA55D" onclick="lcAgregarItem(' + id + ')">+ Agregar</button></div>'; }).join('');
   }
-  const viejos = PED_LISTA_SET.filter(function(l){ const h = PED_HIST[l.ingrediente_id]; return !h || h.fecha < lim60; });
-  if (viejos.length) html += '<div class="cierre-hint" style="margin-top:14px"><i class="ti ti-info-circle"></i> ' + viejos.length + ' art\u00edculo(s) de la lista hace +60 d\u00edas que no se piden (marcados arriba). Revisalos y quit\u00e1 los que ya no uses.</div>';
   cont.innerHTML = html;
 }
-window.lcAgregar = async function(ingId) {
-  ingId = parseInt(ingId, 10);
+window.lcAgregarItem = async function(ingId) {
+  ingId = parseInt(ingId, 10); if (!LC_LISTA) return;
   const ing = PED_INSUMOS.find(function(x){ return x.id === ingId; }) || {};
-  try { await api('lista_compra', { method: 'POST', body: JSON.stringify({ local: LC_LOCAL, ingrediente_id: ingId, unidad: ing.unidad || null, orden: PED_LISTA_SET.length + 1, creado_por: currentUser ? currentUser.id : null }) }); await lcCargar(); }
-  catch (e) { toast('No se pudo agregar (\u00bfya est\u00e1 en la lista?)', 'error'); }
+  const items = LC_ITEMS_BY[LC_LISTA] || [];
+  try { await api('lista_compra_items', { method: 'POST', body: JSON.stringify({ lista_id: LC_LISTA, ingrediente_id: ingId, unidad: ing.unidad || null, orden: items.length + 1, creado_por: currentUser ? currentUser.id : null }) }); await lcCargar(); }
+  catch (e) { toast('No se pudo agregar (\u00bfya est\u00e1 en esta lista?)', 'error'); }
 };
 window.lcAgregarDesdeInput = function() {
   const v = (document.getElementById('lcAddInput').value || '').trim().toLowerCase();
   const ing = PED_INSUMOS.find(function(x){ return (x.nombre || '').toLowerCase() === v; });
   if (!ing) { toast('Eleg\u00ed un insumo de la lista', 'error'); return; }
-  lcAgregar(ing.id);
+  lcAgregarItem(ing.id);
 };
-window.lcQuitar = async function(id) {
-  try { await api('lista_compra?id=eq.' + id, { method: 'DELETE' }); await lcCargar(); }
+window.lcQuitarItem = async function(id) {
+  try { await api('lista_compra_items?id=eq.' + id, { method: 'DELETE' }); await lcCargar(); }
   catch (e) { toast('No se pudo quitar: ' + ((e && e.message) || e), 'error'); }
 };
 async function recargarPedidoActual() {
@@ -10404,7 +10447,7 @@ function renderEditorPedido() {
   PED_ITEMS.forEach((it, i) => { html += renderItemPedido(it, i, editaItems, recepcion, completado); });
   html += '</div>';
   if (editaItems) html += '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">' +
-    '<button class="btn-ghost" style="flex:1;min-width:150px" onclick="cargarMiLista()"><i class="ti ti-clipboard-list"></i> Cargar mi lista</button>' +
+    '<button class="btn-ghost" style="flex:1;min-width:150px" onclick="abrirCargarLista()"><i class="ti ti-clipboard-list"></i> Cargar lista</button>' +
     '<button class="btn-ghost" style="flex:1;min-width:150px" onclick="agregarItemPedido()"><i class="ti ti-plus"></i> Agregar insumo</button>' +
   '</div>';
   html += '</div>';
