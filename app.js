@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-03-DG | ULTIMA | Mis Finanzas: nueva pestaña Flujo de fondos (proyeccion de caja por semana/mes: saldo inicial + ingresos [ventas estimadas por promedio de cierres, editable, + extraordinarios manuales] - egresos [compromisos] = saldo proyectado; destaca el "Piso de caja" minimo para decidir inversion/retiro). Requiere flujo_fondos.sql. Compromisos: razon social que paga + filtro de empresa (Todas/por sociedad) ===== */
+/* ===== BUILD 2026-11-04-DH | ULTIMA | Pedidos: Listas de compra por local (articulos recurrentes editables) + boton "Cargar mi lista" en el pedido + "Ultima vez: cantidad y fecha" por articulo + sugerencias por frecuencia (lo que se pide seguido y no esta / lo que hace +60 dias no se pide). Requiere listas_compra.sql. Antes: Mis Finanzas Flujo de fondos ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -10002,6 +10002,35 @@ function fmtFechaHora(iso) { if (!iso) return ''; try { return new Date(iso).toL
 let PED_LOCAL_FILTRO = '', PED_ESTADO_FILTRO = '';
 let PED_LISTA = [], PED_INSUMOS = [], PED_UNIDADES = [];
 let PED_ACTUAL = null, PED_ITEMS = [];
+// Listas de compra + historial (última vez / frecuencia) del local en curso
+let PED_HIST = {};          // ingrediente_id -> { cantidad, unidad, fecha }
+let PED_FREQ = {};          // ingrediente_id -> cantidad de pedidos (últimos 60 días)
+let PED_LISTA_SET = [];     // artículos de la lista del local en curso
+let PED_CTX_LOCAL = '';     // local para el que se cargó el contexto
+async function cargarContextoPedido(local) {
+  PED_HIST = {}; PED_FREQ = {}; PED_LISTA_SET = []; PED_CTX_LOCAL = local || '';
+  if (!local) return;
+  try {
+    PED_LISTA_SET = await api('lista_compra?local=eq.' + encodeURIComponent(local) + '&select=*&order=orden.asc,id.asc') || [];
+    const reqs = await apiAll('requerimientos?local=eq.' + encodeURIComponent(local) + '&activo=eq.true&select=id,fecha_creacion&order=fecha_creacion.desc&limit=300') || [];
+    const fechaBy = {}; reqs.forEach(function(r){ fechaBy[r.id] = (r.fecha_creacion || '').slice(0, 10); });
+    const ids = reqs.map(function(r){ return r.id; });
+    if (ids.length) {
+      const its = await apiAll('requerimiento_items?requerimiento_id=in.(' + ids.join(',') + ')&select=requerimiento_id,ingrediente_id,cantidad_pedida,unidad') || [];
+      const limite = _mfAddDays(hoyStr(), -60); const seen = {};
+      its.forEach(function(it){
+        const f = fechaBy[it.requerimiento_id]; if (!f || it.ingrediente_id == null) return;
+        if (!PED_HIST[it.ingrediente_id] || f > PED_HIST[it.ingrediente_id].fecha) PED_HIST[it.ingrediente_id] = { cantidad: it.cantidad_pedida, unidad: it.unidad, fecha: f };
+        if (f >= limite) { (seen[it.ingrediente_id] = seen[it.ingrediente_id] || {})[it.requerimiento_id] = 1; }
+      });
+      Object.keys(seen).forEach(function(k){ PED_FREQ[k] = Object.keys(seen[k]).length; });
+    }
+  } catch (e) { /* contexto best-effort */ }
+}
+function pedUltimaVezTxt(ingId) {
+  const h = PED_HIST[ingId]; if (!h || h.cantidad == null) return '';
+  return 'Última vez: ' + fmtCant(h.cantidad) + ' ' + (h.unidad || '') + ' · ' + pedFecha(h.fecha);
+}
 
 async function openMisPedidos() {
   if (!puedeGestionarPedidos()) { showDashboard(); return; }
@@ -10125,12 +10154,14 @@ function renderPedidos() {
   }).join('');
 }
 
-window.abrirNuevoPedido = function() {
+window.abrirNuevoPedido = async function() {
   const locs = pedLocalesPermitidos();
   if (!locs.length) return;
   PED_ACTUAL = { id: null, local: locs[0], estado: 'borrador', fecha_deseada: '', fecha_comprometida: '', observaciones_generales: '' };
   PED_ITEMS = [];
   showView('vPedidoEditor');
+  renderEditorPedido();
+  await cargarContextoPedido(PED_ACTUAL.local);
   renderEditorPedido();
 };
 window.abrirPedido = async function(id) {
@@ -10141,7 +10172,90 @@ window.abrirPedido = async function(id) {
     PED_ITEMS = await api('requerimiento_items?requerimiento_id=eq.' + id + '&select=*&order=orden.asc') || [];
     showView('vPedidoEditor');
     renderEditorPedido();
+    await cargarContextoPedido(PED_ACTUAL.local);
+    renderEditorPedido();
   } catch (e) { toast('Error al abrir el pedido: ' + ((e && e.message) || e), 'error'); }
+};
+window.pedCambioLocal = async function(local) {
+  PED_ACTUAL.local = local;
+  renderEditorPedido();
+  await cargarContextoPedido(local);
+  renderEditorPedido();
+};
+window.cargarMiLista = function() {
+  leerHeaderDesdeDOM(); leerItemsDesdeDOM();
+  if (!PED_LISTA_SET.length) { toast('Este local todav\u00eda no tiene lista de compra. Armala en \u201cListas de compra\u201d.', 'info'); return; }
+  const existentes = {}; PED_ITEMS.forEach(function(it){ if (it.ingrediente_id != null) existentes[it.ingrediente_id] = true; });
+  let n = 0;
+  PED_LISTA_SET.forEach(function(l){
+    if (existentes[l.ingrediente_id]) return;
+    const ing = PED_INSUMOS.find(function(x){ return x.id === l.ingrediente_id; }) || {};
+    const h = PED_HIST[l.ingrediente_id];
+    PED_ITEMS.push({ ingrediente_id: l.ingrediente_id, cantidad_pedida: '', unidad: l.unidad || (h && h.unidad) || ing.unidad || '', stock_actual: '', comentario_pedido: '' });
+    n++;
+  });
+  renderEditorPedido();
+  toast(n ? ('\u2713 ' + n + ' art\u00edculos de tu lista') : 'Ya ten\u00edas todos los de tu lista', 'success');
+};
+// ---- Listas de compra (gesti\u00f3n + sugerencias) ----
+let LC_LOCAL = '';
+window.openListaCompra = async function() {
+  if (!puedeGestionarPedidos()) { showDashboard(); return; }
+  showView('vListaCompra');
+  await cargarCatalogosPedidos();
+  const locs = pedLocalesPermitidos();
+  const sel = document.getElementById('lcLocal');
+  sel.innerHTML = locs.map(function(l){ return '<option value="' + esc(l) + '">' + esc(LOCAL_LABELS[l] || l) + '</option>'; }).join('');
+  LC_LOCAL = locs[0] || '';
+  document.getElementById('lcInsList').innerHTML = PED_INSUMOS.map(function(x){ return '<option value="' + esc(x.nombre) + '"></option>'; }).join('');
+  await lcCargar();
+};
+window.lcCambioLocal = async function(l){ LC_LOCAL = l; await lcCargar(); };
+async function lcCargar() {
+  const c = document.getElementById('lcCont'); if (c) c.innerHTML = '<div class="loading">Cargando...</div>';
+  await cargarContextoPedido(LC_LOCAL);
+  lcRender();
+}
+function lcRender() {
+  const cont = document.getElementById('lcCont'); if (!cont) return;
+  const enLista = {}; PED_LISTA_SET.forEach(function(l){ enLista[l.ingrediente_id] = l; });
+  const lim60 = _mfAddDays(hoyStr(), -60);
+  let html = '<div class="ped-section-title" style="margin-bottom:6px">Art\u00edculos de la lista (' + PED_LISTA_SET.length + ')</div>';
+  html += PED_LISTA_SET.length ? PED_LISTA_SET.map(function(l){
+    const h = PED_HIST[l.ingrediente_id]; const viejo = h && h.fecha < lim60;
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--c-cream-border)">' +
+      '<span style="min-width:0;font-size:13px"><b style="color:var(--c-cream)">' + esc(pedInsumoNombre(l.ingrediente_id)) + '</b>' +
+        (h ? '<span style="color:var(--c-sand);font-size:11px"> \u00b7 \u00falt. ' + pedFecha(h.fecha) + '</span>' : '<span style="color:#C87A2C;font-size:11px"> \u00b7 nunca pedido</span>') +
+        (viejo ? ' <span style="color:#C87A2C;font-size:11px">\u00b7 hace +60 d\u00edas</span>' : '') +
+      '</span>' +
+      '<button class="btn-ghost" style="flex:0 0 auto;padding:3px 7px;color:var(--c-error)" onclick="lcQuitar(' + l.id + ')"><i class="ti ti-trash"></i></button>' +
+    '</div>';
+  }).join('') : '<div class="empty-list">La lista est\u00e1 vac\u00eda. Agreg\u00e1 art\u00edculos abajo.</div>';
+  html += '<div style="margin-top:12px;display:flex;gap:8px"><input id="lcAddInput" list="lcInsList" placeholder="Busc\u00e1 un insumo\u2026" style="flex:1" autocomplete="off"><button class="btn-primary" style="padding:8px 14px" onclick="lcAgregarDesdeInput()">Agregar</button></div>';
+  const sug = Object.keys(PED_FREQ).filter(function(id){ return PED_FREQ[id] >= 2 && !enLista[id]; }).sort(function(a, b){ return PED_FREQ[b] - PED_FREQ[a]; });
+  if (sug.length) {
+    html += '<div class="ped-section-title" style="margin-top:16px;margin-bottom:4px">Sugerencias: lo ped\u00eds seguido y no est\u00e1 en tu lista</div>';
+    html += sug.slice(0, 20).map(function(id){ return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--c-cream-border)"><span style="font-size:13px;color:var(--c-cream)">' + esc(pedInsumoNombre(parseInt(id, 10))) + ' <span style="color:var(--c-sand);font-size:11px">\u00b7 ' + PED_FREQ[id] + ' pedidos (60d)</span></span><button class="btn-ghost" style="flex:0 0 auto;padding:3px 9px;font-size:12px;color:#3BA55D" onclick="lcAgregar(' + id + ')">+ Agregar</button></div>'; }).join('');
+  }
+  const viejos = PED_LISTA_SET.filter(function(l){ const h = PED_HIST[l.ingrediente_id]; return !h || h.fecha < lim60; });
+  if (viejos.length) html += '<div class="cierre-hint" style="margin-top:14px"><i class="ti ti-info-circle"></i> ' + viejos.length + ' art\u00edculo(s) de la lista hace +60 d\u00edas que no se piden (marcados arriba). Revisalos y quit\u00e1 los que ya no uses.</div>';
+  cont.innerHTML = html;
+}
+window.lcAgregar = async function(ingId) {
+  ingId = parseInt(ingId, 10);
+  const ing = PED_INSUMOS.find(function(x){ return x.id === ingId; }) || {};
+  try { await api('lista_compra', { method: 'POST', body: JSON.stringify({ local: LC_LOCAL, ingrediente_id: ingId, unidad: ing.unidad || null, orden: PED_LISTA_SET.length + 1, creado_por: currentUser ? currentUser.id : null }) }); await lcCargar(); }
+  catch (e) { toast('No se pudo agregar (\u00bfya est\u00e1 en la lista?)', 'error'); }
+};
+window.lcAgregarDesdeInput = function() {
+  const v = (document.getElementById('lcAddInput').value || '').trim().toLowerCase();
+  const ing = PED_INSUMOS.find(function(x){ return (x.nombre || '').toLowerCase() === v; });
+  if (!ing) { toast('Eleg\u00ed un insumo de la lista', 'error'); return; }
+  lcAgregar(ing.id);
+};
+window.lcQuitar = async function(id) {
+  try { await api('lista_compra?id=eq.' + id, { method: 'DELETE' }); await lcCargar(); }
+  catch (e) { toast('No se pudo quitar: ' + ((e && e.message) || e), 'error'); }
 };
 async function recargarPedidoActual() {
   const r = await api('requerimientos?id=eq.' + PED_ACTUAL.id + '&select=*');
@@ -10202,6 +10316,9 @@ window.pedSelInsumo = function(el) {
   if (hid) hid.value = el.dataset.id;
   if (srch) srch.value = el.dataset.nombre || '';
   if (opts) opts.style.display = 'none';
+  // Actualiza la línea "última vez" de este renglón
+  const item = wrap.closest('.ped-item'); const uvEl = item && item.querySelector('.ped-uv');
+  if (uvEl) { const uv = pedUltimaVezTxt(parseInt(el.dataset.id, 10)); uvEl.textContent = uv; uvEl.style.display = uv ? '' : 'none'; }
 };
 window.pedOcultarInsumos = function(input) {
   var wrap = input.closest('.ped-ins-wrap');
@@ -10214,9 +10331,11 @@ window.onFiltroHistorial = function() { /* pendiente: implementar carga/filtro d
 
 function renderItemPedido(it, i, editable, recepcion, completado) {
   if (editable) {
+    const uv = (it.ingrediente_id != null) ? pedUltimaVezTxt(it.ingrediente_id) : '';
     return '<div class="ped-item" data-idx="' + i + '">' +
       '<div class="ped-item-head">' + pedInsumoPicker(it, i) +
       '<button class="ped-item-del" onclick="quitarItemPedido(' + i + ')" aria-label="Quitar"><i class="ti ti-trash"></i></button></div>' +
+      '<div class="ped-uv" style="color:var(--c-sand);font-size:11px;margin:-2px 0 4px;' + (uv ? '' : 'display:none') + '">' + esc(uv) + '</div>' +
       '<div class="ped-item-row">' +
         '<input class="ped-stock" type="number" step="any" min="0" placeholder="Stock hoy (opc.)" value="' + (it.stock_actual != null ? it.stock_actual : '') + '">' +
         '<input class="ped-cant" type="number" step="any" min="0" placeholder="Cantidad a pedir" value="' + (it.cantidad_pedida != null ? it.cantidad_pedida : '') + '"></div>' +
@@ -10263,7 +10382,7 @@ function renderEditorPedido() {
   let html = '<div class="ped-section">';
   if (esNuevo) {
     const locs = pedLocalesPermitidos();
-    html += '<label class="field"><span class="field-label">Local</span><select id="pedLocal">' +
+    html += '<label class="field"><span class="field-label">Local</span><select id="pedLocal" onchange="pedCambioLocal(this.value)">' +
       locs.map(l => '<option value="' + esc(l) + '"' + (l === p.local ? ' selected' : '') + '>' + esc(LOCAL_LABELS[l] || l) + '</option>').join('') + '</select></label>';
   }
   const fd = p.fecha_deseada ? String(p.fecha_deseada).slice(0, 10) : '';
@@ -10284,7 +10403,10 @@ function renderEditorPedido() {
   html += '<div id="pedItems">';
   PED_ITEMS.forEach((it, i) => { html += renderItemPedido(it, i, editaItems, recepcion, completado); });
   html += '</div>';
-  if (editaItems) html += '<button class="btn-ghost" style="width:100%;margin-top:8px;" onclick="agregarItemPedido()"><i class="ti ti-plus"></i> Agregar insumo</button>';
+  if (editaItems) html += '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">' +
+    '<button class="btn-ghost" style="flex:1;min-width:150px" onclick="cargarMiLista()"><i class="ti ti-clipboard-list"></i> Cargar mi lista</button>' +
+    '<button class="btn-ghost" style="flex:1;min-width:150px" onclick="agregarItemPedido()"><i class="ti ti-plus"></i> Agregar insumo</button>' +
+  '</div>';
   html += '</div>';
 
   if (recepcion) html += '<div class="ped-recep-hint">“Guardar sin cerrar” guarda lo que recibiste y deja el pedido abierto para seguir cargando más tarde. “Cerrar pedido (recibido)” lo da por recibido y finalizado (ya no se edita).</div>';

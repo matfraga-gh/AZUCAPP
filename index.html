@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261103dg">
+<link rel="stylesheet" href="styles.css?v=20261104dh">
 </head>
 <body>
 
@@ -2514,8 +2514,25 @@
       </select>
     </div>
     <button class="btn-ghost" id="pedExportBtn" style="width:100%;margin-bottom:14px;" onclick="exportarPedidosExcel()"><i class="ti ti-file-spreadsheet"></i> Descargar confirmados (Excel)</button>
+    <button class="btn-ghost" style="width:100%;margin-bottom:10px;" onclick="openListaCompra()"><i class="ti ti-clipboard-list"></i> Listas de compra</button>
     <button class="btn-primary" id="pedNuevoBtn" style="width:100%;margin-bottom:14px;" onclick="abrirNuevoPedido()"><i class="ti ti-plus"></i> Nuevo pedido</button>
     <div id="pedidosLista"><div class="loading">Cargando...</div></div>
+  </div>
+</div>
+
+<div id="vListaCompra" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="openMisPedidos()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Listas de compra</div>
+        <div class="module-subtitle">Artículos recurrentes por local</div>
+      </div>
+    </div>
+    <div class="cierre-hint" style="margin-bottom:10px">Armá acá la lista de lo que el local compra habitualmente. Después, al crear un pedido, tocás “Cargar mi lista” y te aparecen todos para no olvidarte de nada.</div>
+    <label class="field"><span class="field-label">Local</span><select id="lcLocal" onchange="lcCambioLocal(this.value)"></select></label>
+    <datalist id="lcInsList"></datalist>
+    <div id="lcCont" style="margin-top:6px"><div class="loading">Cargando...</div></div>
   </div>
 </div>
 
@@ -2910,6 +2927,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261103dg"></script>
+<script src="app.js?v=20261104dh"></script>
 </body>
 </html>
