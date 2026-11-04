@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-04-DI | ULTIMA | Pedidos: VARIAS listas de compra con nombre por local (Verduleria, Bebidas...). Crear/editar/eliminar listas; agregar/quitar articulos; al pedir "Cargar lista" (elegis cual) trae los articulos; "Ultima vez" por articulo; sugerencias por frecuencia por lista. Requiere listas_compra_v2.sql (migra la version anterior). Antes: una sola lista por local ===== */
+/* ===== BUILD 2026-11-04-DJ | ULTIMA | Pedidos: boton "Elegir" para seleccionar que pedidos descargar a Excel (checkboxes en las tarjetas + "Descargar N seleccionados"); el boton general sigue bajando todos los confirmados. Antes: varias listas de compra con nombre por local ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -10000,6 +10000,7 @@ function pedFecha(x) { return x ? fmtFechaCorta(String(x).slice(0, 10)) : ''; }
 function fmtFechaHora(iso) { if (!iso) return ''; try { return new Date(iso).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }); } catch(e){ return ''; } }
 
 let PED_LOCAL_FILTRO = '', PED_ESTADO_FILTRO = '';
+let PED_SEL_MODE = false, PED_SELEC = {};
 let PED_LISTA = [], PED_INSUMOS = [], PED_UNIDADES = [];
 let PED_ACTUAL = null, PED_ITEMS = [];
 // Listas de compra + historial (última vez / frecuencia) del local en curso
@@ -10083,16 +10084,19 @@ async function cargarPedidos() {
     lista.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los pedidos.<br><span style="font-size:11px;opacity:.7">' + esc(String((e && e.message) || e)) + '</span></div>';
   }
 }
-window.exportarPedidosExcel = async function() {
+window.exportarPedidosExcel = async function(idsOverride) {
   try {
-    let q = 'requerimientos?activo=eq.true&estado=eq.confirmado&select=*&order=local.asc,fecha_comprometida.asc';
+    const sel = Array.isArray(idsOverride) && idsOverride.length;
+    let q = 'requerimientos?activo=eq.true&select=*&order=local.asc,fecha_comprometida.asc';
+    if (sel) q += '&id=in.(' + idsOverride.join(',') + ')';
+    else q += '&estado=eq.confirmado';
     const locs = pedLocalesPermitidos();
     if (!isMaster() && !isAdmin()) {
       if (!locs.length) { toast('No tenés locales asignados', 'error'); return; }
       q += '&local=in.(' + locs.map(encodeURIComponent).join(',') + ')';
     }
     const pedidos = await api(q) || [];
-    if (!pedidos.length) { toast('No hay pedidos confirmados para exportar', 'warning'); return; }
+    if (!pedidos.length) { toast(sel ? 'No se encontraron esos pedidos' : 'No hay pedidos confirmados para exportar', 'warning'); return; }
     await cargarCatalogosPedidos();  // asegura PED_INSUMOS para los nombres
     const ids = pedidos.map(function(p){ return p.id; });
     let items = [];
@@ -10124,17 +10128,27 @@ window.exportarPedidosExcel = async function() {
       if (!its.length) { filas.push(fila(p, null)); }
       else { its.forEach(function(it){ filas.push(fila(p, it)); }); }
     });
-    exportarAExcel('Pedidos_confirmados_AZUCA_' + hoyStr() + '.xlsx', [{ nombre: 'Pedidos confirmados', filas: filas }]);
-    toast('✓ Excel generado (' + pedidos.length + ' pedidos confirmados)', 'success');
+    exportarAExcel('Pedidos_AZUCA_' + hoyStr() + '.xlsx', [{ nombre: 'Pedidos', filas: filas }]);
+    toast('✓ Excel generado (' + pedidos.length + ' pedido' + (pedidos.length === 1 ? '' : 's') + ')', 'success');
   } catch (e) {
     toast('No se pudo exportar: ' + ((e && e.message) || e), 'error');
   }
 };
 
+window.pedToggleSelMode = function(){ PED_SEL_MODE = !PED_SEL_MODE; if (!PED_SEL_MODE) PED_SELEC = {}; renderPedidos(); };
+window.pedToggleSel = function(id){ if (PED_SELEC[id]) delete PED_SELEC[id]; else PED_SELEC[id] = true; renderPedidos(); };
 function renderPedidos() {
   const lista = document.getElementById('pedidosLista');
   if (!PED_LISTA.length) { lista.innerHTML = '<div class="empty-list">No hay pedidos con ese criterio.</div>'; return; }
-  lista.innerHTML = PED_LISTA.map(p => {
+  let head = '';
+  if (PED_SEL_MODE) {
+    const n = Object.keys(PED_SELEC).length;
+    head = '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">' +
+      '<button class="btn-primary" style="flex:1;padding:9px" ' + (n ? '' : 'disabled') + ' onclick="descargarPedidosSeleccionados()"><i class="ti ti-file-spreadsheet"></i> Descargar ' + n + ' seleccionado' + (n === 1 ? '' : 's') + '</button>' +
+      '<button class="btn-ghost" style="padding:9px 12px" onclick="pedToggleSelMode()">Cancelar</button>' +
+    '</div>';
+  }
+  lista.innerHTML = head + PED_LISTA.map(p => {
     const est = PED_ESTADOS[p.estado] || { label: p.estado || '\u2014', color: '#8A8278' };
     const partes = [];
     if (p.fecha_deseada) partes.push('Para ' + pedFecha(p.fecha_deseada));
@@ -10147,12 +10161,21 @@ function renderPedidos() {
       const extra = its.length > 5 ? (' +' + (its.length - 5) + ' m\u00e1s') : '';
       itemsHtml = '<div class="ped-card-items">' + names.join(' \u00b7 ') + extra + '</div>';
     }
-    return '<div class="ped-card" onclick="abrirPedido(' + p.id + ')">' +
-      '<div class="ped-card-top"><span class="ped-local">' + esc(LOCAL_LABELS[p.local] || p.local) + '</span>' +
+    const sel = !!PED_SELEC[p.id];
+    const onclick = PED_SEL_MODE ? ('pedToggleSel(' + p.id + ')') : ('abrirPedido(' + p.id + ')');
+    return '<div class="ped-card" onclick="' + onclick + '" style="' + (sel ? 'outline:2px solid var(--c-rust)' : '') + '">' +
+      '<div class="ped-card-top" style="align-items:center">' +
+      (PED_SEL_MODE ? '<input type="checkbox" ' + (sel ? 'checked' : '') + ' style="width:17px;height:17px;flex:0 0 auto;margin-right:8px" onclick="event.stopPropagation();pedToggleSel(' + p.id + ')">' : '') +
+      '<span class="ped-local" style="flex:1">' + esc(LOCAL_LABELS[p.local] || p.local) + '</span>' +
       '<span class="ped-estado" style="background:' + est.color + '22;color:' + est.color + '">' + esc(est.label) + '</span></div>' +
       '<div class="ped-card-sub">' + esc(sub) + '</div>' + itemsHtml + '</div>';
   }).join('');
 }
+window.descargarPedidosSeleccionados = function(){
+  const ids = Object.keys(PED_SELEC).map(function(x){ return parseInt(x, 10); });
+  if (!ids.length) { toast('Eleg\u00ed al menos un pedido', 'warning'); return; }
+  exportarPedidosExcel(ids);
+};
 
 window.abrirNuevoPedido = async function() {
   const locs = pedLocalesPermitidos();

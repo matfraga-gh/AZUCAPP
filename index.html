@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261104di">
+<link rel="stylesheet" href="styles.css?v=20261104dj">
 </head>
 <body>
 
@@ -2513,7 +2513,10 @@
         <option value="completado">Completado</option>
       </select>
     </div>
-    <button class="btn-ghost" id="pedExportBtn" style="width:100%;margin-bottom:14px;" onclick="exportarPedidosExcel()"><i class="ti ti-file-spreadsheet"></i> Descargar confirmados (Excel)</button>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button class="btn-ghost" id="pedExportBtn" style="flex:1" onclick="exportarPedidosExcel()"><i class="ti ti-file-spreadsheet"></i> Descargar confirmados</button>
+      <button class="btn-ghost" style="flex:0 0 auto;padding:10px 14px" onclick="pedToggleSelMode()" title="Elegir cuáles descargar"><i class="ti ti-checkbox"></i> Elegir</button>
+    </div>
     <button class="btn-ghost" style="width:100%;margin-bottom:10px;" onclick="openListaCompra()"><i class="ti ti-clipboard-list"></i> Listas de compra</button>
     <button class="btn-primary" id="pedNuevoBtn" style="width:100%;margin-bottom:14px;" onclick="abrirNuevoPedido()"><i class="ti ti-plus"></i> Nuevo pedido</button>
     <div id="pedidosLista"><div class="loading">Cargando...</div></div>
@@ -2942,6 +2945,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261104di"></script>
+<script src="app.js?v=20261104dj"></script>
 </body>
 </html>
