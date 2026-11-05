@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-05-DK | ULTIMA | Confirmado: el Panel de Resultados NO lee comprobantes/conciliacion (solo cierres + planilla), sigue igual durante las pruebas; comprobantes y conciliacion impactan solo en el Flujo de Fondos (egresos) con las ventas de cierres como ingresos. Ajuste de redaccion al aprobar comprobante simple (ya no dice "impacta en resultados"). Antes: seleccion de pedidos para Excel ===== */
+/* ===== BUILD 2026-11-05-DL | ULTIMA | Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -572,6 +572,15 @@ const MODULES = [
     desc: 'Extractos bancarios y billeteras',
     visible: () => isMaster() || isAdmin(),
     action: () => openConciliacion()
+  },
+  {
+    id: 'distribucion',
+    icon: 'ti-building-warehouse',
+    color: '#8A6D3B',
+    title: 'Distribución',
+    desc: 'Costo del depósito repartido por local',
+    visible: () => isMaster() || isAdmin(),
+    action: () => openDistribucion()
   },
   {
     id: 'misfinanzas',
@@ -10032,6 +10041,14 @@ function pedUltimaVezTxt(ingId) {
   const h = PED_HIST[ingId]; if (!h || h.cantidad == null) return '';
   return 'Última vez: ' + fmtCant(h.cantidad) + ' ' + (h.unidad || '') + ' · ' + pedFecha(h.fecha);
 }
+// Costo por unidad sugerido del artículo (último costo del envase / cantidad por presentación).
+function pedCostoSugerido(ingId) {
+  const ins = PED_INSUMOS.find(function(x){ return x.id === ingId; });
+  if (!ins) return '';
+  const c = parseFloat(ins.costo) || 0, cp = parseFloat(ins.cantidad_por_presentacion) || 1;
+  if (!c) return '';
+  return Math.round((c / cp) * 100) / 100;
+}
 
 async function openMisPedidos() {
   if (!puedeGestionarPedidos()) { showDashboard(); return; }
@@ -10323,6 +10340,51 @@ window.lcQuitarItem = async function(id) {
   try { await api('lista_compra_items?id=eq.' + id, { method: 'DELETE' }); await lcCargar(); }
   catch (e) { toast('No se pudo quitar: ' + ((e && e.message) || e), 'error'); }
 };
+// ---- Distribución valorizada por local (Depósito C1) ----
+let DIST_DATA = [];
+async function openDistribucion() {
+  if (!(isMaster() || isAdmin())) { showDashboard(); return; }
+  showView('vDistribucion');
+  await cargarCatalogosPedidos();
+  const hoy = hoyStr();
+  document.getElementById('distDesde').value = hoy.slice(0, 8) + '01';
+  document.getElementById('distHasta').value = hoy;
+  document.getElementById('distResultado').innerHTML = '<div class="empty-list">Elegí el período y tocá “Ver”.</div>';
+}
+window.openDistribucion = openDistribucion;
+window.distVer = async function() {
+  const desde = document.getElementById('distDesde').value, hasta = document.getElementById('distHasta').value;
+  const cont = document.getElementById('distResultado'); cont.innerHTML = '<div class="loading">Cargando...</div>';
+  try {
+    let q = 'requerimientos?activo=eq.true&estado=in.(confirmado,completado)&select=id,local,fecha_comprometida';
+    if (desde) q += '&fecha_comprometida=gte.' + desde;
+    if (hasta) q += '&fecha_comprometida=lte.' + hasta;
+    const reqs = await apiAll(q) || [];
+    const ids = reqs.map(function(r){ return r.id; }); const locBy = {}; reqs.forEach(function(r){ locBy[r.id] = r.local; });
+    let items = [];
+    if (ids.length) items = await apiAll('requerimiento_items?requerimiento_id=in.(' + ids.join(',') + ')&cantidad_recibida=not.is.null&select=requerimiento_id,ingrediente_id,cantidad_recibida,costo_unitario,unidad') || [];
+    DIST_DATA = items.map(function(it){ const cant = parseFloat(it.cantidad_recibida) || 0, costo = parseFloat(it.costo_unitario) || 0; return { local: locBy[it.requerimiento_id], ingrediente_id: it.ingrediente_id, cant: cant, costo: costo, unidad: it.unidad, valor: cant * costo }; });
+    renderDistribucion();
+  } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar.</div>'; }
+};
+function renderDistribucion() {
+  const cont = document.getElementById('distResultado');
+  if (!DIST_DATA.length) { cont.innerHTML = '<div class="empty-list">Sin recepciones valorizadas en el período. Se cuenta lo recibido en los pedidos (con costo cargado).</div>'; return; }
+  const porLocal = {}; DIST_DATA.forEach(function(d){ porLocal[d.local] = (porLocal[d.local] || 0) + d.valor; });
+  const total = DIST_DATA.reduce(function(s, d){ return s + d.valor; }, 0);
+  const sinCosto = DIST_DATA.filter(function(d){ return !d.costo; }).length;
+  let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:var(--c-cream)">Costo recibido por local</b><button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="descargarDistribucionExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button></div>';
+  html += Object.keys(porLocal).sort().map(function(l){ return '<div class="ped-card" style="padding:9px 12px;margin-bottom:6px;display:flex;justify-content:space-between;gap:8px"><span style="color:var(--c-cream);font-weight:600">' + esc(localLabel(l) || l) + '</span><span style="font-weight:800;color:var(--c-cream)">' + _money2(porLocal[l]) + '</span></div>'; }).join('');
+  html += '<div style="text-align:right;font-weight:800;margin-top:6px;color:var(--c-cream)">Total: ' + _money2(total) + '</div>';
+  if (sinCosto) html += '<div class="cierre-hint" style="margin-top:10px"><i class="ti ti-info-circle"></i> ' + sinCosto + ' renglón(es) recibidos sin costo cargado (no suman valor). Cargá el costo en la recepción del pedido o el costo del artículo en Insumos.</div>';
+  cont.innerHTML = html;
+}
+window.descargarDistribucionExcel = async function() {
+  try { await ensureXLSX(); } catch (e) { toast('No se pudo cargar el exportador de Excel', 'error'); return; }
+  if (!DIST_DATA.length) return;
+  const filas = DIST_DATA.map(function(d){ return { 'Local': localLabel(d.local) || d.local, 'Artículo': pedInsumoNombre(d.ingrediente_id), 'Cantidad recibida': d.cant, 'Unidad': d.unidad || '', 'Costo x unidad': Math.round(d.costo * 100) / 100, 'Valor': Math.round(d.valor * 100) / 100 }; });
+  exportarAExcel('Distribucion_valorizada_' + hoyStr() + '.xlsx', [{ nombre: 'Distribución', filas: filas }]);
+};
 async function recargarPedidoActual() {
   const r = await api('requerimientos?id=eq.' + PED_ACTUAL.id + '&select=*');
   if (r && r.length) PED_ACTUAL = r[0];
@@ -10422,6 +10484,9 @@ function renderItemPedido(it, i, editable, recepcion, completado) {
         '<input class="ped-recibido" type="number" step="any" min="0" placeholder="Recibido" value="' + recibido + '"' + dis + '>' +
         '<select class="ped-recep-estado"' + dis + '><option value="">\u2014 estado \u2014</option>' +
           recep.map(r => '<option value="' + r[0] + '"' + (er === r[0] ? ' selected' : '') + '>' + r[1] + '</option>').join('') + '</select></div>' +
+      '<div class="ped-item-row">' +
+        '<input class="ped-recep-costo" type="number" step="any" min="0" placeholder="Costo x unidad (valorizaci\u00f3n)" value="' + (it.costo_unitario != null ? it.costo_unitario : pedCostoSugerido(it.ingrediente_id)) + '"' + dis + '>' +
+        '<span style="font-size:11px;color:var(--c-sand);align-self:center">Valor = recibido \u00d7 costo</span></div>' +
       '<input class="ped-recep-coment" type="text" placeholder="Comentario recepci\u00f3n (opc.)" value="' + esc(it.comentario_recepcion || '') + '"' + dis + '>' +
       (it.recibido_en ? '<div style="font-size:11px;color:var(--c-muted);margin-top:6px">Estado actualizado: ' + fmtFechaHora(it.recibido_en) + '</div>' : '') +
       '</div>';
@@ -10646,8 +10711,11 @@ window.guardarRecepcion = async function(cerrar) {
         return;
       }
 
+      const costoEl = b.querySelector('.ped-recep-costo');
+      const costoVal = costoEl && costoEl.value !== '' ? (parseFloat(costoEl.value) || 0) : null;
       const patch = {
         cantidad_recibida: recibido,
+        costo_unitario: costoVal,
         comentario_recepcion: b.querySelector('.ped-recep-coment').value.trim() || null,
         recibido_en: (recibido != null || estadoVal) ? new Date().toISOString() : null
       };

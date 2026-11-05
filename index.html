@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261105dk">
+<link rel="stylesheet" href="styles.css?v=20261105dl">
 </head>
 <body>
 
@@ -2539,6 +2539,25 @@
   </div>
 </div>
 
+<div id="vDistribucion" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="showDashboard()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Distribución</div>
+        <div class="module-subtitle">Costo recibido por cada local</div>
+      </div>
+    </div>
+    <div class="cierre-hint" style="margin-bottom:10px">Muestra lo que cada local recibió en sus pedidos, valorizado al costo cargado en la recepción. Es el Costo de Mercadería que le corresponde a cada local (se arma en paralelo, no impacta el Panel todavía).</div>
+    <div style="display:flex;gap:8px">
+      <label class="field" style="flex:1"><span class="field-label">Desde</span><input type="date" id="distDesde"></label>
+      <label class="field" style="flex:1"><span class="field-label">Hasta</span><input type="date" id="distHasta"></label>
+    </div>
+    <button class="btn-primary" style="width:100%;margin:4px 0 12px" onclick="distVer()"><i class="ti ti-search"></i> Ver</button>
+    <div id="distResultado"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalCargarLista">
   <div class="modal-card cierre-card">
     <div class="modal-header">
@@ -2945,6 +2964,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261105dk"></script>
+<script src="app.js?v=20261105dl"></script>
 </body>
 </html>
