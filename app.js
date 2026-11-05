@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-04-DJ | ULTIMA | Pedidos: boton "Elegir" para seleccionar que pedidos descargar a Excel (checkboxes en las tarjetas + "Descargar N seleccionados"); el boton general sigue bajando todos los confirmados. Antes: varias listas de compra con nombre por local ===== */
+/* ===== BUILD 2026-11-05-DK | ULTIMA | Confirmado: el Panel de Resultados NO lee comprobantes/conciliacion (solo cierres + planilla), sigue igual durante las pruebas; comprobantes y conciliacion impactan solo en el Flujo de Fondos (egresos) con las ventas de cierres como ingresos. Ajuste de redaccion al aprobar comprobante simple (ya no dice "impacta en resultados"). Antes: seleccion de pedidos para Excel ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -6939,7 +6939,7 @@ window.aprobarComprobante = async function(id) {
   let ds = []; try { ds = await api('comprobante_distribuciones?comprobante_id=eq.' + id + '&select=local,cuenta_id') || []; } catch (e) {}
   const faltan = !ds.length || ds.some(function(d){ return !d.cuenta_id || !d.local; });
   if (faltan) { toast('Asigná local y cuenta antes de aprobar (editá el comprobante).', 'error'); return; }
-  const ok = await showConfirm({ title: 'Aprobar comprobante', msg: 'Se aprueba la imputación y el comprobante impacta en resultados. ¿Confirmás?', type: 'info', okLabel: 'Aprobar', cancelLabel: 'Cancelar' });
+  const ok = await showConfirm({ title: 'Aprobar comprobante', msg: 'Se aprueba la imputación (local + cuenta) del comprobante. ¿Confirmás?', type: 'info', okLabel: 'Aprobar', cancelLabel: 'Cancelar' });
   if (!ok) return;
   try { await api('comprobantes?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ estado: 'pago_completado', actualizado_en: new Date().toISOString() }) }); toast('✓ Aprobado', 'success'); await openComprobantes(); }
   catch (e) { toast('No se pudo: ' + ((e && e.message) || e), 'error'); }
