@@ -1,4 +1,5 @@
-/* ===== BUILD 2026-11-05-DL | ULTIMA | Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
+/* ===== BUILD 2026-11-10-DM | ULTIMA | Permiso "Proveedores" (editor_proveedores): se asigna en Admin -> Editores y permisos, y deja a Lauti cargar/editar el catalogo de proveedores sin ser admin (tile propio en su panel). Comprobantes: barra de busqueda por proveedor o numero (sobre los cargados). Requiere permiso_proveedores.sql. Antes: Deposito C1 ===== */
+/* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
 ============================================ */
@@ -545,6 +546,15 @@ const MODULES = [
     desc: 'Facturas y gastos (compras y pagos)',
     visible: () => isMaster() || isAdmin() || (currentUser && currentUser.editor_comprobantes),
     action: () => openComprobantes()
+  },
+  {
+    id: 'proveedores_ed',
+    icon: 'ti-truck',
+    color: '#C87A2C',
+    title: 'Proveedores',
+    desc: 'Catálogo de proveedores',
+    visible: () => (currentUser && currentUser.editor_proveedores) && !(isMaster() || isAdmin()),
+    action: () => openAdminProveedores()
   },
   {
     id: 'pagos',
@@ -4656,7 +4666,8 @@ const PERMISOS_DEF = [
   { key: 'editor_stock',      label: 'Stock',         icon: 'ti-clipboard-check', tipo: 'editor' },
   { key: 'editor_cierres',    label: 'Cierres de caja', icon: 'ti-cash-register', tipo: 'editor' },
   { key: 'editor_estadisticas', label: 'Estadísticas', icon: 'ti-chart-line',   tipo: 'editor' },
-  { key: 'editor_comprobantes', label: 'Comprobantes', icon: 'ti-file-invoice', tipo: 'editor' }
+  { key: 'editor_comprobantes', label: 'Comprobantes', icon: 'ti-file-invoice', tipo: 'editor' },
+  { key: 'editor_proveedores', label: 'Proveedores', icon: 'ti-truck', tipo: 'editor' }
 ];
 
 async function openAdminEditores() {
@@ -5617,8 +5628,9 @@ function _nombreCuenta(id) {
   return c.grupo + ' · ' + c.nombre;
 }
 let PROV_BUSCA_T = null;
+function puedeProveedores() { return isMaster() || isAdmin() || (currentUser && currentUser.editor_proveedores === true); }
 async function openAdminProveedores() {
-  if (!isMaster() && !isAdmin()) { showDashboard(); return; }
+  if (!puedeProveedores()) { showDashboard(); return; }
   showView('vProveedores');
   if (!PLAN_CUENTAS.length) { try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || []; } catch (e) {} }
   const s = document.getElementById('proveedorSearch'); if (s) s.value = '';
@@ -5724,7 +5736,7 @@ window.eliminarProveedor = async function(id) {
 // ============================================
 // COMPROBANTES (compras y pagos — captura)
 // ============================================
-let CMP_LISTA = [], CMP_EDIT_ID = null, CMP_ADJUNTO_PATH = null, CMP_DIST = [];
+let CMP_LISTA = [], CMP_EDIT_ID = null, CMP_ADJUNTO_PATH = null, CMP_DIST = [], CMP_Q = '';
 let CMP_PROVEEDORES = [], CMP_RAZONES = [], CMP_PROV_MAP = {};
 const CMP_TIPOS = ['Factura A', 'Factura B', 'Factura C', 'Nota de Crédito', 'Nota de Débito', 'Recibo', 'Remito valorizado', 'Impuesto / DDJJ', 'Remito', 'Otro'];
 // Comprobantes que son Nota de Crédito (restan: generan saldo a favor en la OP)
@@ -5956,11 +5968,21 @@ function _fmtMoneyStr(v){ const n = _parseMoney(v); return n ? ('$' + n.toLocale
 // Campos de texto de dinero: al entrar se muestran "en crudo" para editar; al salir se formatean.
 window.moneyFocus = function(el){ const n = _parseMoney(el.value); el.value = n ? String(n) : ''; };
 window.moneyBlur = function(el){ el.value = _fmtMoneyStr(el.value); };
+window.onBuscarComprobante = function(v){ CMP_Q = (v || '').trim().toLowerCase(); renderComprobantes(); };
 function renderComprobantes() {
   const cont = document.getElementById('comprobantesLista');
   if (!cont) return;
   if (!CMP_LISTA.length) { cont.innerHTML = '<div class="empty-list">No hay comprobantes cargados' + ((document.getElementById('cmpEstadoFiltro')||{}).value ? ' con ese estado' : '') + '.</div>'; return; }
-  cont.innerHTML = CMP_LISTA.map(function(c){
+  let lista = CMP_LISTA;
+  if (CMP_Q) {
+    lista = CMP_LISTA.filter(function(c){
+      const p = CMP_PROV_MAP[c.proveedor_id];
+      const hay = ((p && p.razon_social || '') + ' ' + (c.punto_venta || '') + ' ' + (c.numero || '')).toLowerCase();
+      return hay.indexOf(CMP_Q) >= 0;
+    });
+  }
+  if (!lista.length) { cont.innerHTML = '<div class="empty-list">No hay comprobantes que coincidan con “' + esc(CMP_Q) + '”.</div>'; return; }
+  cont.innerHTML = lista.map(function(c){
     const prov = CMP_PROV_MAP[c.proveedor_id];
     const est = CMP_ESTADOS[c.estado] || { label: c.estado || '—', color: '#888' };
     const nro = [c.punto_venta, c.numero].filter(Boolean).join('-');
