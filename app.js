@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-10-DM | ULTIMA | Permiso "Proveedores" (editor_proveedores): se asigna en Admin -> Editores y permisos, y deja a Lauti cargar/editar el catalogo de proveedores sin ser admin (tile propio en su panel). Comprobantes: barra de busqueda por proveedor o numero (sobre los cargados). Requiere permiso_proveedores.sql. Antes: Deposito C1 ===== */
+/* ===== BUILD 2026-11-10-DN | ULTIMA | Panel unificado (Plan de cuentas <-> Panel), en paralelo: nueva tabla resultado_cuenta + "Panel nuevo (pruebas)" en Admin (solo master) que lee el plan de cuentas en 3 niveles y valida contra el Panel actual mes x mes. No toca el Panel vigente. Requiere panel_unificado_1_base.sql y panel_unificado_2_migracion.sql. Antes: Permiso Proveedores + busqueda de comprobantes ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -3690,6 +3690,15 @@ const ADMIN_SECTIONS = [
     desc: 'Catálogo de proveedores (compras y pagos)',
     activa: true,
     action: () => openAdminProveedores()
+  },
+  {
+    id: 'panel_nuevo',
+    icon: 'ti-table-shortcut',
+    color: '#0E9AA7',
+    title: 'Panel nuevo (pruebas)',
+    desc: 'Validar el Panel unificado antes de reemplazar',
+    activa: true,
+    action: () => openPanelNuevo()
   },
   {
     id: 'historial',
@@ -11854,6 +11863,129 @@ function renderPanelResultados(agregado, locales, salesByLocal, resByLocal, objP
   html += '<div class="cierre-hint" style="margin-top:12px"><i class="ti ti-info-circle"></i> El % de CM es sobre las ventas con mercadería (Resto + Mostrador + Eventos + Especiales). El % de CB, CL, GO, GA y EBITDA es sobre las Ventas Netas totales (que además suman Dif. facturación mínima y Apoyo comercial). Resto, Mostrador, Eventos y Especiales salen de los cierres; Dif. facturación mínima y Apoyo comercial se cargan en la planilla de resultados.</div>';
   body.innerHTML = html;
 }
+
+// ============ PANEL NUEVO (en pruebas) — lee resultado_cuenta + plan de cuentas ============
+let PN_LOCAL = '', PN_MES = '';
+async function openPanelNuevo() {
+  if (!isMaster() && !isAdmin()) { showDashboard(); return; }
+  showView('vPanelNuevo');
+  try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || PLAN_CUENTAS; } catch (e) {}
+  const selM = document.getElementById('pnMes');
+  const hoy = new Date(); const ops = [];
+  for (let i = 0; i < 24; i++) { const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1); const val = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); if (val < MES_MIN) break; ops.push('<option value="' + val + '">' + MESES_CORTO[d.getMonth()] + ' ' + d.getFullYear() + '</option>'); }
+  selM.innerHTML = ops.join(''); PN_MES = selM.value;
+  const locs = _goLocales();
+  const selL = document.getElementById('pnLocal');
+  selL.innerHTML = '<option value="__ALL__">Todos (consolidado)</option>' + locs.map(function(l){ return '<option value="' + esc(l) + '">' + esc(localLabel(l)) + '</option>'; }).join('');
+  PN_LOCAL = selL.value;
+  document.getElementById('pnValid').innerHTML = '';
+  renderPanelNuevo();
+}
+window.openPanelNuevo = openPanelNuevo;
+
+async function _pnData(locales, mes) {
+  const locFilter = 'local=in.(' + locales.map(encodeURIComponent).join(',') + ')';
+  const rows = await api('resultado_cuenta?' + locFilter + '&mes=eq.' + mes + '&select=cuenta_id,monto') || [];
+  const byCuenta = {}; rows.forEach(function(r){ byCuenta[r.cuenta_id] = (byCuenta[r.cuenta_id] || 0) + (parseFloat(r.monto) || 0); });
+  const rr = _pvRango(mes);
+  const cier = await api('cierres_caja?' + locFilter + '&fecha=gte.' + rr.desde + '&fecha=lte.' + rr.hasta + '&select=*') || [];
+  const cierByL = {}; cier.forEach(function(c){ (cierByL[c.local] = cierByL[c.local] || []).push(c); });
+  let resto = 0, most = 0, eventos = 0, especiales = 0;
+  locales.forEach(function(l){ const comp = _vnComp(cierByL[l] || []); resto += comp.resto || 0; most += comp.most || 0; eventos += comp.eventos || 0; especiales += comp.especiales || 0; });
+  return { byCuenta: byCuenta, resto: resto, most: most, eventos: eventos, especiales: especiales };
+}
+function _pnSubsByParent() { const o = {}; PLAN_CUENTAS.forEach(function(c){ if (c.parent_id) (o[c.parent_id] = o[c.parent_id] || []).push(c); }); return o; }
+function _pnTotales(d) {
+  const subs = _pnSubsByParent();
+  const cuentaTotal = function(c){ let t = d.byCuenta[c.id] || 0; (subs[c.id] || []).forEach(function(s){ t += d.byCuenta[s.id] || 0; }); return t; };
+  const grp = function(g){ return PLAN_CUENTAS.filter(function(c){ return c.grupo === g && !c.parent_id && !c.es_automatica; }).reduce(function(s, c){ return s + cuentaTotal(c); }, 0); };
+  const CM = grp('CM'), CL = grp('CL'), GO = grp('GO'), GA = grp('GA');
+  const vnCargables = grp('VN');
+  const VN_CM = d.resto + d.most + d.eventos + d.especiales;
+  const VN = VN_CM + vnCargables;
+  const CB = VN - CM;
+  return { VN: VN, VN_CM: VN_CM, CM: CM, CB: CB, CL: CL, GO: GO, GA: GA, EBITDA: CB - CL - GO - GA };
+}
+function _pnTotalesViejo(resRows, d) {
+  const sum = function(f){ return resRows.reduce(function(s, r){ return s + (parseFloat(r[f]) || 0); }, 0); };
+  const CM = sum('cm_alimentos') + sum('cm_bebidas') + sum('cm_otros');
+  const CL = sum('cl_sueldos_adic') + sum('cl_931');
+  let GO = 0; RES_GO_SUBS.forEach(function(p){ GO += sum(p[0]); });
+  const GA = sum('ga');
+  const vnCargables = sum('vn_dif_fact') + sum('vn_apoyo');
+  const VN_CM = d.resto + d.most + d.eventos + d.especiales;
+  const VN = VN_CM + vnCargables;
+  const CB = VN - CM;
+  return { VN: VN, VN_CM: VN_CM, CM: CM, CB: CB, CL: CL, GO: GO, GA: GA, EBITDA: CB - CL - GO - GA };
+}
+window.renderPanelNuevo = async function() {
+  const body = document.getElementById('pnBody');
+  const sL = document.getElementById('pnLocal'); PN_LOCAL = sL ? sL.value : '__ALL__';
+  const sM = document.getElementById('pnMes'); PN_MES = sM ? sM.value : PN_MES;
+  body.innerHTML = '<div class="loading">Cargando...</div>';
+  try {
+    const locales = (PN_LOCAL === '__ALL__') ? _goLocales() : [PN_LOCAL];
+    const d = await _pnData(locales, PN_MES);
+    const t = _pnTotales(d);
+    const subs = _pnSubsByParent();
+    const cuentaTotal = function(c){ let v = d.byCuenta[c.id] || 0; (subs[c.id] || []).forEach(function(s){ v += d.byCuenta[s.id] || 0; }); return v; };
+    const m = function(v){ return _pvMoney(Math.round(v || 0)); };
+    const COL = { VN: '#2E7D32', CM: '#C77DAE', CL: '#C87A2C', GO: '#2D7FC4', GA: '#6FA8DC' };
+    const gtotByG = { VN: t.VN, CM: t.CM, CL: t.CL, GO: t.GO, GA: t.GA };
+    let html = '';
+    ['VN', 'CM', 'CL', 'GO', 'GA'].forEach(function(g){
+      html += '<div style="background:' + COL[g] + ';color:#fff;font-weight:700;padding:7px 10px;border-radius:6px;margin-top:10px;display:flex"><span style="flex:1">' + g + '</span><span>' + m(gtotByG[g]) + '</span></div>';
+      PLAN_CUENTAS.filter(function(c){ return c.grupo === g && !c.parent_id; }).forEach(function(c){
+        let ctot;
+        if (c.es_automatica) { ctot = (c.codigo === 'vn_resto') ? d.resto : (c.codigo === 'vn_mye') ? (d.most + d.eventos + d.especiales) : (d.byCuenta[c.id] || 0); }
+        else ctot = cuentaTotal(c);
+        const inact = (c.activo === false);
+        if (inact && Math.abs(ctot) < 1) return;
+        html += '<div style="display:flex;padding:5px 10px 5px 14px;border-bottom:1px solid var(--c-cream-border);color:var(--c-cream);font-size:13px"><span style="flex:1">' + esc(c.nombre) + (c.es_automatica ? ' <span style="opacity:.5;font-size:10px">(auto)</span>' : '') + (inact ? ' <span style="opacity:.5;font-size:10px">(inactiva)</span>' : '') + '</span><span>' + m(ctot) + '</span></div>';
+        (subs[c.id] || []).forEach(function(s){
+          const stot = d.byCuenta[s.id] || 0; if (s.activo === false && Math.abs(stot) < 1) return;
+          html += '<div style="display:flex;padding:3px 10px 3px 30px;border-bottom:1px solid var(--c-cream-border);color:var(--c-cream);opacity:.8;font-size:12px"><span style="flex:1">↳ ' + esc(s.nombre) + '</span><span>' + m(stot) + '</span></div>';
+        });
+      });
+    });
+    html += '<div style="background:#0E9AA7;color:#fff;font-weight:700;padding:7px 10px;border-radius:6px;margin-top:10px;display:flex"><span style="flex:1">CB · Contribución Bruta (VN − CM)</span><span>' + m(t.CB) + '</span></div>';
+    html += '<div style="background:#E8C400;color:#1a1a1a;font-weight:700;padding:7px 10px;border-radius:6px;margin-top:8px;display:flex"><span style="flex:1">EBITDA</span><span>' + m(t.EBITDA) + '</span></div>';
+    body.innerHTML = html;
+  } catch (e) { body.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudo cargar: ' + ((e && e.message) || e) + '</div>'; }
+};
+window.validarPanelNuevo = async function() {
+  const box = document.getElementById('pnValid');
+  box.innerHTML = '<div class="loading">Comparando todos los meses y locales...</div>';
+  try {
+    const locs = _goLocales();
+    const resAll = await apiAll('resultados_mensuales?select=*') || [];
+    const mesesSet = {}; resAll.forEach(function(r){ mesesSet[r.mes] = 1; });
+    const mesesArr = Object.keys(mesesSet).sort();
+    const resByLM = {}; resAll.forEach(function(r){ resByLM[r.local + '|' + r.mes] = r; });
+    const keys = ['VN', 'CM', 'CL', 'GO', 'GA', 'EBITDA'];
+    const difs = [];
+    for (let mi = 0; mi < mesesArr.length; mi++) {
+      const mes = mesesArr[mi];
+      for (let li = 0; li < locs.length; li++) {
+        const l = locs[li];
+        const d = await _pnData([l], mes);
+        const nuevo = _pnTotales(d);
+        const rr = resByLM[l + '|' + mes];
+        const viejo = _pnTotalesViejo(rr ? [rr] : [], d);
+        keys.forEach(function(k){ if (Math.abs((nuevo[k] || 0) - (viejo[k] || 0)) > 1) difs.push({ mes: mes, local: l, campo: k, viejo: viejo[k], nuevo: nuevo[k] }); });
+      }
+    }
+    if (!difs.length) {
+      box.innerHTML = '<div style="background:#2E7D32;color:#fff;padding:10px 12px;border-radius:7px;font-weight:700"><i class="ti ti-circle-check"></i> Coinciden al peso. ' + mesesArr.length + ' meses × ' + locs.length + ' locales comparados. El Panel nuevo da los mismos números que el actual.</div>';
+      return;
+    }
+    let h = '<div style="background:var(--c-error);color:#fff;padding:10px 12px;border-radius:7px;font-weight:700;margin-bottom:8px"><i class="ti ti-alert-triangle"></i> ' + difs.length + ' diferencia(s). Columnas: mes · local · rubro · Panel actual · Panel nuevo</div>';
+    h += '<div style="max-height:300px;overflow:auto;border:1px solid var(--c-cream-border);border-radius:7px">';
+    difs.slice(0, 300).forEach(function(x){ h += '<div style="display:flex;gap:6px;padding:5px 10px;border-bottom:1px solid var(--c-cream-border);font-size:12px"><span style="flex:0 0 64px">' + x.mes + '</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(localLabel(x.local)) + '</span><span style="flex:0 0 54px">' + x.campo + '</span><span style="flex:0 0 96px;text-align:right">' + _pvMoney(Math.round(x.viejo || 0)) + '</span><span style="flex:0 0 96px;text-align:right;font-weight:700">' + _pvMoney(Math.round(x.nuevo || 0)) + '</span></div>'; });
+    h += '</div>';
+    box.innerHTML = h;
+  } catch (e) { box.innerHTML = '<div class="empty-list" style="color:var(--c-error)">Error al validar: ' + ((e && e.message) || e) + '</div>'; }
+};
 
 // ---- Objetivo del mes (solo admin) ----
 let OBJ_LOCAL = '', OBJ_MES = '';

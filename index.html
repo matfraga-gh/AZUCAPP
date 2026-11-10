@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261110dm">
+<link rel="stylesheet" href="styles.css?v=20261110dn">
 </head>
 <body>
 
@@ -1843,6 +1843,25 @@
   </div>
 </div>
 
+<div id="vPanelNuevo" class="view">
+  <div class="module-wrap">
+    <div class="module-header">
+      <button class="btn-back" onclick="openAdministracion()" aria-label="Volver"><i class="ti ti-arrow-left"></i></button>
+      <div class="module-title-block">
+        <div class="module-title">Panel nuevo (pruebas)</div>
+        <div class="module-subtitle">Lee el plan de cuentas (3 niveles). Validá contra el Panel actual antes de reemplazar.</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <select id="pnLocal" style="flex:1;min-width:150px;padding:8px 10px;border:1px solid var(--c-cream-border);border-radius:7px;background:var(--c-card);color:var(--c-cream)" onchange="renderPanelNuevo()"></select>
+      <select id="pnMes" style="flex:0 0 130px;padding:8px 10px;border:1px solid var(--c-cream-border);border-radius:7px;background:var(--c-card);color:var(--c-cream)" onchange="renderPanelNuevo()"></select>
+      <button class="btn-primary" style="flex:0 0 auto" onclick="validarPanelNuevo()"><i class="ti ti-checks"></i> Validar todo</button>
+    </div>
+    <div id="pnValid" style="margin-bottom:10px"></div>
+    <div id="pnBody"><div class="loading">Cargando...</div></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalPlanCuenta">
   <div class="modal-card cierre-card">
     <div class="modal-header">
@@ -2965,6 +2984,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261110dm"></script>
+<script src="app.js?v=20261110dn"></script>
 </body>
 </html>
