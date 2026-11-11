@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-10-DO | ULTIMA | Panel unificado ACTIVADO: el Panel de Resultados lee resultado_cuenta (plan de cuentas, 3 niveles grupo>cuenta>subcuenta) y la planilla de resultados se genera/guarda por cuenta. VN Resto y Mostrador/Eventos/Especiales siguen saliendo de los cierres. Requiere panel_unificado_1_base.sql + panel_unificado_2_migracion.sql corridos. "Panel nuevo (pruebas)" queda como validador de meses historicos. Antes: Panel unificado en paralelo (validacion) ===== */
+/* ===== BUILD 2026-11-11-DP | ULTIMA | Anular comprobante con pago: el boton de borrar ahora limpia de forma segura (saca el comprobante de su orden de pago y recalcula el total, borra la OP si queda vacia, des-concilia el movimiento bancario) antes de eliminar. No requiere SQL. Antes: Panel unificado ACTIVADO (lee resultado_cuenta, 3 niveles; planilla por cuenta; requiere panel_unificado_1_base.sql + _2_migracion.sql) ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -6012,7 +6012,7 @@ function renderComprobantes() {
           (c.estado === 'aprobacion_pendiente' && (isMaster() || isAdmin()) ? '<button class="btn-ghost" style="padding:3px 7px;color:#3BA55D" title="Aprobar" onclick="aprobarComprobante(' + c.id + ')"><i class="ti ti-check"></i></button>' : '') +
           (c.adjunto_path ? '<button class="btn-ghost" style="padding:3px 7px" title="Ver PDF" onclick="cmpVerAdjunto(\'' + esc(c.adjunto_path) + '\')"><i class="ti ti-file-text"></i></button>' : '') +
           '<button class="btn-ghost" style="padding:3px 7px" onclick="abrirEditarComprobante(' + c.id + ')"><i class="ti ti-pencil"></i></button>' +
-          '<button class="btn-ghost" style="padding:3px 7px;color:var(--c-error)" onclick="eliminarComprobante(' + c.id + ')"><i class="ti ti-trash"></i></button>' +
+          '<button class="btn-ghost" style="padding:3px 7px;color:var(--c-error)" title="Anular" onclick="eliminarComprobante(' + c.id + ')"><i class="ti ti-trash"></i></button>' +
         '</span>' +
       '</div>' +
       '<div style="font-size:11px;color:var(--c-sand);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(c.tipo || '') + (nro ? ' · ' + esc(nro) : '') + '</div>' +
@@ -6259,10 +6259,44 @@ window.guardarComprobante = async function() {
 };
 window.eliminarComprobante = async function(id) {
   if (!(isMaster() || isAdmin())) return;
-  const ok = await showConfirm({ title: 'Eliminar comprobante', msg: 'Se va a eliminar el comprobante y su distribución. ¿Confirmás?', type: 'warning', okLabel: 'Sí, eliminar', cancelLabel: 'Cancelar' });
+  // Detectar dependencias (orden de pago y conciliación) para avisar y limpiar de forma segura.
+  let ocs = [];
+  try { ocs = await api('orden_pago_comprobantes?comprobante_id=eq.' + id + '&select=orden_pago_id,importe_saldado') || []; } catch (e) {}
+  const opIds = Array.from(new Set(ocs.map(function(o){ return o.orden_pago_id; }).filter(function(x){ return x != null; })));
+  let movs = [];
+  try { movs = movs.concat(await api('movimientos_bancarios?comprobante_id=eq.' + id + '&select=id') || []); } catch (e) {}
+  if (opIds.length) { try { movs = movs.concat(await api('movimientos_bancarios?orden_pago_id=in.(' + opIds.join(',') + ')&select=id') || []); } catch (e) {} }
+  const hayPago = opIds.length > 0, hayConc = movs.length > 0;
+  let msg = 'Se va a eliminar el comprobante y su distribución. ¿Confirmás?';
+  if (hayPago || hayConc) {
+    msg = 'Este comprobante tiene un pago asociado. Al anularlo se lo saca de su orden de pago (si la OP queda vacía, se elimina)';
+    if (hayConc) msg += ', se vuelve a dejar pendiente el movimiento bancario conciliado';
+    msg += ', y se borra el comprobante y su distribución. Esto no se puede deshacer. ¿Confirmás?';
+  }
+  const ok = await showConfirm({ title: 'Anular comprobante', msg: msg, type: 'warning', okLabel: 'Sí, anular', cancelLabel: 'Cancelar' });
   if (!ok) return;
-  try { await api('comprobantes?id=eq.' + id, { method: 'DELETE' }); toast('✓ Eliminado', 'success'); await openComprobantes(); }
-  catch (e) { toast('No se pudo eliminar: ' + ((e && e.message) || e), 'error'); }
+  try {
+    if (opIds.length) {
+      await api('orden_pago_comprobantes?comprobante_id=eq.' + id, { method: 'DELETE' });
+      for (let i = 0; i < opIds.length; i++) {
+        const opId = opIds[i];
+        const rest = await api('orden_pago_comprobantes?orden_pago_id=eq.' + opId + '&select=importe_saldado') || [];
+        if (!rest.length) {
+          try { await api('movimientos_bancarios?orden_pago_id=eq.' + opId, { method: 'PATCH', body: JSON.stringify({ orden_pago_id: null, estado: 'pendiente', nota: null }) }); } catch (e) {}
+          try { await api('orden_pago_medios?orden_pago_id=eq.' + opId, { method: 'DELETE' }); } catch (e) {}
+          try { await api('ordenes_pago?id=eq.' + opId, { method: 'DELETE' }); } catch (e) {}
+        } else {
+          const nuevoTotal = rest.reduce(function(s, r){ return s + (parseFloat(r.importe_saldado) || 0); }, 0);
+          try { await api('ordenes_pago?id=eq.' + opId, { method: 'PATCH', body: JSON.stringify({ total: nuevoTotal }) }); } catch (e) {}
+        }
+      }
+    }
+    try { await api('movimientos_bancarios?comprobante_id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ comprobante_id: null, estado: 'pendiente' }) }); } catch (e) {}
+    await api('comprobante_distribuciones?comprobante_id=eq.' + id, { method: 'DELETE' });
+    await api('comprobantes?id=eq.' + id, { method: 'DELETE' });
+    toast('✓ Comprobante anulado', 'success');
+    await openComprobantes();
+  } catch (e) { toast('No se pudo anular: ' + ((e && e.message) || e), 'error'); }
 };
 
 // ============================================
