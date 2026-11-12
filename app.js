@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-12-DW | ULTIMA | El modal de carga de comprobante ya NO se cierra al clickear afuera ni con Escape (data-prevent-close): solo con la X o Cancelar, para no perder la carga (pedido de Lauti). No requiere SQL. Antes: USD parte 2 (TC al pagar) + bloqueo duplicados reforzado + orden por emision ===== */
+/* ===== BUILD 2026-11-12-DX | ULTIMA | Fix: el modal de comprobante seguia cerrandose al clickear afuera porque habia un SEGUNDO handler de cierre (por overlay) que no miraba data-prevent-close; ahora tambien lo respeta. El modal solo se cierra con X o Cancelar. No requiere SQL. Importante: GitHub cachea el index 10 min; hacer refresco forzado (Ctrl+Shift+R). Antes: data-prevent-close parcial (DW) ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -7955,6 +7955,8 @@ window.showChangePass = function() {
 document.querySelectorAll('.modal-overlay').forEach(ov => {
   ov.addEventListener('click', (e) => {
     if (e.target === ov) {
+      const card = ov.querySelector('.modal-card');
+      if (card && card.hasAttribute('data-prevent-close')) return;
       ov.classList.remove('show');
     }
   });
