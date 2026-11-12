@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261112dz">
+<link rel="stylesheet" href="styles.css?v=20261112ea">
 </head>
 <body>
 
@@ -1706,9 +1706,10 @@
     <div class="stock-tabs" id="pvTabs">
       <button type="button" class="stock-tab active" data-pvtab="ventas" onclick="setPvTab('ventas')">Panel de Ventas</button>
       <button type="button" class="stock-tab" id="pvTabResultados" data-pvtab="resultados" onclick="setPvTab('resultados')">Panel de Resultados</button>
+      <button type="button" class="stock-tab" id="pvTabFiscal" data-pvtab="fiscal" onclick="setPvTab('fiscal')" style="display:none">Panel Fiscal</button>
     </div>
     <button type="button" class="btn-ghost" id="pvGestionBtn" onclick="abrirGestionEst()" style="display:none;margin-bottom:12px"><i class="ti ti-settings"></i> Gestión de estadísticas</button>
-    <div class="est-filtros">
+    <div class="est-filtros" id="pvFiltros">
       <label class="field" id="pvLocalWrap" style="flex:1;min-width:0"><span class="field-label">Local</span>
         <select id="pvLocal" onchange="onFiltroPanel()"></select>
       </label>
@@ -3001,6 +3002,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261112dz"></script>
+<script src="app.js?v=20261112ea"></script>
 </body>
 </html>
