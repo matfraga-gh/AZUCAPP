@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-12-EC | ULTIMA | Panel Fiscal: ocultar el boton "Gestion de estadisticas" en la pestana Fiscal (no corresponde ahi). Guardar persiste la carga manual. No requiere SQL. Antes: Panel Fiscal con selector de sociedad + Bajar Excel ===== */
+/* ===== BUILD 2026-11-12-ED | ULTIMA | Grupo "Otros Egresos" (fuera del P&L): conceptos pos-EBITDA (prestamos, impuestos, inversiones, retiros de socios) que se imputan a comprobantes, impactan el Flujo pero NO el Panel. Reutiliza el grupo interno SOCIOS (confidencial, sin local). Se renombra "Cta Cte Socios" grupo->"Otros Egresos". Requiere otros_egresos.sql. Antes: Panel Fiscal (ocultar Gestion de estadisticas) ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -5501,8 +5501,10 @@ const PC_GRUPOS = [
   ['CL', 'CL · Costo Laboral', '#C87A2C'],
   ['GO', 'GO · Gastos Operativos', '#2D7FC4'],
   ['GA', 'GA · Gastos Azuca', '#6FA8DC'],
-  ['SOCIOS', 'Cta Cte Socios (fuera del P&L)', '#8A6D3B']
+  ['SOCIOS', 'Otros Egresos (fuera del P&L)', '#8A6D3B']
 ];
+// Prefijo corto para mostrar el grupo en los desplegables de cuenta (el código interno sigue siendo SOCIOS).
+const PC_GRUPO_PREFIJO = { VN: 'VN', CM: 'CM', CL: 'CL', GO: 'GO', GA: 'GA', SOCIOS: 'Otros Egr.' };
 async function openAdminPlanCuentas() {
   if (!isMaster() && !isAdmin()) { showDashboard(); return; }
   showView('vPlanCuentas');
@@ -5621,19 +5623,20 @@ function _cuentaOptionsHTML(selectedId, placeholder) {
   PLAN_CUENTAS.forEach(function(c){ if (c.parent_id) (porParent[c.parent_id] = porParent[c.parent_id] || []).push(c); });
   let html = '<option value="">' + (placeholder || '— Sin cuenta por defecto —') + '</option>';
   grupos.forEach(function(g){
+    const gp = PC_GRUPO_PREFIJO[g] || g;
     PLAN_CUENTAS.filter(function(c){ return c.grupo === g && !c.parent_id; }).sort(function(a,b){ return (a.orden||0)-(b.orden||0); }).forEach(function(c){
       const hijos = (porParent[c.id] || []).slice().sort(function(a,b){ return (a.orden||0)-(b.orden||0); });
       if (hijos.length) {
         // Cuenta con subcuentas: el rubro genérico NO es elegible; solo las subcuentas.
-        html += '<optgroup label="' + esc(g + ' · ' + c.nombre) + '">';
+        html += '<optgroup label="' + esc(gp + ' · ' + c.nombre) + '">';
         hijos.forEach(function(s){
           const sel2 = String(s.id) === String(selectedId) ? ' selected' : '';
-          html += '<option value="' + s.id + '"' + sel2 + '>' + esc(g + ' · ' + c.nombre + ' › ' + s.nombre) + '</option>';
+          html += '<option value="' + s.id + '"' + sel2 + '>' + esc(gp + ' · ' + c.nombre + ' › ' + s.nombre) + '</option>';
         });
         html += '</optgroup>';
       } else {
         const sel = String(c.id) === String(selectedId) ? ' selected' : '';
-        html += '<option value="' + c.id + '"' + sel + '>' + esc(g + ' · ' + c.nombre) + '</option>';
+        html += '<option value="' + c.id + '"' + sel + '>' + esc(gp + ' · ' + c.nombre) + '</option>';
       }
     });
   });
@@ -5642,8 +5645,9 @@ function _cuentaOptionsHTML(selectedId, placeholder) {
 function _nombreCuenta(id) {
   const c = PLAN_CUENTAS.find(function(x){ return String(x.id) === String(id); });
   if (!c) return '';
-  if (c.parent_id) { const p = PLAN_CUENTAS.find(function(x){ return x.id === c.parent_id; }); return c.grupo + ' · ' + (p ? p.nombre + ' › ' : '') + c.nombre; }
-  return c.grupo + ' · ' + c.nombre;
+  const gp = PC_GRUPO_PREFIJO[c.grupo] || c.grupo;
+  if (c.parent_id) { const p = PLAN_CUENTAS.find(function(x){ return x.id === c.parent_id; }); return gp + ' · ' + (p ? p.nombre + ' › ' : '') + c.nombre; }
+  return gp + ' · ' + c.nombre;
 }
 let PROV_BUSCA_T = null;
 function puedeProveedores() { return isMaster() || isAdmin() || (currentUser && currentUser.editor_proveedores === true); }
@@ -6299,8 +6303,8 @@ window.guardarComprobante = async function() {
   const _socioIds = PLAN_CUENTAS.filter(function(c){ return c.grupo === 'SOCIOS'; }).map(function(c){ return c.id; });
   for (let i = 0; i < dist.length; i++) {
     if (!dist[i].cuenta_id) { err.textContent = 'Cada línea necesita una cuenta.'; return; }
-    // Cta Cte Socios no lleva local (es un retiro de socio); el resto sí.
-    if (!dist[i].local && _socioIds.indexOf(dist[i].cuenta_id) < 0) { err.textContent = 'Cada línea (salvo Cta Cte Socios) necesita un local.'; return; }
+    // Otros Egresos (fuera del P&L) no lleva local; el resto sí.
+    if (!dist[i].local && _socioIds.indexOf(dist[i].cuenta_id) < 0) { err.textContent = 'Cada línea (salvo Otros Egresos) necesita un local.'; return; }
   }
   const num = function(id){ return _parseMoney(document.getElementById(id).value); };
   const rec = {
