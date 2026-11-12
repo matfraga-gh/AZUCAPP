@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-12-ED | ULTIMA | Grupo "Otros Egresos" (fuera del P&L): conceptos pos-EBITDA (prestamos, impuestos, inversiones, retiros de socios) que se imputan a comprobantes, impactan el Flujo pero NO el Panel. Reutiliza el grupo interno SOCIOS (confidencial, sin local). Se renombra "Cta Cte Socios" grupo->"Otros Egresos". Requiere otros_egresos.sql. Antes: Panel Fiscal (ocultar Gestion de estadisticas) ===== */
+/* ===== BUILD 2026-11-12-EE | ULTIMA | Firma del responsable: un comprobante cargado sin firma de un autorizado queda en estado "Sin firma" (previo al pago, NO aparece en Pagos). Desde Comprobantes se puede Firmar (pasa a Pendiente de pago) o Rechazar (pasa a "Con observacion"). Otros Egresos quedan exentos. No requiere SQL. Pendiente: que los editores de pedidos vean/firmen los de su local. Antes: grupo Otros Egresos ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -5766,6 +5766,8 @@ function cmpEsNC(tipo) { return (tipo || '').toLowerCase().indexOf('crédito') >
 const CMP_ESTADOS = {
   aprobacion_pendiente: { label: 'Aprob. pendiente', color: '#B4772C' },
   pendiente_revision: { label: 'Pend. revisión', color: '#B4772C' },
+  sin_firma:          { label: 'Sin firma', color: '#C8552C' },
+  con_observacion:    { label: 'Con observación', color: '#B4772C' },
   pendiente_pago:     { label: 'Pend. de pago', color: '#EF9F27' },
   pago_programado:    { label: 'Pago programado', color: '#3E86C7' },
   en_orden_pago:      { label: 'En orden de pago', color: '#3E86C7' },
@@ -6026,6 +6028,7 @@ function renderComprobantes() {
         '<span style="display:flex;gap:2px;flex:0 0 auto;align-items:center">' +
           '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:' + est.color + ';color:#fff;white-space:nowrap">' + est.label + '</span>' +
           (c.estado === 'aprobacion_pendiente' && (isMaster() || isAdmin()) ? '<button class="btn-ghost" style="padding:3px 7px;color:#3BA55D" title="Aprobar" onclick="aprobarComprobante(' + c.id + ')"><i class="ti ti-check"></i></button>' : '') +
+          (c.estado === 'sin_firma' && (isMaster() || isAdmin()) ? '<button class="btn-ghost" style="padding:3px 7px;color:#3BA55D" title="Firmar" onclick="firmarComprobante(' + c.id + ')"><i class="ti ti-signature"></i></button><button class="btn-ghost" style="padding:3px 7px;color:var(--c-error)" title="Rechazar" onclick="rechazarComprobante(' + c.id + ')"><i class="ti ti-ban"></i></button>' : '') +
           (c.adjunto_path ? '<button class="btn-ghost" style="padding:3px 7px" title="Ver PDF" onclick="cmpVerAdjunto(\'' + esc(c.adjunto_path) + '\')"><i class="ti ti-file-text"></i></button>' : '') +
           '<button class="btn-ghost" style="padding:3px 7px" onclick="abrirEditarComprobante(' + c.id + ')"><i class="ti ti-pencil"></i></button>' +
           '<button class="btn-ghost" style="padding:3px 7px;color:var(--c-error)" title="Anular" onclick="eliminarComprobante(' + c.id + ')"><i class="ti ti-trash"></i></button>' +
@@ -6082,6 +6085,16 @@ async function ensureFirmantes() {
     FIRMANTES_CACHE = u.map(function(x){ return { nombre: (x.nombre || '').trim(), locs: x.locales_asignados || [], esAdmin: (x.perfil === 'admin' || x.perfil === 'master') }; }).filter(function(x){ return x.nombre; });
   } catch (e) { FIRMANTES_CACHE = []; }
   return FIRMANTES_CACHE;
+}
+// ¿El nombre firmante está autorizado para ese/esos local(es)? (editor de pedidos del local, TRANSVERSAL o admin)
+function _firmaAutorizada(nombre, locales) {
+  const n = String(nombre || '').trim().toLowerCase();
+  if (!n) return false;
+  return (FIRMANTES_CACHE || []).some(function(u){
+    if (u.nombre.trim().toLowerCase() !== n) return false;
+    if (u.esAdmin || u.locs.indexOf('TRANSVERSAL') >= 0) return true;
+    return (locales || []).some(function(l){ return u.locs.indexOf(l) >= 0; });
+  });
 }
 window.cmpActualizarFirmantes = function(){
   const dl = document.getElementById('cmpFirmantesList'); if (!dl) return;
@@ -6338,11 +6351,20 @@ window.guardarComprobante = async function() {
   try {
     let cmpId;
     if (CMP_EDIT_ID) {
+      // Si estaba "Sin firma" y ahora tiene un firmante autorizado (o es Otros Egresos), pasa a Pendiente de pago.
+      const _cur = CMP_LISTA.find(function(x){ return x.id === CMP_EDIT_ID; });
+      if (_cur && _cur.estado === 'sin_firma') {
+        try { await ensureFirmantes(); } catch (e) {}
+        rec.estado = (rec.es_socios || _firmaAutorizada(rec.firmado_por, dist.map(function(d){ return d.local; }).filter(Boolean))) ? 'pendiente_pago' : 'sin_firma';
+      }
       await api('comprobantes?id=eq.' + CMP_EDIT_ID, { method: 'PATCH', body: JSON.stringify(rec) });
       cmpId = CMP_EDIT_ID;
       await api('comprobante_distribuciones?comprobante_id=eq.' + cmpId, { method: 'DELETE' });
     } else {
-      rec.estado = 'pendiente_pago';
+      try { await ensureFirmantes(); } catch (e) {}
+      const _locsFirma = dist.map(function(d){ return d.local; }).filter(Boolean);
+      // Otros Egresos (confidencial, nivel sociedad) queda exento de la firma del responsable.
+      rec.estado = (rec.es_socios || _firmaAutorizada(rec.firmado_por, _locsFirma)) ? 'pendiente_pago' : 'sin_firma';
       rec.creado_por = currentUser ? currentUser.id : null;
       const r = await api('comprobantes', { method: 'POST', body: JSON.stringify(rec) });
       const nuevo = Array.isArray(r) ? r[0] : r;
@@ -6404,6 +6426,32 @@ window.eliminarComprobante = async function(id, refresh) {
     toast('✓ Comprobante anulado', 'success');
     if (refresh === 'pagos') await openPagos(); else await openComprobantes();
   } catch (e) { toast('No se pudo anular: ' + ((e && e.message) || e), 'error'); }
+};
+// Firmar un comprobante "Sin firma": lo autoriza quien está logueado y pasa a Pendiente de pago.
+window.firmarComprobante = async function(id) {
+  if (!(isMaster() || isAdmin())) return;
+  const nombre = (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Responsable';
+  const ok = await showConfirm({ title: 'Firmar comprobante', msg: 'Vas a firmar este comprobante como "' + nombre + '". Pasa a Pendiente de pago y entra al circuito de pagos. ¿Confirmás?', type: 'info', okLabel: 'Sí, firmar', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  try {
+    await api('comprobantes?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ firmado_por: nombre, estado: 'pendiente_pago', actualizado_en: new Date().toISOString() }) });
+    toast('✓ Comprobante firmado', 'success');
+    await openComprobantes();
+  } catch (e) { toast('No se pudo firmar: ' + ((e && e.message) || e), 'error'); }
+};
+// Rechazar un comprobante "Sin firma": pasa a "Con observación" y sale del circuito de pagos.
+window.rechazarComprobante = async function(id) {
+  if (!(isMaster() || isAdmin())) return;
+  const ok = await showConfirm({ title: 'Rechazar comprobante', msg: 'El comprobante pasa a "Con observación" y sale del circuito de pagos. Podés detallar el motivo editando sus observaciones. ¿Confirmás?', type: 'warning', okLabel: 'Sí, rechazar', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  const c = CMP_LISTA.find(function(x){ return x.id === id; }) || {};
+  const nombre = (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Responsable';
+  const nota = '[Rechazado por ' + nombre + ' el ' + hoyStr() + ']' + (c.observaciones ? ' ' + c.observaciones : '');
+  try {
+    await api('comprobantes?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ estado: 'con_observacion', observaciones: nota, actualizado_en: new Date().toISOString() }) });
+    toast('✓ Comprobante rechazado', 'success');
+    await openComprobantes();
+  } catch (e) { toast('No se pudo rechazar: ' + ((e && e.message) || e), 'error'); }
 };
 
 // ============================================

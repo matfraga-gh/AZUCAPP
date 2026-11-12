@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261112ed">
+<link rel="stylesheet" href="styles.css?v=20261112ee">
 </head>
 <body>
 
@@ -1932,6 +1932,8 @@
     <label class="field"><span class="field-label">Estado</span>
       <select id="cmpEstadoFiltro" onchange="onFiltroComprobantes()">
         <option value="">Todos</option>
+        <option value="sin_firma">Sin firma</option>
+        <option value="con_observacion">Con observación</option>
         <option value="aprobacion_pendiente">Aprobación pendiente</option>
         <option value="pendiente_pago">Pendientes de pago</option>
         <option value="pagado_parcial">Pagado parcial</option>
@@ -3002,6 +3004,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261112ed"></script>
+<script src="app.js?v=20261112ee"></script>
 </body>
 </html>
