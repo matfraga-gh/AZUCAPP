@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-12-DY | ULTIMA | Anular comprobante simple: boton Anular (papelera) en la bandeja de Pagos para los comprobantes simples (es_simple), incluso en Pago completado; refresca Pagos. No requiere SQL. Antes: fix cierre del modal (segundo handler) ===== */
+/* ===== BUILD 2026-11-12-DZ | ULTIMA | Distribucion: autocompletar la diferencia. Al cargar un comprobante con varias lineas, si queda UNA sola linea vacia, la app le pone la diferencia que falta para llegar al Neto (al agregar linea o al salir de un importe). No requiere SQL. Antes: anular comprobante simple en Pagos ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -6062,7 +6062,7 @@ function renderDistComprobante() {
     return '<div class="cmp-dist-row" style="display:flex;gap:5px;margin-bottom:6px;align-items:center">' +
       '<select class="cmp-d-local" style="flex:1;min-width:0" onchange="cmpActualizarFirmantes()">' + _cmpLocalesOptions(d.local) + '</select>' +
       '<select class="cmp-d-cuenta" style="flex:1.3;min-width:0">' + _cuentaOptionsHTML(d.cuenta_id, 'Cuenta…') + '</select>' +
-      '<input class="cmp-d-monto" type="text" inputmode="decimal" placeholder="$0,00" value="' + esc(_fmtMoneyStr(d.monto)) + '" style="flex:0 0 110px" oninput="cmpSumaDist()" onfocus="moneyFocus(this)" onblur="moneyBlur(this);cmpSumaDist()">' +
+      '<input class="cmp-d-monto" type="text" inputmode="decimal" placeholder="$0,00" value="' + esc(_fmtMoneyStr(d.monto)) + '" style="flex:0 0 110px" oninput="cmpSumaDist()" onfocus="moneyFocus(this)" onblur="moneyBlur(this);cmpSumaDist();cmpAutocompletarResto()">' +
       '<button type="button" class="btn-ghost" style="flex:0 0 auto;padding:4px 7px;color:var(--c-error)" onclick="cmpQuitarLinea(' + i + ')"><i class="ti ti-x"></i></button>' +
     '</div>';
   }).join('');
@@ -6094,8 +6094,18 @@ window.cmpActualizarFirmantes = function(){
   names.sort();
   dl.innerHTML = names.map(function(n){ return '<option value="' + esc(n) + '"></option>'; }).join('');
 };
-window.cmpAgregarLinea = function(){ _leerDist(); CMP_DIST.push({ local: '', cuenta_id: '', monto: '' }); renderDistComprobante(); };
+window.cmpAgregarLinea = function(){ _leerDist(); CMP_DIST.push({ local: '', cuenta_id: '', monto: '' }); renderDistComprobante(); cmpAutocompletarResto(); };
 window.cmpQuitarLinea = function(i){ _leerDist(); CMP_DIST.splice(i, 1); renderDistComprobante(); };
+// Si hay una sola línea vacía, le pone la diferencia que falta para llegar al neto.
+window.cmpAutocompletarResto = function(){
+  _leerDist();
+  const neto = _parseMoney(document.getElementById('cmpNeto').value);
+  if (!(neto > 0)) return;
+  let suma = 0; const vacias = [];
+  CMP_DIST.forEach(function(d, i){ const m = parseFloat(d.monto) || 0; if (m > 0) suma += m; else vacias.push(i); });
+  const resto = Math.round((neto - suma) * 100) / 100;
+  if (vacias.length === 1 && resto > 0) { CMP_DIST[vacias[0]].monto = resto; renderDistComprobante(); }
+};
 window.cmpSumaDist = function(){
   let s = 0; document.querySelectorAll('#cmpDistLista .cmp-d-monto').forEach(function(el){ s += _parseMoney(el.value); });
   const neto = _parseMoney(document.getElementById('cmpNeto').value);
