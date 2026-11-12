@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-11-DP | ULTIMA | Anular comprobante con pago: el boton de borrar ahora limpia de forma segura (saca el comprobante de su orden de pago y recalcula el total, borra la OP si queda vacia, des-concilia el movimiento bancario) antes de eliminar. No requiere SQL. Antes: Panel unificado ACTIVADO (lee resultado_cuenta, 3 niveles; planilla por cuenta; requiere panel_unificado_1_base.sql + _2_migracion.sql) ===== */
+/* ===== BUILD 2026-11-12-DQ | ULTIMA | Imputacion de comprobantes: si una cuenta tiene subcuentas, el rubro generico ya NO es elegible (aparece como encabezado); hay que elegir una subcuenta. Aplica en comprobantes, comprobante simple, conciliacion y cuenta por defecto del proveedor. No requiere SQL. Antes: Anular comprobante con pago (limpia OP y conciliacion antes de borrar) ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -5619,13 +5619,20 @@ function _cuentaOptionsHTML(selectedId, placeholder) {
   PLAN_CUENTAS.forEach(function(c){ if (c.parent_id) (porParent[c.parent_id] = porParent[c.parent_id] || []).push(c); });
   let html = '<option value="">' + (placeholder || '— Sin cuenta por defecto —') + '</option>';
   grupos.forEach(function(g){
-    PLAN_CUENTAS.filter(function(c){ return c.grupo === g && !c.parent_id; }).forEach(function(c){
-      const sel = String(c.id) === String(selectedId) ? ' selected' : '';
-      html += '<option value="' + c.id + '"' + sel + '>' + esc(g + ' · ' + c.nombre) + '</option>';
-      (porParent[c.id] || []).forEach(function(s){
-        const sel2 = String(s.id) === String(selectedId) ? ' selected' : '';
-        html += '<option value="' + s.id + '"' + sel2 + '>' + esc(g + ' · ' + c.nombre + ' › ' + s.nombre) + '</option>';
-      });
+    PLAN_CUENTAS.filter(function(c){ return c.grupo === g && !c.parent_id; }).sort(function(a,b){ return (a.orden||0)-(b.orden||0); }).forEach(function(c){
+      const hijos = (porParent[c.id] || []).slice().sort(function(a,b){ return (a.orden||0)-(b.orden||0); });
+      if (hijos.length) {
+        // Cuenta con subcuentas: el rubro genérico NO es elegible; solo las subcuentas.
+        html += '<optgroup label="' + esc(g + ' · ' + c.nombre) + '">';
+        hijos.forEach(function(s){
+          const sel2 = String(s.id) === String(selectedId) ? ' selected' : '';
+          html += '<option value="' + s.id + '"' + sel2 + '>' + esc(g + ' · ' + c.nombre + ' › ' + s.nombre) + '</option>';
+        });
+        html += '</optgroup>';
+      } else {
+        const sel = String(c.id) === String(selectedId) ? ' selected' : '';
+        html += '<option value="' + c.id + '"' + sel + '>' + esc(g + ' · ' + c.nombre) + '</option>';
+      }
     });
   });
   return html;
