@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-12-DV | ULTIMA | USD parte 2: al generar la OP de comprobantes en USD se corrige el TC con el del dia del pago (sugerido, editable) y se recalcula el valor en pesos del comprobante + su distribucion + la OP. Ademas: bloqueo de duplicados por proveedor+pto venta+numero (sin importar importe), y Comprobantes ordenado por fecha de emision (mas antiguas primero). No requiere SQL. Antes: firmante por editores+admin ===== */
+/* ===== BUILD 2026-11-12-DW | ULTIMA | El modal de carga de comprobante ya NO se cierra al clickear afuera ni con Escape (data-prevent-close): solo con la X o Cancelar, para no perder la carga (pedido de Lauti). No requiere SQL. Antes: USD parte 2 (TC al pagar) + bloqueo duplicados reforzado + orden por emision ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -426,6 +426,8 @@ document.addEventListener('keydown', (e) => {
     for (let i = modales.length - 1; i >= 0; i--) {
       const m = modales[i];
       if (m.style.display === 'flex' || m.classList.contains('show')) {
+        const card = m.querySelector('.modal-card');
+        if (card && card.hasAttribute('data-prevent-close')) break;
         m.classList.remove('show');
         m.style.display = '';
         if (m.id === 'modalConfirm' && _confirmResolve) {
