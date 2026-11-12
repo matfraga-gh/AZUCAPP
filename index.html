@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261112du">
+<link rel="stylesheet" href="styles.css?v=20261112dv">
 </head>
 <body>
 
@@ -2215,6 +2215,13 @@
       <div id="opBenef" class="cierre-hint" style="margin-bottom:8px;font-size:13px;line-height:1.5"></div>
       <div class="field-label" style="margin-bottom:3px">Comprobantes</div>
       <div id="opComps" style="margin-bottom:10px"></div>
+      <div id="opTcCard" style="display:none;background:var(--c-card);border:1px solid var(--c-cream-border);border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:12px;color:var(--c-cream)">
+        <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
+          <span><i class="ti ti-currency-dollar"></i> TC del pago (venta)</span>
+          <input type="text" inputmode="decimal" id="opTc" placeholder="0,00" style="flex:0 0 120px;text-align:right;padding:5px 8px;border:1px solid var(--c-cream-border);border-radius:6px;background:var(--c-bg);color:var(--c-cream)" oninput="opRecalcUSD()">
+        </div>
+        <div id="opTcInfo" style="margin-top:4px;color:var(--c-sand)"></div>
+      </div>
       <label class="field"><span class="field-label">Fecha de la orden</span><input type="date" id="opFecha"></label>
       <div style="display:flex;align-items:center;justify-content:space-between;margin:6px 0 4px">
         <span class="field-label">Medios de pago</span>
@@ -2994,6 +3001,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261112du"></script>
+<script src="app.js?v=20261112dv"></script>
 </body>
 </html>

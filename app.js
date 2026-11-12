@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-12-DU | ULTIMA | Firmante sugerido: Editores de Pedidos (por su local; TRANSVERSAL = todos) + Administradores/master (firman cualquier local). Se mantiene solo desde los permisos. No requiere SQL. Antes: firmante solo editores de pedidos ===== */
+/* ===== BUILD 2026-11-12-DV | ULTIMA | USD parte 2: al generar la OP de comprobantes en USD se corrige el TC con el del dia del pago (sugerido, editable) y se recalcula el valor en pesos del comprobante + su distribucion + la OP. Ademas: bloqueo de duplicados por proveedor+pto venta+numero (sin importar importe), y Comprobantes ordenado por fecha de emision (mas antiguas primero). No requiere SQL. Antes: firmante por editores+admin ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -5811,7 +5811,7 @@ async function openComprobantes() {
     if (!PLAN_CUENTAS.length) { try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || []; } catch (e) {} }
     CMP_RAZONES = await api('razones_sociales?activo=eq.true&order=nombre.asc') || [];
     const est = (document.getElementById('cmpEstadoFiltro') || {}).value || '';
-    let q = 'comprobantes?select=*&order=creado_en.desc&limit=300';
+    let q = 'comprobantes?select=*&order=fecha_emision.asc.nullslast,id.asc&limit=300';
     if (est) q += '&estado=eq.' + est;
     // Cta Cte Socios: solo visible para Paula/Silvina/Matías (admin/master), no para los editores (Lauti/Andy).
     if (!isMaster() && !isAdmin()) q += '&es_socios=eq.false';
@@ -6309,12 +6309,13 @@ window.guardarComprobante = async function() {
     es_socios: (function(){ const ids = PLAN_CUENTAS.filter(function(c){ return c.grupo === 'SOCIOS'; }).map(function(c){ return c.id; }); return dist.some(function(d){ return ids.indexOf(d.cuenta_id) >= 0; }); })(),
     actualizado_en: new Date().toISOString()
   };
-  // Bloqueo de duplicados: mismo proveedor + mismo número + mismo importe total.
+  // Bloqueo de duplicados: mismo proveedor + mismo punto de venta + mismo número (la identidad de la factura, sin importar el importe).
   if (rec.numero) {
     try {
       const dups = await api('comprobantes?proveedor_id=eq.' + prov.id + '&numero=eq.' + encodeURIComponent(rec.numero) + '&select=id,total,punto_venta') || [];
-      const hit = dups.find(function(x){ return (!CMP_EDIT_ID || x.id !== CMP_EDIT_ID) && Math.abs((parseFloat(x.total) || 0) - rec.total) < 0.5; });
-      if (hit) { err.textContent = 'Ya existe un comprobante de este proveedor con el mismo número (' + rec.numero + ') e importe. No se cargó para evitar duplicados.'; return; }
+      const normPv = function(v){ return String(v || '').trim().replace(/^0+/, ''); };
+      const hit = dups.find(function(x){ return (!CMP_EDIT_ID || x.id !== CMP_EDIT_ID) && normPv(x.punto_venta) === normPv(rec.punto_venta); });
+      if (hit) { err.textContent = 'Ya existe un comprobante de este proveedor con el mismo punto de venta y número (' + (rec.punto_venta ? rec.punto_venta + '-' : '') + rec.numero + '). No se cargó para evitar duplicados.'; return; }
     } catch (e) { /* si la verificación falla, seguimos */ }
   }
   const btn = document.getElementById('cmpGuardarBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
@@ -6653,7 +6654,38 @@ window.desprogramarPago = async function(id) {
 };
 
 // ---- Orden de Pago (Silvina) ----
-let OP_COMPS = [], OP_MEDIOS = [], OP_BENEF = null;
+let OP_COMPS = [], OP_MEDIOS = [], OP_BENEF = null, OP_TC = 0;
+// Total en pesos de un comprobante de la OP: si es USD, se recalcula con el TC del pago (OP_TC).
+function opCompTotalARS(c) {
+  if (c && c.moneda === 'USD' && OP_TC > 0 && c.total_origen != null) return Math.round((parseFloat(c.total_origen) || 0) * OP_TC);
+  return parseFloat(c.total) || 0;
+}
+function _opTotalOP() { return OP_COMPS.reduce(function(s, c){ return s + _pagoSigno(c) * opCompTotalARS(c); }, 0); }
+function opRenderComps() {
+  const cont = document.getElementById('opComps'); if (!cont) return;
+  cont.innerHTML = OP_COMPS.map(function(c){
+    const nc = cmpEsNC(c.tipo);
+    const ars = opCompTotalARS(c);
+    const usdNote = (c.moneda === 'USD') ? '<br><span style="font-size:10.5px;color:var(--c-sand)">US$ ' + _fmtMoneyStr(String(c.total_origen != null ? c.total_origen : '')) + (OP_TC > 0 ? ' · TC ' + _pvMoney(OP_TC) : '') + '</span>' : '';
+    return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px solid var(--c-cream-border)">' +
+      '<span style="color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis">' + esc(c.tipo || '') + ' ' + esc([c.punto_venta, c.numero].filter(Boolean).join('-')) + '</span>' +
+      '<span style="white-space:nowrap;text-align:right;color:' + (nc ? '#4CAF7A' : 'var(--c-cream)') + '">' + (nc ? '− ' : '') + _cmpMoney(ars) + usdNote + '</span></div>';
+  }).join('');
+}
+window.opRecalcUSD = function(){
+  OP_TC = _parseMoney((document.getElementById('opTc') || {}).value) || 0;
+  opRenderComps();
+  if (OP_MEDIOS.length === 1) OP_MEDIOS[0].importe = Math.round(_opTotalOP() * 100) / 100;
+  _opRenderMedios();
+  const info = document.getElementById('opTcInfo');
+  if (info) info.innerHTML = OP_TC > 0 ? 'Los importes en USD se recalculan a este TC. Total OP: <b>' + _cmpMoney(_opTotalOP()) + '</b>' : 'Ingresá el TC del día del pago.';
+};
+async function _opAplicarTcComp(c, tcPago) {
+  const r = function(x){ return Math.round((parseFloat(x) || 0) * tcPago); };
+  await api('comprobantes?id=eq.' + c.id, { method: 'PATCH', body: JSON.stringify({ tc: tcPago, neto: r(c.neto_origen), iva: r(c.iva_origen), percepciones: r(c.percepciones_origen), otros_imp: r(c.otros_origen), total: r(c.total_origen), actualizado_en: new Date().toISOString() }) });
+  const ds = await api('comprobante_distribuciones?comprobante_id=eq.' + c.id + '&select=id,monto_origen') || [];
+  for (let i = 0; i < ds.length; i++) { await api('comprobante_distribuciones?id=eq.' + ds[i].id, { method: 'PATCH', body: JSON.stringify({ monto: r(ds[i].monto_origen) }) }); }
+}
 function _opMediosRaz(rzId) { return PAGOS_MEDIOS.filter(function(m){ return rzId == null || m.razon_social_id === rzId; }); }
 window.abrirGenerarOP = async function() {
   const comps = PAGOS_LISTA.filter(function(c){ return PAGOS_SEL[c.id] && c.estado === 'pago_programado'; });
@@ -6669,19 +6701,20 @@ window.abrirGenerarOP = async function() {
   try { const r = await api('proveedores?id=eq.' + provIds[0] + '&select=id,razon_social,cuit,email'); prov = Array.isArray(r) ? r[0] : r; } catch (e) {}
   OP_BENEF = prov || CMP_PROV_MAP[provIds[0]] || { razon_social: '(proveedor)' };
   const rz = CMP_RAZONES.find(function(r){ return r.id === rzId; });
-  const total = comps.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
+  // TC del pago para comprobantes en USD: sugerir el oficial (venta) del día, editable.
+  const hayUSD = comps.some(function(c){ return c.moneda === 'USD'; });
+  document.getElementById('opTcCard').style.display = hayUSD ? '' : 'none';
+  OP_TC = 0;
+  const _tcEl = document.getElementById('opTc'); if (_tcEl) _tcEl.value = '';
+  if (hayUSD) { const v = await tcOficialVenta(); OP_TC = v || 0; if (_tcEl && v) _tcEl.value = _fmtMoneyStr(String(v)); const info = document.getElementById('opTcInfo'); if (info) info.innerHTML = v ? 'TC oficial (venta) sugerido — editable.' : 'No se pudo traer el TC. Cargalo a mano.'; }
+  const total = _opTotalOP();
   // Prefill de medios: uno por cada medio distinto ya programado; si no, uno vacío con el total
   const medioComp = comps.find(function(c){ return c.medio_pago_id; });
   OP_MEDIOS = [{ medio_pago_id: medioComp ? medioComp.medio_pago_id : '', documento: '', vencimiento: (comps.find(function(c){ return c.fecha_pago; }) || {}).fecha_pago || '', importe: Math.round(total * 100) / 100 }];
   document.getElementById('opBenef').innerHTML =
     '<b style="color:var(--c-cream)">' + esc(OP_BENEF.razon_social || '') + '</b>' + (OP_BENEF.cuit ? ' · CUIT ' + esc(OP_BENEF.cuit) : '') +
     '<br><span style="color:var(--c-sand)">Paga: ' + esc(rz ? rz.nombre : '—') + ' · ' + (OP_BENEF.email ? esc(OP_BENEF.email) : '<span style="color:#E5534B">sin email cargado</span>') + '</span>';
-  document.getElementById('opComps').innerHTML = comps.map(function(c){
-    const nc = cmpEsNC(c.tipo);
-    return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px solid var(--c-cream-border)">' +
-      '<span style="color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis">' + esc(c.tipo || '') + ' ' + esc([c.punto_venta, c.numero].filter(Boolean).join('-')) + '</span>' +
-      '<span style="white-space:nowrap;color:' + (nc ? '#4CAF7A' : 'var(--c-cream)') + '">' + (nc ? '− ' : '') + _cmpMoney(c.total) + '</span></div>';
-  }).join('');
+  opRenderComps();
   document.getElementById('opRazon').value = rzId || '';
   document.getElementById('opFecha').value = hoyStr();
   document.getElementById('opEmail').checked = !!OP_BENEF.email;
@@ -6694,7 +6727,7 @@ window.closeGenerarOP = function() { document.getElementById('modalGenerarOP').c
 function _opRenderMedios() {
   const rzId = OP_COMPS.length ? OP_COMPS[0].razon_social_id : null;
   const medios = _opMediosRaz(rzId);
-  const total = OP_COMPS.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
+  const total = _opTotalOP();
   const sumMed = OP_MEDIOS.reduce(function(s, m){ return s + (parseFloat(m.importe) || 0); }, 0);
   const cont = document.getElementById('opMedios');
   cont.innerHTML = OP_MEDIOS.map(function(m, i){
@@ -6721,7 +6754,7 @@ window.opSetDoc = function(i, v) { OP_MEDIOS[i].documento = v; };
 window.opSetVto = function(i, v) { OP_MEDIOS[i].vencimiento = v; };
 window.opSetImp = function(i, v) { OP_MEDIOS[i].importe = _parseMoney(v); _opActualizarDif(); };
 function _opActualizarDif() {
-  const total = OP_COMPS.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
+  const total = _opTotalOP();
   const sumMed = OP_MEDIOS.reduce(function(s, m){ return s + (parseFloat(m.importe) || 0); }, 0);
   const dif = Math.round(total - sumMed);
   document.getElementById('opTotal').innerHTML = 'Total OP: <b style="color:var(--c-cream)">' + _cmpMoney(total) + '</b>' +
@@ -6736,7 +6769,9 @@ window.confirmarGenerarOP = async function() {
   if (!fecha) { err.textContent = 'Elegí la fecha de la orden de pago.'; return; }
   const medios = OP_MEDIOS.filter(function(m){ return m.medio_pago_id && (parseFloat(m.importe) || 0) !== 0; });
   if (!medios.length) { err.textContent = 'Cargá al menos un medio de pago con importe.'; return; }
-  const total = OP_COMPS.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
+  const hayUSD = OP_COMPS.some(function(c){ return c.moneda === 'USD'; });
+  if (hayUSD) { OP_TC = _parseMoney((document.getElementById('opTc') || {}).value) || 0; if (!(OP_TC > 0)) { err.textContent = 'Ingresá el TC del pago para los comprobantes en USD.'; return; } }
+  const total = _opTotalOP();
   const rzId = OP_COMPS[0].razon_social_id;
   const btn = document.getElementById('opBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Generando...';
   try {
@@ -6745,9 +6780,11 @@ window.confirmarGenerarOP = async function() {
     const op = Array.isArray(r) ? r[0] : r;
     const numero = 'OP-' + String(op.id).padStart(5, '0');
     await api('ordenes_pago?id=eq.' + op.id, { method: 'PATCH', body: JSON.stringify({ numero: numero }) });
-    // Comprobantes de la OP
-    const filasC = OP_COMPS.map(function(c){ return { orden_pago_id: op.id, comprobante_id: c.id, importe_saldado: _pagoSigno(c) * (parseFloat(c.total) || 0) }; });
+    // Comprobantes de la OP (importe saldado con el TC del pago para los USD)
+    const filasC = OP_COMPS.map(function(c){ return { orden_pago_id: op.id, comprobante_id: c.id, importe_saldado: _pagoSigno(c) * opCompTotalARS(c) }; });
     await api('orden_pago_comprobantes', { method: 'POST', body: JSON.stringify(filasC) });
+    // Recalcular los comprobantes en USD con el TC del día del pago (actualiza su valor de referencia en pesos).
+    if (hayUSD) { for (let i = 0; i < OP_COMPS.length; i++) { if (OP_COMPS[i].moneda === 'USD') { try { await _opAplicarTcComp(OP_COMPS[i], OP_TC); } catch (e) {} } } }
     // Medios de la OP
     const filasM = medios.map(function(m){ return { orden_pago_id: op.id, medio_pago_id: parseInt(m.medio_pago_id, 10), documento: m.documento || null, vencimiento: m.vencimiento || null, importe: parseFloat(m.importe) || 0 }; });
     await api('orden_pago_medios', { method: 'POST', body: JSON.stringify(filasM) });
