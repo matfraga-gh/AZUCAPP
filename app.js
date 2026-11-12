@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-12-DX | ULTIMA | Fix: el modal de comprobante seguia cerrandose al clickear afuera porque habia un SEGUNDO handler de cierre (por overlay) que no miraba data-prevent-close; ahora tambien lo respeta. El modal solo se cierra con X o Cancelar. No requiere SQL. Importante: GitHub cachea el index 10 min; hacer refresco forzado (Ctrl+Shift+R). Antes: data-prevent-close parcial (DW) ===== */
+/* ===== BUILD 2026-11-12-DY | ULTIMA | Anular comprobante simple: boton Anular (papelera) en la bandeja de Pagos para los comprobantes simples (es_simple), incluso en Pago completado; refresca Pagos. No requiere SQL. Antes: fix cierre del modal (segundo handler) ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -6350,7 +6350,7 @@ window.guardarComprobante = async function() {
   } catch (e) { err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e); }
   finally { btn.disabled = false; btn.textContent = t; }
 };
-window.eliminarComprobante = async function(id) {
+window.eliminarComprobante = async function(id, refresh) {
   if (!(isMaster() || isAdmin())) return;
   // Detectar dependencias (orden de pago y conciliación) para avisar y limpiar de forma segura.
   let ocs = [];
@@ -6388,7 +6388,7 @@ window.eliminarComprobante = async function(id) {
     await api('comprobante_distribuciones?comprobante_id=eq.' + id, { method: 'DELETE' });
     await api('comprobantes?id=eq.' + id, { method: 'DELETE' });
     toast('✓ Comprobante anulado', 'success');
-    await openComprobantes();
+    if (refresh === 'pagos') await openPagos(); else await openComprobantes();
   } catch (e) { toast('No se pudo anular: ' + ((e && e.message) || e), 'error'); }
 };
 
@@ -6571,6 +6571,7 @@ function renderPagos() {
           '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:' + est.color + ';color:#fff;white-space:nowrap">' + est.label + '</span>' +
           (c.adjunto_path ? '<button class="btn-ghost" style="padding:3px 7px" title="Ver PDF" onclick="cmpVerAdjunto(\'' + esc(c.adjunto_path) + '\')"><i class="ti ti-file-text"></i></button>' : '') +
           (programado ? '<button class="btn-ghost" style="padding:3px 7px;color:var(--c-error)" title="Volver a Pendiente de pago" onclick="desprogramarPago(' + c.id + ')"><i class="ti ti-arrow-back-up"></i></button>' : '') +
+          (c.es_simple ? '<button class="btn-ghost" style="padding:3px 7px;color:var(--c-error)" title="Anular" onclick="eliminarComprobante(' + c.id + ', \'pagos\')"><i class="ti ti-trash"></i></button>' : '') +
         '</span>' +
       '</div>' +
       '<div style="font-size:11px;color:var(--c-sand);margin-top:2px;padding-left:25px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(c.tipo || '') + (nro ? ' · ' + esc(nro) : '') + (nc ? ' · ' : '') + (nc ? '<span style="color:#4CAF7A">NC</span>' : '') + (imputa ? ' · ' + esc(imputa) : '') + '</div>' +
