@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-12-EB | ULTIMA | Panel Fiscal (parte 1): pestana en Estadisticas (solo admin/master), posicion fiscal por sociedad (selector desplegable, una sociedad por vez) de IVA/IngBrutos/Ganancias, carga MANUAL editable + boton Bajar Excel (3 cuadros). Informativo: no impacta el Panel. Requiere panel_fiscal.sql. Pendiente parte 2: carga con IA de las DDJJ. Antes: Panel Fiscal lado a lado ===== */
+/* ===== BUILD 2026-11-12-EC | ULTIMA | Panel Fiscal: ocultar el boton "Gestion de estadisticas" en la pestana Fiscal (no corresponde ahi). Guardar persiste la carga manual. No requiere SQL. Antes: Panel Fiscal con selector de sociedad + Bajar Excel ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -11667,8 +11667,15 @@ window.setPvTab = function(tab) {
 };
 function cargarPanelActivo() {
   const filtros = document.getElementById('pvFiltros');
-  if (PV_TAB === 'fiscal') { if (filtros) filtros.style.display = 'none'; renderPanelFiscal(); return; }
+  const gestBtn = document.getElementById('pvGestionBtn');
+  if (PV_TAB === 'fiscal') {
+    if (filtros) filtros.style.display = 'none';
+    if (gestBtn) gestBtn.style.display = 'none';
+    renderPanelFiscal();
+    return;
+  }
   if (filtros) filtros.style.display = '';
+  if (gestBtn) gestBtn.style.display = (isMaster() || isAdmin()) ? '' : 'none';
   if (PV_TAB === 'resultados' && puedeVerResultados()) cargarPanelResultados();
   else cargarPanelVentas();
 }
