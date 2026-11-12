@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-12-EE | ULTIMA | Firma del responsable: un comprobante cargado sin firma de un autorizado queda en estado "Sin firma" (previo al pago, NO aparece en Pagos). Desde Comprobantes se puede Firmar (pasa a Pendiente de pago) o Rechazar (pasa a "Con observacion"). Otros Egresos quedan exentos. No requiere SQL. Pendiente: que los editores de pedidos vean/firmen los de su local. Antes: grupo Otros Egresos ===== */
+/* ===== BUILD 2026-11-12-EF | ULTIMA | Pagos: nueva pestana "Sin firma" (antes de "Por pagar") que muestra los comprobantes en estado Sin firma; no son seleccionables para pago, pero se pueden Firmar o Rechazar desde ahi. Firma del responsable: Sin firma es previo al pago. No requiere SQL. Antes: circuito de firma (estados Sin firma / Con observacion) ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -6428,7 +6428,7 @@ window.eliminarComprobante = async function(id, refresh) {
   } catch (e) { toast('No se pudo anular: ' + ((e && e.message) || e), 'error'); }
 };
 // Firmar un comprobante "Sin firma": lo autoriza quien está logueado y pasa a Pendiente de pago.
-window.firmarComprobante = async function(id) {
+window.firmarComprobante = async function(id, refresh) {
   if (!(isMaster() || isAdmin())) return;
   const nombre = (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Responsable';
   const ok = await showConfirm({ title: 'Firmar comprobante', msg: 'Vas a firmar este comprobante como "' + nombre + '". Pasa a Pendiente de pago y entra al circuito de pagos. ¿Confirmás?', type: 'info', okLabel: 'Sí, firmar', cancelLabel: 'Cancelar' });
@@ -6436,21 +6436,21 @@ window.firmarComprobante = async function(id) {
   try {
     await api('comprobantes?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ firmado_por: nombre, estado: 'pendiente_pago', actualizado_en: new Date().toISOString() }) });
     toast('✓ Comprobante firmado', 'success');
-    await openComprobantes();
+    if (refresh === 'pagos') await openPagos(); else await openComprobantes();
   } catch (e) { toast('No se pudo firmar: ' + ((e && e.message) || e), 'error'); }
 };
 // Rechazar un comprobante "Sin firma": pasa a "Con observación" y sale del circuito de pagos.
-window.rechazarComprobante = async function(id) {
+window.rechazarComprobante = async function(id, refresh) {
   if (!(isMaster() || isAdmin())) return;
   const ok = await showConfirm({ title: 'Rechazar comprobante', msg: 'El comprobante pasa a "Con observación" y sale del circuito de pagos. Podés detallar el motivo editando sus observaciones. ¿Confirmás?', type: 'warning', okLabel: 'Sí, rechazar', cancelLabel: 'Cancelar' });
   if (!ok) return;
-  const c = CMP_LISTA.find(function(x){ return x.id === id; }) || {};
+  const c = (CMP_LISTA.find(function(x){ return x.id === id; })) || ((PAGOS_LISTA || []).find(function(x){ return x.id === id; })) || {};
   const nombre = (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Responsable';
   const nota = '[Rechazado por ' + nombre + ' el ' + hoyStr() + ']' + (c.observaciones ? ' ' + c.observaciones : '');
   try {
     await api('comprobantes?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ estado: 'con_observacion', observaciones: nota, actualizado_en: new Date().toISOString() }) });
     toast('✓ Comprobante rechazado', 'success');
-    await openComprobantes();
+    if (refresh === 'pagos') await openPagos(); else await openComprobantes();
   } catch (e) { toast('No se pudo rechazar: ' + ((e && e.message) || e), 'error'); }
 };
 
@@ -6523,7 +6523,7 @@ async function openPagos() {
     CMP_RAZONES = await api('razones_sociales?order=nombre.asc') || [];
     PAGOS_MEDIOS = await api('medios_pago?activo=eq.true&order=razon_social_id,nombre') || [];
     // Pendientes/en circuito + simples aprobados (pago_completado con es_simple) para que figuren en la solapa Simples.
-    PAGOS_LISTA = await apiAll('comprobantes?select=*&or=(estado.in.(pendiente_pago,pagado_parcial,pago_programado,pago_emitido,pago_confirmado),and(estado.eq.pago_completado,es_simple.is.true))&order=fecha_vto.asc') || [];
+    PAGOS_LISTA = await apiAll('comprobantes?select=*&or=(estado.in.(sin_firma,pendiente_pago,pagado_parcial,pago_programado,pago_emitido,pago_confirmado),and(estado.eq.pago_completado,es_simple.is.true))&order=fecha_vto.asc') || [];
     PAGOS_OPS = await api('ordenes_pago?select=*&order=creado_en.desc&limit=300') || [];
     const pids = Array.from(new Set(PAGOS_LISTA.map(function(c){ return c.proveedor_id; }).concat(PAGOS_OPS.map(function(o){ return o.proveedor_id; })).filter(Boolean)));
     if (pids.length) { const ps = await api('proveedores?id=in.(' + pids.join(',') + ')&select=id,razon_social') || []; ps.forEach(function(p){ CMP_PROV_MAP[p.id] = p; }); }
@@ -6555,10 +6555,11 @@ window.pagosSeleccionarTodo = function() {
 
 function _pagosFiltradas() {
   let arr = PAGOS_LISTA.slice();
-  if (PAGOS_FILTRO === 'por_pagar') arr = arr.filter(function(c){ return c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial'; });
+  if (PAGOS_FILTRO === 'sin_firma') arr = arr.filter(function(c){ return c.estado === 'sin_firma'; });
+  else if (PAGOS_FILTRO === 'por_pagar') arr = arr.filter(function(c){ return c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial'; });
   else if (PAGOS_FILTRO === 'programados') arr = arr.filter(function(c){ return c.estado === 'pago_programado'; });
   else if (PAGOS_FILTRO === 'simples') arr = arr.filter(function(c){ return c.es_simple === true; });
-  else arr = arr.filter(function(c){ return c.estado !== 'pago_completado'; }); // "Todos": sin completados
+  else arr = arr.filter(function(c){ return c.estado !== 'pago_completado' && c.estado !== 'sin_firma'; }); // "Todos": sin completados ni sin firma
   if (PAGOS_Q) {
     arr = arr.filter(function(c){
       const p = CMP_PROV_MAP[c.proveedor_id];
@@ -6587,7 +6588,7 @@ function renderPagos() {
   const todosSel = selec.length && selec.every(function(c){ return PAGOS_SEL[c.id]; });
   const totalVista = arr.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
   ctrl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">' +
-    chip('por_pagar', 'Por pagar') + chip('programados', 'Programados') + chip('simples', 'Simples') + chip('todos', 'Todos') + chip('ordenes', 'Órdenes') +
+    chip('sin_firma', 'Sin firma') + chip('por_pagar', 'Por pagar') + chip('programados', 'Programados') + chip('simples', 'Simples') + chip('todos', 'Todos') + chip('ordenes', 'Órdenes') +
     '<span style="margin-left:auto;font-size:12px;color:var(--c-sand)">Ordenar: </span>' +
     '<select onchange="onPagoSort(this.value)" style="padding:5px 8px;border-radius:8px;font-size:12px">' +
       '<option value="vto"' + (PAGOS_SORT === 'vto' ? ' selected' : '') + '>Vencimiento</option>' +
@@ -6633,6 +6634,7 @@ function renderPagos() {
           '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;background:' + est.color + ';color:#fff;white-space:nowrap">' + est.label + '</span>' +
           (c.adjunto_path ? '<button class="btn-ghost" style="padding:3px 7px" title="Ver PDF" onclick="cmpVerAdjunto(\'' + esc(c.adjunto_path) + '\')"><i class="ti ti-file-text"></i></button>' : '') +
           (programado ? '<button class="btn-ghost" style="padding:3px 7px;color:var(--c-error)" title="Volver a Pendiente de pago" onclick="desprogramarPago(' + c.id + ')"><i class="ti ti-arrow-back-up"></i></button>' : '') +
+          (c.estado === 'sin_firma' ? '<button class="btn-ghost" style="padding:3px 7px;color:#3BA55D" title="Firmar" onclick="firmarComprobante(' + c.id + ', \'pagos\')"><i class="ti ti-signature"></i></button><button class="btn-ghost" style="padding:3px 7px;color:var(--c-error)" title="Rechazar" onclick="rechazarComprobante(' + c.id + ', \'pagos\')"><i class="ti ti-ban"></i></button>' : '') +
           (c.es_simple ? '<button class="btn-ghost" style="padding:3px 7px;color:var(--c-error)" title="Anular" onclick="eliminarComprobante(' + c.id + ', \'pagos\')"><i class="ti ti-trash"></i></button>' : '') +
         '</span>' +
       '</div>' +
@@ -6905,7 +6907,7 @@ function renderOrdenes(chip) {
   });
   const totalOps = ops.reduce(function(s, o){ return s + (parseFloat(o.total) || 0); }, 0);
   ctrl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">' +
-    chip('por_pagar', 'Por pagar') + chip('programados', 'Programados') + chip('simples', 'Simples') + chip('todos', 'Todos') + chip('ordenes', 'Órdenes') + '</div>' +
+    chip('sin_firma', 'Sin firma') + chip('por_pagar', 'Por pagar') + chip('programados', 'Programados') + chip('simples', 'Simples') + chip('todos', 'Todos') + chip('ordenes', 'Órdenes') + '</div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">' +
       '<span style="font-size:12px;color:var(--c-sand)"><b style="color:var(--c-cream)">' + ops.length + '</b> OP · ' + _cmpMoney(totalOps) + '</span>' +
       '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="descargarOrdenesExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>' +
