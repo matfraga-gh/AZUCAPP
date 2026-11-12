@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-12-EA | ULTIMA | Panel Fiscal (parte 1): nueva pestana en Estadisticas (solo admin/master) con la posicion fiscal por sociedad (Frayep/Algarroba) de IVA, Ingresos Brutos y Ganancias. Carga MANUAL editable por sociedad y periodo (IVA/IIBB mensual, Ganancias anual). Informativo: no impacta el Panel de Resultados. Requiere panel_fiscal.sql. Pendiente parte 2: carga con IA de las DDJJ. Antes: autocompletar diferencia en distribucion ===== */
+/* ===== BUILD 2026-11-12-EB | ULTIMA | Panel Fiscal (parte 1): pestana en Estadisticas (solo admin/master), posicion fiscal por sociedad (selector desplegable, una sociedad por vez) de IVA/IngBrutos/Ganancias, carga MANUAL editable + boton Bajar Excel (3 cuadros). Informativo: no impacta el Panel. Requiere panel_fiscal.sql. Pendiente parte 2: carga con IA de las DDJJ. Antes: Panel Fiscal lado a lado ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -11707,7 +11707,7 @@ const PF_CONCEPTOS = {
     ['gan_saldo', 'Saldo pendiente de pago', 'saldo']
   ]
 };
-let PF_IMP = 'iva', PF_MES = '', PF_ANIO = '', PF_SOCIEDADES = null;
+let PF_IMP = 'iva', PF_MES = '', PF_ANIO = '', PF_SOC = '', PF_SOCIEDADES = null;
 async function pfAsegurarSociedades() {
   if (PF_SOCIEDADES) return PF_SOCIEDADES;
   try {
@@ -11722,8 +11722,10 @@ function pfPeriodoActual() {
   if (PF_IMP === 'ganancias') return PF_ANIO || String(hoy.getFullYear());
   return PF_MES || (hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0'));
 }
+function pfSocActual() { return (PF_SOCIEDADES || []).find(function(s){ return String(s.id) === String(PF_SOC); }) || null; }
 window.pfSetImp = function(imp){ PF_IMP = imp; renderPanelFiscal(); };
 window.pfSetPeriodo = function(v){ if (PF_IMP === 'ganancias') PF_ANIO = v; else PF_MES = v; pfCargarValores(); };
+window.pfSetSoc = function(v){ PF_SOC = v; pfCargarValores(); };
 async function renderPanelFiscal() {
   const body = document.getElementById('pvBody');
   body.innerHTML = '<div class="loading">Cargando...</div>';
@@ -11732,63 +11734,82 @@ async function renderPanelFiscal() {
   const hoy = new Date();
   if (!PF_MES) PF_MES = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
   if (!PF_ANIO) PF_ANIO = String(hoy.getFullYear());
+  if (!PF_SOC || !socs.some(function(s){ return String(s.id) === String(PF_SOC); })) PF_SOC = String(socs[0].id);
   const impTab = function(k){ return '<button class="btn-ghost" style="padding:5px 12px;border-radius:12px;font-size:12.5px;' + (PF_IMP === k ? 'background:var(--c-cream);color:#2b2017;font-weight:700' : '') + '" onclick="pfSetImp(\'' + k + '\')">' + esc(PF_IMP_LABEL[k]) + '</button>'; };
+  const socOpts = socs.map(function(s){ return '<option value="' + s.id + '"' + (String(s.id) === String(PF_SOC) ? ' selected' : '') + '>' + esc(s.nombre) + '</option>'; }).join('');
   let perOpts = '';
   if (PF_IMP === 'ganancias') { for (let y = hoy.getFullYear(); y >= hoy.getFullYear() - 4; y--) perOpts += '<option value="' + y + '"' + (String(y) === PF_ANIO ? ' selected' : '') + '>' + y + '</option>'; }
   else { for (let i = 0; i < 24; i++) { const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1); const val = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); if (val < MES_MIN) break; perOpts += '<option value="' + val + '"' + (val === PF_MES ? ' selected' : '') + '>' + MESES_CORTO[d.getMonth()] + ' ' + d.getFullYear() + '</option>'; } }
-  const header = '<div style="display:flex;gap:6px;align-items:center;padding:4px 6px;font-size:10px;font-weight:700;opacity:.6"><span style="flex:1"></span>' + socs.map(function(s){ return '<span style="flex:0 0 120px;text-align:right">' + esc(s.nombre) + '</span>'; }).join('') + '</div>';
   let rows = '';
   PF_CONCEPTOS[PF_IMP].forEach(function(c){
     const key = c[0], label = c[1], tipo = c[2];
     const pref = tipo === 'neg' ? '(−) ' : '';
-    rows += '<div style="display:flex;gap:6px;align-items:center;padding:5px 6px;border-bottom:1px solid var(--c-cream-border);' + (tipo === 'saldo' ? 'background:rgba(255,255,255,.05);font-weight:700' : '') + '">' +
-      '<span style="flex:1;min-width:0;font-size:12px;color:var(--c-cream)">' + pref + esc(label) + '</span>' +
-      socs.map(function(s){
-        if (tipo === 'pct') return '<input id="pf_' + key + '_' + s.id + '" type="text" inputmode="decimal" placeholder="%" style="flex:0 0 120px;padding:5px;font-size:12px;text-align:right">';
-        return '<input id="pf_' + key + '_' + s.id + '" type="text" inputmode="decimal" placeholder="$0,00" onfocus="moneyFocus(this)" onblur="moneyBlur(this)" style="flex:0 0 120px;padding:5px;font-size:12px;text-align:right">';
-      }).join('') + '</div>';
+    const inp = (tipo === 'pct')
+      ? '<input id="pf_' + key + '_' + PF_SOC + '" type="text" inputmode="decimal" placeholder="%" style="flex:0 0 150px;padding:6px;font-size:13px;text-align:right">'
+      : '<input id="pf_' + key + '_' + PF_SOC + '" type="text" inputmode="decimal" placeholder="$0,00" onfocus="moneyFocus(this)" onblur="moneyBlur(this)" style="flex:0 0 150px;padding:6px;font-size:13px;text-align:right">';
+    rows += '<div style="display:flex;gap:8px;align-items:center;padding:6px;border-bottom:1px solid var(--c-cream-border);' + (tipo === 'saldo' ? 'background:rgba(255,255,255,.05);font-weight:700' : '') + '">' +
+      '<span style="flex:1;min-width:0;font-size:12.5px;color:var(--c-cream)">' + pref + esc(label) + '</span>' + inp + '</div>';
   });
   body.innerHTML =
+    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><span class="field-label" style="flex:0 0 auto">Sociedad</span><select onchange="pfSetSoc(this.value)" style="flex:1;min-width:160px;padding:7px">' + socOpts + '</select></div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">' + impTab('iva') + impTab('iibb') + impTab('ganancias') + '</div>' +
-    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><span class="field-label" style="flex:0 0 auto">' + (PF_IMP === 'ganancias' ? 'Año' : 'Período') + '</span><select onchange="pfSetPeriodo(this.value)" style="flex:0 0 160px;padding:6px">' + perOpts + '</select>' +
-      '<button class="btn-primary" style="margin-left:auto" onclick="pfGuardar()"><i class="ti ti-device-floppy"></i> Guardar</button></div>' +
+    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><span class="field-label" style="flex:0 0 auto">' + (PF_IMP === 'ganancias' ? 'Año' : 'Período') + '</span><select onchange="pfSetPeriodo(this.value)" style="flex:0 0 150px;padding:6px">' + perOpts + '</select>' +
+      '<span style="margin-left:auto;display:flex;gap:6px"><button class="btn-ghost" onclick="pfBajarExcel()"><i class="ti ti-file-spreadsheet"></i> Bajar Excel</button><button class="btn-primary" onclick="pfGuardar()"><i class="ti ti-device-floppy"></i> Guardar</button></span></div>' +
     '<div class="cierre-hint" style="margin-bottom:8px"><i class="ti ti-info-circle"></i> Carga manual por sociedad. Informativo: no impacta el Panel de Resultados.</div>' +
-    header + rows +
+    rows +
     '<div id="pfStatus" style="font-size:12px;color:var(--c-muted);margin-top:8px"></div>';
   pfCargarValores();
 }
 async function pfCargarValores() {
-  const socs = await pfAsegurarSociedades();
   const per = pfPeriodoActual();
   let data = [];
-  try { data = await api('posicion_fiscal?impuesto=eq.' + PF_IMP + '&periodo=eq.' + encodeURIComponent(per) + '&select=razon_social_id,concepto,monto') || []; } catch (e) {}
-  const map = {}; data.forEach(function(d){ map[d.concepto + '_' + d.razon_social_id] = d.monto; });
+  try { data = await api('posicion_fiscal?impuesto=eq.' + PF_IMP + '&periodo=eq.' + encodeURIComponent(per) + '&razon_social_id=eq.' + PF_SOC + '&select=concepto,monto') || []; } catch (e) {}
+  const map = {}; data.forEach(function(d){ map[d.concepto] = d.monto; });
   PF_CONCEPTOS[PF_IMP].forEach(function(c){
-    socs.forEach(function(s){
-      const el = document.getElementById('pf_' + c[0] + '_' + s.id); if (!el) return;
-      const v = map[c[0] + '_' + s.id];
-      if (c[2] === 'pct') el.value = (v != null && v !== '') ? v : '';
-      else el.value = (v != null && v !== '') ? _fmtMoneyStr(String(v)) : '';
-    });
+    const el = document.getElementById('pf_' + c[0] + '_' + PF_SOC); if (!el) return;
+    const v = map[c[0]];
+    if (c[2] === 'pct') el.value = (v != null && v !== '') ? v : '';
+    else el.value = (v != null && v !== '') ? _fmtMoneyStr(String(v)) : '';
   });
 }
 window.pfGuardar = async function() {
-  const socs = await pfAsegurarSociedades();
   const per = pfPeriodoActual();
   const st = document.getElementById('pfStatus'); if (st) st.textContent = 'Guardando...';
   const rows = []; const nowISO = new Date().toISOString();
   PF_CONCEPTOS[PF_IMP].forEach(function(c){
-    socs.forEach(function(s){
-      const el = document.getElementById('pf_' + c[0] + '_' + s.id); if (!el) return;
-      let monto = (c[2] === 'pct') ? parseFloat(String(el.value).replace(',', '.')) : _parseMoney(el.value);
-      if (!isFinite(monto)) monto = 0;
-      rows.push({ razon_social_id: s.id, impuesto: PF_IMP, periodo: per, concepto: c[0], monto: monto, creado_por: currentUser ? currentUser.id : null, actualizado_en: nowISO });
-    });
+    const el = document.getElementById('pf_' + c[0] + '_' + PF_SOC); if (!el) return;
+    let monto = (c[2] === 'pct') ? parseFloat(String(el.value).replace(',', '.')) : _parseMoney(el.value);
+    if (!isFinite(monto)) monto = 0;
+    rows.push({ razon_social_id: parseInt(PF_SOC, 10), impuesto: PF_IMP, periodo: per, concepto: c[0], monto: monto, creado_por: currentUser ? currentUser.id : null, actualizado_en: nowISO });
   });
   try {
-    for (let k = 0; k < rows.length; k += 200) { await api('posicion_fiscal?on_conflict=razon_social_id,impuesto,periodo,concepto', { method: 'POST', headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(rows.slice(k, k + 200)) }); }
+    await api('posicion_fiscal?on_conflict=razon_social_id,impuesto,periodo,concepto', { method: 'POST', headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(rows) });
     if (st) st.textContent = '✓ Guardado.';
     toast('✓ Panel Fiscal guardado', 'success');
+  } catch (e) { if (st) st.textContent = 'Error: ' + ((e && e.message) || e); }
+};
+window.pfBajarExcel = async function() {
+  const st = document.getElementById('pfStatus'); if (st) st.textContent = 'Preparando Excel...';
+  try {
+    const XLSX = await ensureXLSX();
+    const soc = pfSocActual() || { nombre: 'Sociedad' };
+    const mes = PF_MES, anio = PF_ANIO;
+    const fetchMap = async function(imp, per){ let d = []; try { d = await api('posicion_fiscal?impuesto=eq.' + imp + '&periodo=eq.' + encodeURIComponent(per) + '&razon_social_id=eq.' + PF_SOC + '&select=concepto,monto') || []; } catch (e) {} const m = {}; d.forEach(function(x){ m[x.concepto] = x.monto; }); return m; };
+    const ivaM = await fetchMap('iva', mes), iibbM = await fetchMap('iibb', mes), ganM = await fetchMap('ganancias', anio);
+    const aoa = [[soc.nombre + ' — Posición fiscal'], []];
+    const block = function(titulo, per, imp, map){
+      aoa.push([titulo + ' — ' + per]); aoa.push(['Concepto', 'Monto']);
+      PF_CONCEPTOS[imp].forEach(function(c){ const v = map[c[0]]; const pref = c[2] === 'neg' ? '(−) ' : ''; aoa.push([pref + c[1], (v != null && v !== '') ? Number(v) : '']); });
+      aoa.push([]);
+    };
+    block('IVA (mensual)', mes, 'iva', ivaM);
+    block('Ingresos Brutos (mensual)', mes, 'iibb', iibbM);
+    block('Ganancias (anual)', anio, 'ganancias', ganM);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Posicion fiscal');
+    XLSX.writeFile(wb, 'Panel_Fiscal_' + String(soc.nombre).replace(/[^a-z0-9]+/ig, '_') + '_' + mes + '.xlsx');
+    if (st) st.textContent = '✓ Excel descargado.';
   } catch (e) { if (st) st.textContent = 'Error: ' + ((e && e.message) || e); }
 };
 
