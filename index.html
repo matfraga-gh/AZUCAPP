@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261112dq">
+<link rel="stylesheet" href="styles.css?v=20261112dr">
 </head>
 <body>
 
@@ -2278,6 +2278,16 @@
       </div>
 
       <div style="display:flex;gap:8px">
+        <label class="field" style="flex:1"><span class="field-label">Moneda</span>
+          <select id="cmpMoneda" onchange="cmpOnMoneda()"><option value="ARS">Pesos (ARS)</option><option value="USD">Dólares (USD)</option></select></label>
+        <label class="field" style="flex:1;display:none" id="cmpTcWrap"><span class="field-label">TC (venta)</span>
+          <input type="text" inputmode="decimal" id="cmpTc" placeholder="0,00" oninput="cmpCalcArs()"></label>
+      </div>
+      <div id="cmpTcCard" style="display:none;background:var(--c-card);border:1px solid var(--c-cream-border);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:12px;color:var(--c-cream)">
+        <div><i class="ti ti-currency-dollar"></i> <span id="cmpTcInfo">TC BNA del día…</span></div>
+        <div style="margin-top:4px">Total en pesos: <b id="cmpArsPreview">—</b></div>
+      </div>
+      <div style="display:flex;gap:8px">
         <label class="field" style="flex:1"><span class="field-label">Neto</span><input type="text" inputmode="decimal" id="cmpNeto" placeholder="$0,00" oninput="cmpSumaDist()" onfocus="moneyFocus(this)" onblur="moneyBlur(this);cmpSumaDist()"></label>
         <label class="field" style="flex:1"><span class="field-label">IVA</span><input type="text" inputmode="decimal" id="cmpIva" placeholder="$0,00" onfocus="moneyFocus(this)" onblur="moneyBlur(this)"></label>
       </div>
@@ -2285,7 +2295,7 @@
         <label class="field" style="flex:1"><span class="field-label">Percepciones</span><input type="text" inputmode="decimal" id="cmpPercep" placeholder="$0,00" onfocus="moneyFocus(this)" onblur="moneyBlur(this)"></label>
         <label class="field" style="flex:1"><span class="field-label">Otros imp.</span><input type="text" inputmode="decimal" id="cmpOtros" placeholder="$0,00" onfocus="moneyFocus(this)" onblur="moneyBlur(this)"></label>
       </div>
-      <label class="field"><span class="field-label">Total</span><input type="text" inputmode="decimal" id="cmpTotal" placeholder="$0,00" onfocus="moneyFocus(this)" onblur="moneyBlur(this)"></label>
+      <label class="field"><span class="field-label">Total</span><input type="text" inputmode="decimal" id="cmpTotal" placeholder="$0,00" onfocus="moneyFocus(this)" onblur="moneyBlur(this);cmpCalcArs()"></label>
 
       <div class="field-label" style="margin-top:6px">Distribución (local + cuenta + monto)</div>
       <div id="cmpDistLista"></div>
@@ -2984,6 +2994,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261112dq"></script>
+<script src="app.js?v=20261112dr"></script>
 </body>
 </html>

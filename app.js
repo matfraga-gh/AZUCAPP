@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-12-DQ | ULTIMA | Imputacion de comprobantes: si una cuenta tiene subcuentas, el rubro generico ya NO es elegible (aparece como encabezado); hay que elegir una subcuenta. Aplica en comprobantes, comprobante simple, conciliacion y cuenta por defecto del proveedor. No requiere SQL. Antes: Anular comprobante con pago (limpia OP y conciliacion antes de borrar) ===== */
+/* ===== BUILD 2026-11-12-DR | ULTIMA | Comprobantes en USD (parte 1): selector de moneda + ficha de TC oficial (venta) sugerido del dia (dolarapi, editable). Se guarda en pesos como siempre (neto/iva/total/distribucion con el TC) + se guardan los importes en USD y el TC, para no romper Pagos/OP/Flujo/Panel. Lista muestra US$ y TC. Requiere comprobantes_usd.sql. Pendiente parte 2: corregir el TC al pagar (OP) y recalcular. Antes: imputacion solo a subcuentas ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -6010,7 +6010,10 @@ function renderComprobantes() {
     return '<div class="ped-card" style="padding:8px 10px;margin-bottom:6px;border-left:3px solid ' + est.color + '">' +
       '<div style="display:flex;align-items:center;gap:8px">' +
         '<span style="font-weight:700;color:var(--c-cream);min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(prov ? prov.razon_social : '(proveedor s/d)') + '</span>' +
-        '<span style="font-weight:800;font-size:15px;white-space:nowrap;color:' + (nc ? '#4CAF7A' : 'var(--c-cream)') + '">' + (nc ? '− ' : '') + _cmpMoney(c.total) + '</span>' +
+        '<span style="text-align:right;white-space:nowrap">' +
+          '<span style="font-weight:800;font-size:15px;color:' + (nc ? '#4CAF7A' : 'var(--c-cream)') + '">' + (nc ? '− ' : '') + _cmpMoney(c.total) + '</span>' +
+          (c.moneda === 'USD' ? '<br><span style="font-size:10.5px;color:var(--c-sand)">US$ ' + _fmtMoneyStr(String(c.total_origen != null ? c.total_origen : '')) + ' · TC ' + _pvMoney(c.tc) + '</span>' : '') +
+        '</span>' +
       '</div>' +
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:4px">' +
         '<span style="font-size:11.5px;color:var(--c-sand);white-space:nowrap;flex:0 0 auto">emis. <b style="color:var(--c-cream)">' + _pagoFecha(c.fecha_emision) + '</b> · ' + vtoTxt + '</span>' +
@@ -6072,12 +6075,51 @@ window.cmpSumaDist = function(){
   if (el) { el.textContent = 'Distribuido: ' + _cmpMoney(s) + (neto ? ' / Neto: ' + _cmpMoney(neto) : ''); el.style.color = (neto && Math.abs(s - neto) > 1) ? 'var(--c-error)' : 'var(--c-muted)'; }
 };
 function _cmpLimpiarForm() {
-  ['cmpPtoVenta','cmpNumero','cmpFechaEmision','cmpFechaVto','cmpNeto','cmpIva','cmpPercep','cmpOtros','cmpTotal','cmpCae','cmpFirmado','cmpObs'].forEach(function(id){ const e = document.getElementById(id); if (e) e.value = ''; });
+  ['cmpPtoVenta','cmpNumero','cmpFechaEmision','cmpFechaVto','cmpNeto','cmpIva','cmpPercep','cmpOtros','cmpTotal','cmpCae','cmpFirmado','cmpObs','cmpTc'].forEach(function(id){ const e = document.getElementById(id); if (e) e.value = ''; });
   document.getElementById('cmpError').textContent = '';
+  const monEl = document.getElementById('cmpMoneda'); if (monEl) monEl.value = 'ARS';
+  const tcW = document.getElementById('cmpTcWrap'); if (tcW) tcW.style.display = 'none';
+  const tcC = document.getElementById('cmpTcCard'); if (tcC) tcC.style.display = 'none';
   CMP_ADJUNTO_PATH = null;
   document.getElementById('cmpAdjEstado').innerHTML = '';
   const fi = document.getElementById('cmpArchivo'); if (fi) fi.value = '';
 }
+// ---- Moneda / tipo de cambio (comprobantes en USD) ----
+let _TC_CACHE = null;
+async function tcOficialVenta() {
+  if (_TC_CACHE && (Date.now() - _TC_CACHE.t) < 3600000) return _TC_CACHE.v;
+  try {
+    const r = await fetch('https://dolarapi.com/v1/dolares/oficial');
+    const j = await r.json();
+    const v = parseFloat(j.venta);
+    if (isFinite(v) && v > 0) { _TC_CACHE = { v: v, t: Date.now() }; return v; }
+  } catch (e) {}
+  return null;
+}
+window.cmpOnMoneda = async function() {
+  const mon = (document.getElementById('cmpMoneda') || {}).value || 'ARS';
+  const usd = mon === 'USD';
+  document.getElementById('cmpTcWrap').style.display = usd ? '' : 'none';
+  document.getElementById('cmpTcCard').style.display = usd ? '' : 'none';
+  if (usd) {
+    const tcEl = document.getElementById('cmpTc');
+    if (!(_parseMoney(tcEl.value) > 0)) {
+      document.getElementById('cmpTcInfo').textContent = 'Buscando TC BNA del día…';
+      const v = await tcOficialVenta();
+      if (v) { tcEl.value = _fmtMoneyStr(String(v)); document.getElementById('cmpTcInfo').innerHTML = 'TC oficial (venta) sugerido: <b>' + _pvMoney(v) + '</b> — editable'; }
+      else document.getElementById('cmpTcInfo').textContent = 'No se pudo traer el TC del día. Cargalo a mano.';
+    } else {
+      document.getElementById('cmpTcInfo').innerHTML = 'TC aplicado: <b>' + _pvMoney(_parseMoney(tcEl.value)) + '</b> — editable';
+    }
+    cmpCalcArs();
+  }
+};
+window.cmpCalcArs = function() {
+  const tot = _parseMoney(document.getElementById('cmpTotal').value);
+  const tc = _parseMoney(document.getElementById('cmpTc').value);
+  const el = document.getElementById('cmpArsPreview');
+  if (el) el.textContent = (tc > 0) ? _pvMoney(Math.round(tot * tc)) : '—';
+};
 window.abrirNuevoComprobante = async function() {
   CMP_EDIT_ID = null;
   document.getElementById('cmpModalTitulo').textContent = 'Nuevo comprobante';
@@ -6108,20 +6150,26 @@ window.abrirEditarComprobante = async function(id) {
   document.getElementById('cmpNumero').value = c.numero || '';
   document.getElementById('cmpFechaEmision').value = c.fecha_emision ? String(c.fecha_emision).slice(0,10) : '';
   document.getElementById('cmpFechaVto').value = c.fecha_vto ? String(c.fecha_vto).slice(0,10) : '';
-  document.getElementById('cmpNeto').value = c.neto != null ? c.neto : '';
-  document.getElementById('cmpIva').value = c.iva != null ? c.iva : '';
-  document.getElementById('cmpPercep').value = c.percepciones != null ? c.percepciones : '';
-  document.getElementById('cmpOtros').value = c.otros_imp != null ? c.otros_imp : '';
-  document.getElementById('cmpTotal').value = c.total != null ? c.total : '';
+  const _mon = c.moneda || 'ARS';
+  const _tc = parseFloat(c.tc) || 1;
+  const _oval = function(origen, ars){ if (origen != null) return origen; return (_mon === 'USD' && _tc > 0) ? (parseFloat(ars) / _tc) : ars; };
+  document.getElementById('cmpNeto').value = c.neto != null ? _oval(c.neto_origen, c.neto) : '';
+  document.getElementById('cmpIva').value = c.iva != null ? _oval(c.iva_origen, c.iva) : '';
+  document.getElementById('cmpPercep').value = c.percepciones != null ? _oval(c.percepciones_origen, c.percepciones) : '';
+  document.getElementById('cmpOtros').value = c.otros_imp != null ? _oval(c.otros_origen, c.otros_imp) : '';
+  document.getElementById('cmpTotal').value = c.total != null ? _oval(c.total_origen, c.total) : '';
   _cmpFmtMoneyFields();
+  const monEl = document.getElementById('cmpMoneda'); if (monEl) monEl.value = _mon;
+  if (_mon === 'USD') { const tcEl = document.getElementById('cmpTc'); if (tcEl) tcEl.value = _fmtMoneyStr(String(_tc)); }
+  cmpOnMoneda();
   document.getElementById('cmpCae').value = c.cae || '';
   document.getElementById('cmpFirmado').value = c.firmado_por || '';
   document.getElementById('cmpObs').value = c.observaciones || '';
   CMP_ADJUNTO_PATH = c.adjunto_path || null;
   document.getElementById('cmpAdjEstado').innerHTML = CMP_ADJUNTO_PATH ? ('<a href="#" onclick="cmpVerAdjunto(\'' + esc(CMP_ADJUNTO_PATH) + '\');return false;" style="color:var(--c-sand)"><i class="ti ti-file-text"></i> Ver archivo adjunto</a>') : '';
   try {
-    const d = await api('comprobante_distribuciones?comprobante_id=eq.' + id + '&select=local,cuenta_id,monto') || [];
-    CMP_DIST = d.length ? d.map(function(x){ return { local: x.local || '', cuenta_id: x.cuenta_id || '', monto: x.monto != null ? x.monto : '' }; }) : [{ local:'', cuenta_id:'', monto:'' }];
+    const d = await api('comprobante_distribuciones?comprobante_id=eq.' + id + '&select=local,cuenta_id,monto,monto_origen') || [];
+    CMP_DIST = d.length ? d.map(function(x){ return { local: x.local || '', cuenta_id: x.cuenta_id || '', monto: (x.monto_origen != null ? x.monto_origen : (x.monto != null ? x.monto : '')) }; }) : [{ local:'', cuenta_id:'', monto:'' }];
   } catch (e) { CMP_DIST = [{ local:'', cuenta_id:'', monto:'' }]; }
   renderDistComprobante();
   document.getElementById('cmpBorrarBtn').style.display = (isMaster() || isAdmin()) ? '' : 'none';
@@ -6201,6 +6249,11 @@ window.guardarComprobante = async function() {
   const prov = CMP_PROVEEDORES.find(function(p){ return (p.razon_social || '').toLowerCase() === provTexto.toLowerCase(); });
   if (!prov) { err.textContent = 'Elegí un proveedor de la lista (o cargalo antes en Administración → Proveedores).'; return; }
   _leerDist();
+  const moneda = (document.getElementById('cmpMoneda') || {}).value || 'ARS';
+  const tc = moneda === 'USD' ? (_parseMoney(document.getElementById('cmpTc').value) || 0) : 1;
+  if (moneda === 'USD' && !(tc > 0)) { err.textContent = 'Ingresá el tipo de cambio (TC) para un comprobante en dólares.'; return; }
+  const conv = function(x){ return moneda === 'USD' ? Math.round((x || 0) * tc) : x; };
+  // dist: monto en moneda de origen (lo que se tipeó). El ARS se calcula con el TC.
   const dist = CMP_DIST.map(function(d){ return { local: d.local || null, cuenta_id: d.cuenta_id ? parseInt(d.cuenta_id, 10) : null, monto: parseFloat(d.monto) || 0 }; }).filter(function(d){ return d.monto > 0; });
   if (!dist.length) { err.textContent = 'Agregá al menos una línea de distribución (local + cuenta + monto).'; return; }
   const _socioIds = PLAN_CUENTAS.filter(function(c){ return c.grupo === 'SOCIOS'; }).map(function(c){ return c.id; });
@@ -6218,7 +6271,9 @@ window.guardarComprobante = async function() {
     numero: document.getElementById('cmpNumero').value.trim() || null,
     fecha_emision: document.getElementById('cmpFechaEmision').value || null,
     fecha_vto: document.getElementById('cmpFechaVto').value || null,
-    neto: num('cmpNeto'), iva: num('cmpIva'), percepciones: num('cmpPercep'), otros_imp: num('cmpOtros'), total: num('cmpTotal'),
+    neto: conv(num('cmpNeto')), iva: conv(num('cmpIva')), percepciones: conv(num('cmpPercep')), otros_imp: conv(num('cmpOtros')), total: conv(num('cmpTotal')),
+    moneda: moneda, tc: tc,
+    neto_origen: num('cmpNeto'), iva_origen: num('cmpIva'), percepciones_origen: num('cmpPercep'), otros_origen: num('cmpOtros'), total_origen: num('cmpTotal'),
     cae: document.getElementById('cmpCae').value.trim() || null,
     firmado_por: document.getElementById('cmpFirmado').value.trim() || null,
     observaciones: document.getElementById('cmpObs').value.trim() || null,
@@ -6248,7 +6303,7 @@ window.guardarComprobante = async function() {
       const nuevo = Array.isArray(r) ? r[0] : r;
       cmpId = nuevo.id;
     }
-    const filas = dist.map(function(d){ return { comprobante_id: cmpId, local: d.local, cuenta_id: d.cuenta_id, monto: d.monto }; });
+    const filas = dist.map(function(d){ return { comprobante_id: cmpId, local: d.local, cuenta_id: d.cuenta_id, monto: conv(d.monto), monto_origen: d.monto }; });
     await api('comprobante_distribuciones', { method: 'POST', body: JSON.stringify(filas) });
     // Aprendizaje: si el proveedor no tiene cuenta por defecto y el comprobante va a una sola cuenta, la guardamos.
     try {
