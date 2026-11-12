@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261112dr">
+<link rel="stylesheet" href="styles.css?v=20261112du">
 </head>
 <body>
 
@@ -2305,7 +2305,7 @@
       </div>
 
       <label class="field"><span class="field-label">CAE</span><input type="text" id="cmpCae" placeholder="Opcional"></label>
-      <label class="field"><span class="field-label">Firmado / autorizado por</span><input type="text" id="cmpFirmado" placeholder="Responsable del área"></label>
+      <label class="field"><span class="field-label">Firmado / autorizado por</span><input type="text" id="cmpFirmado" list="cmpFirmantesList" autocomplete="off" placeholder="Responsable del área"><datalist id="cmpFirmantesList"></datalist></label>
       <label class="field"><span class="field-label">Observaciones</span><textarea id="cmpObs" rows="2" placeholder="Opcional"></textarea></label>
       <div class="login-error" id="cmpError"></div>
     </div>
@@ -2994,6 +2994,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261112dr"></script>
+<script src="app.js?v=20261112du"></script>
 </body>
 </html>

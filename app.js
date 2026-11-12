@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-12-DR | ULTIMA | Comprobantes en USD (parte 1): selector de moneda + ficha de TC oficial (venta) sugerido del dia (dolarapi, editable). Se guarda en pesos como siempre (neto/iva/total/distribucion con el TC) + se guardan los importes en USD y el TC, para no romper Pagos/OP/Flujo/Panel. Lista muestra US$ y TC. Requiere comprobantes_usd.sql. Pendiente parte 2: corregir el TC al pagar (OP) y recalcular. Antes: imputacion solo a subcuentas ===== */
+/* ===== BUILD 2026-11-12-DU | ULTIMA | Firmante sugerido: Editores de Pedidos (por su local; TRANSVERSAL = todos) + Administradores/master (firman cualquier local). Se mantiene solo desde los permisos. No requiere SQL. Antes: firmante solo editores de pedidos ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -6058,14 +6058,40 @@ function renderDistComprobante() {
   const cont = document.getElementById('cmpDistLista');
   cont.innerHTML = CMP_DIST.map(function(d, i){
     return '<div class="cmp-dist-row" style="display:flex;gap:5px;margin-bottom:6px;align-items:center">' +
-      '<select class="cmp-d-local" style="flex:1;min-width:0">' + _cmpLocalesOptions(d.local) + '</select>' +
+      '<select class="cmp-d-local" style="flex:1;min-width:0" onchange="cmpActualizarFirmantes()">' + _cmpLocalesOptions(d.local) + '</select>' +
       '<select class="cmp-d-cuenta" style="flex:1.3;min-width:0">' + _cuentaOptionsHTML(d.cuenta_id, 'Cuenta…') + '</select>' +
       '<input class="cmp-d-monto" type="text" inputmode="decimal" placeholder="$0,00" value="' + esc(_fmtMoneyStr(d.monto)) + '" style="flex:0 0 110px" oninput="cmpSumaDist()" onfocus="moneyFocus(this)" onblur="moneyBlur(this);cmpSumaDist()">' +
       '<button type="button" class="btn-ghost" style="flex:0 0 auto;padding:4px 7px;color:var(--c-error)" onclick="cmpQuitarLinea(' + i + ')"><i class="ti ti-x"></i></button>' +
     '</div>';
   }).join('');
   cmpSumaDist();
+  cmpActualizarFirmantes();
 }
+// Sugerencias de firmante: editores de Pedidos activos, vinculados a su(s) local(es). Los TRANSVERSAL valen para todos.
+let FIRMANTES_CACHE = null;
+async function ensureFirmantes() {
+  if (FIRMANTES_CACHE) return FIRMANTES_CACHE;
+  try {
+    const u = await api('roster_usuarios?select=nombre,perfil,locales_asignados,editor_pedidos&activo=is.true&or=(editor_pedidos.is.true,perfil.in.(admin,master))') || [];
+    FIRMANTES_CACHE = u.map(function(x){ return { nombre: (x.nombre || '').trim(), locs: x.locales_asignados || [], esAdmin: (x.perfil === 'admin' || x.perfil === 'master') }; }).filter(function(x){ return x.nombre; });
+  } catch (e) { FIRMANTES_CACHE = []; }
+  return FIRMANTES_CACHE;
+}
+window.cmpActualizarFirmantes = function(){
+  const dl = document.getElementById('cmpFirmantesList'); if (!dl) return;
+  const rows = document.querySelectorAll('#cmpDistLista .cmp-dist-row');
+  const locs = Array.from(new Set(Array.prototype.map.call(rows, function(r){ const s = r.querySelector('.cmp-d-local'); return s ? s.value : ''; }).filter(Boolean)));
+  if (!locs.length) { dl.innerHTML = ''; return; }
+  const list = FIRMANTES_CACHE || [];
+  const seen = {}; const names = [];
+  list.forEach(function(u){
+    // Los admin firman cualquier local; los editores de pedidos, su(s) local(es) (TRANSVERSAL = todos).
+    const match = u.esAdmin || u.locs.indexOf('TRANSVERSAL') >= 0 || locs.some(function(l){ return u.locs.indexOf(l) >= 0; });
+    if (match && !seen[u.nombre]) { seen[u.nombre] = 1; names.push(u.nombre); }
+  });
+  names.sort();
+  dl.innerHTML = names.map(function(n){ return '<option value="' + esc(n) + '"></option>'; }).join('');
+};
 window.cmpAgregarLinea = function(){ _leerDist(); CMP_DIST.push({ local: '', cuenta_id: '', monto: '' }); renderDistComprobante(); };
 window.cmpQuitarLinea = function(i){ _leerDist(); CMP_DIST.splice(i, 1); renderDistComprobante(); };
 window.cmpSumaDist = function(){
@@ -6127,6 +6153,7 @@ window.abrirNuevoComprobante = async function() {
   _cmpPrepMoneyInputs();
   try { await cmpAsegurarProveedores(); } catch (e) {}
   _cmpLlenarSelects(null);
+  try { await ensureFirmantes(); } catch (e) {}
   CMP_DIST = [{ local: '', cuenta_id: '', monto: '' }];
   renderDistComprobante();
   document.getElementById('cmpBorrarBtn').style.display = 'none';
@@ -6171,6 +6198,7 @@ window.abrirEditarComprobante = async function(id) {
     const d = await api('comprobante_distribuciones?comprobante_id=eq.' + id + '&select=local,cuenta_id,monto,monto_origen') || [];
     CMP_DIST = d.length ? d.map(function(x){ return { local: x.local || '', cuenta_id: x.cuenta_id || '', monto: (x.monto_origen != null ? x.monto_origen : (x.monto != null ? x.monto : '')) }; }) : [{ local:'', cuenta_id:'', monto:'' }];
   } catch (e) { CMP_DIST = [{ local:'', cuenta_id:'', monto:'' }]; }
+  try { await ensureFirmantes(); } catch (e) {}
   renderDistComprobante();
   document.getElementById('cmpBorrarBtn').style.display = (isMaster() || isAdmin()) ? '' : 'none';
   document.getElementById('modalComprobante').classList.add('show');
