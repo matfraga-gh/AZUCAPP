@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-13-EJ | ULTIMA | Cheques emitidos (backlog): impactan el Flujo como egreso comprometido en su fecha de debito (lee cheques_emitidos). Baja automatica: el matcheo de conciliacion ahora tambien concilia debitos contra cheques emitidos pendientes (por numero en la descripcion o importe exacto) y marca el cheque debitado. Datos cargados por SQL (cheques_emitidos_carga.sql); sin UI de carga. (Incluye filtro por RS en Pagos y "Todas las RS"). Antes: filtro por razon social en Pagos ===== */
+/* ===== BUILD 2026-11-13-EK | ULTIMA | FIX 401 "No API key": la funcion api() perdia el apikey cuando una llamada pasaba headers propios (Prefer en los upsert). Afectaba subir la Planilla de Resultados y guardar el Panel Fiscal. Corregido el orden del merge de headers. No requiere SQL. Antes: cheques emitidos (backlog + baja por conciliacion) ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -88,14 +88,14 @@ let semanaActual = null;      // Lunes de la semana visible (formato YYYY-MM-DD)
 // ============================================
 async function api(path, options = {}) {
   const opts = {
+    ...options,
     headers: {
       'apikey': SUPABASE_KEY,
       'Authorization': 'Bearer ' + SUPABASE_KEY,
       'Content-Type': 'application/json',
       'Prefer': 'return=representation',
       ...(options.headers || {})
-    },
-    ...options
+    }
   };
 
   const url = SUPABASE_URL + '/rest/v1/' + path;
