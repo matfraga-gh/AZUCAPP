@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-13-EG | ULTIMA | Flujo/Compromisos: los comprobantes "por pagar" SIN fecha de pago asignada ya NO impactan el flujo (pedido de Paula). Solo cuentan los que tienen fecha de pago (programados u OP) y lo comprometido en OP. No requiere SQL. Antes: Pagos con pestana "Sin firma" ===== */
+/* ===== BUILD 2026-11-13-EH | ULTIMA | Pagos: filtro por razon social (desplegable junto a Ordenar) que acota la bandeja a la sociedad elegida. No requiere SQL. Antes: Flujo no impacta comprobantes sin fecha de pago ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -6457,7 +6457,7 @@ window.rechazarComprobante = async function(id, refresh) {
 // ============================================
 // PAGOS — Bandeja y programación de pagos (Fase A)
 // ============================================
-let PAGOS_LISTA = [], PAGOS_DIST = {}, PAGOS_MEDIOS = [], PAGOS_SEL = {}, PAGOS_SORT = 'vto', PAGOS_FILTRO = 'por_pagar', PAGOS_Q = '', PAGOS_OPS = [];
+let PAGOS_LISTA = [], PAGOS_DIST = {}, PAGOS_MEDIOS = [], PAGOS_SEL = {}, PAGOS_SORT = 'vto', PAGOS_FILTRO = 'por_pagar', PAGOS_Q = '', PAGOS_OPS = [], PAGOS_RZ = '', PAGOS_RAZONES = [];
 const PAGOS_TOPE = 400;
 function puedePagos() { return isMaster() || isAdmin(); }
 function _pagoFecha(f) { return f ? f.slice(0, 10).split('-').reverse().join('/') : '—'; }
@@ -6541,6 +6541,7 @@ window.openPagos = openPagos;
 
 window.onPagoFiltro = function(v) { PAGOS_FILTRO = v; PAGOS_SEL = {}; renderPagos(); };
 window.onPagoSort = function(v) { PAGOS_SORT = v; renderPagos(); };
+window.onPagoRazon = function(v) { PAGOS_RZ = v; PAGOS_SEL = {}; renderPagos(); };
 window.onPagoBuscar = function(v) { PAGOS_Q = (v || '').trim().toLowerCase(); renderPagos(); };
 window.togglePagoSel = function(id) { if (PAGOS_SEL[id]) delete PAGOS_SEL[id]; else PAGOS_SEL[id] = true; renderPagos(); };
 function _pagoModo() { return PAGOS_FILTRO === 'programados' ? 'op' : 'programar'; }
@@ -6555,6 +6556,7 @@ window.pagosSeleccionarTodo = function() {
 
 function _pagosFiltradas() {
   let arr = PAGOS_LISTA.slice();
+  if (PAGOS_RZ) arr = arr.filter(function(c){ return String(c.razon_social_id) === String(PAGOS_RZ); });
   if (PAGOS_FILTRO === 'sin_firma') arr = arr.filter(function(c){ return c.estado === 'sin_firma'; });
   else if (PAGOS_FILTRO === 'por_pagar') arr = arr.filter(function(c){ return c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial'; });
   else if (PAGOS_FILTRO === 'programados') arr = arr.filter(function(c){ return c.estado === 'pago_programado'; });
@@ -6595,6 +6597,9 @@ function renderPagos() {
       '<option value="fecha"' + (PAGOS_SORT === 'fecha' ? ' selected' : '') + '>Fecha comprobante</option>' +
       '<option value="proveedor"' + (PAGOS_SORT === 'proveedor' ? ' selected' : '') + '>Proveedor</option>' +
       '<option value="importe"' + (PAGOS_SORT === 'importe' ? ' selected' : '') + '>Importe</option>' +
+    '</select>' +
+    '<select onchange="onPagoRazon(this.value)" style="padding:5px 8px;border-radius:8px;font-size:12px;margin-left:6px" title="Filtrar por razón social"><option value="">Todas las razones</option>' +
+      (CMP_RAZONES || []).map(function(r){ return '<option value="' + r.id + '"' + (String(PAGOS_RZ) === String(r.id) ? ' selected' : '') + '>' + esc(r.nombre) + '</option>'; }).join('') +
     '</select></div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">' +
       '<span style="font-size:12px;color:var(--c-sand)"><b style="color:var(--c-cream)">' + arr.length + '</b> comprob. · ' + _cmpMoney(totalVista) + '</span>' +
