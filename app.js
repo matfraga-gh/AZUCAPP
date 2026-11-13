@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-12-EF | ULTIMA | Pagos: nueva pestana "Sin firma" (antes de "Por pagar") que muestra los comprobantes en estado Sin firma; no son seleccionables para pago, pero se pueden Firmar o Rechazar desde ahi. Firma del responsable: Sin firma es previo al pago. No requiere SQL. Antes: circuito de firma (estados Sin firma / Con observacion) ===== */
+/* ===== BUILD 2026-11-13-EG | ULTIMA | Flujo/Compromisos: los comprobantes "por pagar" SIN fecha de pago asignada ya NO impactan el flujo (pedido de Paula). Solo cuentan los que tienen fecha de pago (programados u OP) y lo comprometido en OP. No requiere SQL. Antes: Pagos con pestana "Sin firma" ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -7778,13 +7778,14 @@ async function mfAsegurarCompromisos() {
     const opIds = Array.from(new Set(medios.map(function(m){ return m.orden_pago_id; }).filter(Boolean)));
     let opMap = {};
     if (opIds.length) { const ops = await api('ordenes_pago?id=in.(' + opIds.join(',') + ')&select=id,numero,proveedor_id,razon_social_id') || []; ops.forEach(function(o){ opMap[o.id] = o; }); }
-    const comps = await api('comprobantes?estado=in.(pendiente_pago,pagado_parcial,pago_programado)&fecha_vto=not.is.null&select=id,proveedor_id,razon_social_id,tipo,numero,total,fecha_vto,fecha_pago,estado') || [];
+    // Solo comprobantes con FECHA DE PAGO asignada (programados u OP): los "por pagar" sin fecha no impactan el flujo (pedido de Paula).
+    const comps = await api('comprobantes?estado=in.(pagado_parcial,pago_programado)&fecha_pago=not.is.null&select=id,proveedor_id,razon_social_id,tipo,numero,total,fecha_vto,fecha_pago,estado') || [];
     const rzMap = {}; (await api('razones_sociales?select=id,nombre') || []).forEach(function(r){ rzMap[r.id] = r.nombre; });
     const pids = Array.from(new Set(medios.map(function(m){ return opMap[m.orden_pago_id] && opMap[m.orden_pago_id].proveedor_id; }).concat(comps.map(function(c){ return c.proveedor_id; })).filter(Boolean)));
     if (pids.length) { const ps = await api('proveedores?id=in.(' + pids.join(',') + ')&select=id,razon_social') || []; ps.forEach(function(p){ CMP_PROV_MAP[p.id] = p; }); }
     const items = [];
     medios.forEach(function(m){ const op = opMap[m.orden_pago_id] || {}; const p = CMP_PROV_MAP[op.proveedor_id]; const emp = rzMap[op.razon_social_id] || '(sin empresa)'; items.push({ fecha: m.vencimiento, tipo: 'comprometido', emp: emp, detalle: emp + ' · ' + (op.numero || 'OP') + (p ? ' · ' + p.razon_social : '') + (m.documento ? ' · chq ' + m.documento : ''), importe: parseFloat(m.importe) || 0 }); });
-    comps.forEach(function(c){ const p = CMP_PROV_MAP[c.proveedor_id]; const emp = rzMap[c.razon_social_id] || '(sin empresa)'; items.push({ fecha: (c.estado === 'pago_programado' && c.fecha_pago) ? c.fecha_pago : c.fecha_vto, tipo: 'previsto', emp: emp, detalle: emp + ' · ' + (p ? p.razon_social : '') + ' · ' + (c.tipo || '') + ' ' + (c.numero || ''), importe: parseFloat(c.total) || 0 }); });
+    comps.forEach(function(c){ const p = CMP_PROV_MAP[c.proveedor_id]; const emp = rzMap[c.razon_social_id] || '(sin empresa)'; items.push({ fecha: c.fecha_pago, tipo: 'previsto', emp: emp, detalle: emp + ' · ' + (p ? p.razon_social : '') + ' · ' + (c.tipo || '') + ' ' + (c.numero || ''), importe: parseFloat(c.total) || 0 }); });
     items.sort(function(a, b){ return (a.fecha || '9999').localeCompare(b.fecha || '9999'); });
     MF_COMPROMISOS = items; return true;
   } catch (e) { MF_COMPROMISOS = null; return false; }
@@ -7845,7 +7846,7 @@ async function mfRenderCompromisos() {
         '<span style="color:var(--c-sand);border-left:1px solid var(--c-cream-border);padding-left:14px">Total <b style="color:var(--c-cream)">' + _mfMoney(dispo, 'ARS') + '</b></span>' +
       '</div>' +
     '</div></div>' +
-    '<div class="cierre-hint" style="margin-bottom:8px"><span style="color:#E5534B">■</span> Comprometido (cheque/OP emitida) &nbsp; <span style="color:#C87A2C">■</span> Previsto (vence, sin pago comprometido aún)</div>';
+    '<div class="cierre-hint" style="margin-bottom:8px"><span style="color:#E5534B">■</span> Comprometido (cheque/OP emitida) &nbsp; <span style="color:#C87A2C">■</span> Programado (con fecha de pago asignada). Los comprobantes por pagar sin fecha de pago aún no impactan.</div>';
 
   // Render de las semanas de un mes (ya asignadas), con días hábiles al desplegar
   const renderSemanas = function(mk){
