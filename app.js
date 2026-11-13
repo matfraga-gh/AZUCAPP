@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-13-EH | ULTIMA | Pagos: filtro por razon social (desplegable junto a Ordenar) que acota la bandeja a la sociedad elegida. No requiere SQL. Antes: Flujo no impacta comprobantes sin fecha de pago ===== */
+/* ===== BUILD 2026-11-13-EJ | ULTIMA | Cheques emitidos (backlog): impactan el Flujo como egreso comprometido en su fecha de debito (lee cheques_emitidos). Baja automatica: el matcheo de conciliacion ahora tambien concilia debitos contra cheques emitidos pendientes (por numero en la descripcion o importe exacto) y marca el cheque debitado. Datos cargados por SQL (cheques_emitidos_carga.sql); sin UI de carga. (Incluye filtro por RS en Pagos y "Todas las RS"). Antes: filtro por razon social en Pagos ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -6598,7 +6598,7 @@ function renderPagos() {
       '<option value="proveedor"' + (PAGOS_SORT === 'proveedor' ? ' selected' : '') + '>Proveedor</option>' +
       '<option value="importe"' + (PAGOS_SORT === 'importe' ? ' selected' : '') + '>Importe</option>' +
     '</select>' +
-    '<select onchange="onPagoRazon(this.value)" style="padding:5px 8px;border-radius:8px;font-size:12px;margin-left:6px" title="Filtrar por razón social"><option value="">Todas las razones</option>' +
+    '<select onchange="onPagoRazon(this.value)" style="padding:5px 8px;border-radius:8px;font-size:12px;margin-left:6px" title="Filtrar por razón social"><option value="">Todas las RS</option>' +
       (CMP_RAZONES || []).map(function(r){ return '<option value="' + r.id + '"' + (String(PAGOS_RZ) === String(r.id) ? ' selected' : '') + '>' + esc(r.nombre) + '</option>'; }).join('') +
     '</select></div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">' +
@@ -7481,6 +7481,18 @@ function _matchMedio(mov, medios, opMap) {
   for (let i = 0; i < medios.length; i++) { const md = medios[i]; const op = opMap[md.orden_pago_id] || {}; if (Math.abs(Math.round((parseFloat(md.importe) || 0) * 100) - amt) <= 100 && _diasEntre(mov.fecha, md.vencimiento || op.fecha) <= 5) return md; }
   return null;
 }
+// Matchea un débito bancario contra un cheque emitido pendiente: por número en la descripción, o por importe exacto único.
+function _matchCheque(m, cheques) {
+  const imp = Math.abs(parseFloat(m.importe) || 0);
+  const nums = ((m.descripcion || '') + ' ' + (m.referencia || '')).replace(/\D+/g, ' ').trim().split(/\s+/);
+  let hit = cheques.find(function(c){ return c.numero && nums.indexOf(String(c.numero)) >= 0 && Math.abs((parseFloat(c.importe) || 0) - imp) < 1; });
+  if (hit) return hit;
+  hit = cheques.find(function(c){ return c.numero && nums.indexOf(String(c.numero)) >= 0; });
+  if (hit) return hit;
+  const byImp = cheques.filter(function(c){ return Math.abs((parseFloat(c.importe) || 0) - imp) < 1; });
+  if (byImp.length === 1) return byImp[0];
+  return null;
+}
 window.concMatchearPagos = async function() {
   const razonId = document.getElementById('concRazon').value;
   if (!razonId) { toast('Elegí la razón social', 'error'); return; }
@@ -7491,12 +7503,22 @@ window.concMatchearPagos = async function() {
     ops = await api('ordenes_pago?razon_social_id=eq.' + razonId + '&estado=eq.emitida&select=id,numero,fecha,proveedor_id,total') || [];
     if (ops.length) { const ids = ops.map(function(o){ return o.id; }); medios = await api('orden_pago_medios?orden_pago_id=in.(' + ids.join(',') + ')&conciliado=eq.false&select=*') || []; }
   } catch (e) { toast('No se pudieron cargar las órdenes de pago', 'error'); return; }
-  if (!medios.length) { toast('No hay pagos emitidos para conciliar', 'info'); return; }
   const opMap = {}; ops.forEach(function(o){ opMap[o.id] = o; });
   const usados = new Set(); CONC_MATCHES = [];
-  deb.forEach(function(m){
-    const med = _matchMedio(m, medios.filter(function(x){ return !usados.has(x.id); }), opMap);
-    if (med) { usados.add(med.id); CONC_MATCHES.push({ mov: m, medio: med, op: opMap[med.orden_pago_id] }); }
+  if (medios.length) {
+    deb.forEach(function(m){
+      const med = _matchMedio(m, medios.filter(function(x){ return !usados.has(x.id); }), opMap);
+      if (med) { usados.add(med.id); CONC_MATCHES.push({ mov: m, medio: med, op: opMap[med.orden_pago_id] }); }
+    });
+  }
+  // Cheques emitidos pendientes de débito (backlog): baja automática al detectar el débito.
+  const usadosMov = new Set(CONC_MATCHES.map(function(x){ return x.mov.id; }));
+  let cheques = [];
+  try { cheques = await api('cheques_emitidos?razon_social_id=eq.' + razonId + '&debitado=eq.false&select=id,numero,importe,beneficiario,fecha_vto') || []; } catch (e) {}
+  const usadosChq = new Set();
+  deb.filter(function(m){ return !usadosMov.has(m.id); }).forEach(function(m){
+    const chq = _matchCheque(m, cheques.filter(function(c){ return !usadosChq.has(c.id); }));
+    if (chq) { usadosChq.add(chq.id); CONC_MATCHES.push({ mov: m, cheque: chq }); }
   });
   if (!CONC_MATCHES.length) { toast('No se encontraron coincidencias', 'info'); return; }
   const provIds = Array.from(new Set(CONC_MATCHES.map(function(x){ return x.op && x.op.proveedor_id; }).filter(Boolean)));
@@ -7507,11 +7529,14 @@ window.concMatchearPagos = async function() {
 function concRenderMatches() {
   document.getElementById('matchesLista').innerHTML = CONC_MATCHES.map(function(x, i){
     const p = CMP_PROV_MAP[x.op && x.op.proveedor_id];
+    const destino = x.cheque
+      ? ('Cheque N° ' + esc(x.cheque.numero || '') + (x.cheque.beneficiario ? ' · ' + esc(x.cheque.beneficiario) : ''))
+      : (esc(x.op ? x.op.numero : 'OP') + (p ? ' · ' + esc(p.razon_social) : ''));
     return '<label style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--c-cream-border)">' +
       '<input type="checkbox" checked data-i="' + i + '" style="width:17px;height:17px;flex:0 0 auto">' +
       '<span style="flex:1;min-width:0;font-size:12px">' +
         '<span style="color:var(--c-sand)">' + _pagoFecha(x.mov.fecha) + ' · ' + esc((x.mov.descripcion || x.mov.referencia || '').slice(0, 42)) + '</span><br>' +
-        '<span style="color:var(--c-cream)">→ ' + esc(x.op ? x.op.numero : 'OP') + (p ? ' · ' + esc(p.razon_social) : '') + '</span>' +
+        '<span style="color:var(--c-cream)">→ ' + destino + '</span>' +
       '</span>' +
       '<span style="white-space:nowrap;font-weight:700;color:#E5534B;flex:0 0 auto">' + _money2(x.mov.importe) + '</span>' +
     '</label>';
@@ -7527,6 +7552,13 @@ window.aplicarMatcheos = async function() {
   try {
     for (let i = 0; i < sel.length; i++) {
       const x = sel[i];
+      if (x.cheque) {
+        // Baja del cheque emitido + movimiento conciliado.
+        await api('cheques_emitidos?id=eq.' + x.cheque.id, { method: 'PATCH', body: JSON.stringify({ debitado: true }) });
+        await api('movimientos_bancarios?id=eq.' + x.mov.id, { method: 'PATCH', body: JSON.stringify({ estado: 'conciliado', nota: 'Cheque N° ' + (x.cheque.numero || '') + (x.cheque.beneficiario ? ' · ' + x.cheque.beneficiario : '') }) });
+        n++;
+        continue;
+      }
       await api('orden_pago_medios?id=eq.' + x.medio.id, { method: 'PATCH', body: JSON.stringify({ conciliado: true, mov_id: x.mov.id }) });
       await api('movimientos_bancarios?id=eq.' + x.mov.id, { method: 'PATCH', body: JSON.stringify({ estado: 'conciliado', orden_pago_id: x.op.id, nota: 'Pago ' + (x.op ? x.op.numero : 'OP') }) });
       const rest = await api('orden_pago_medios?orden_pago_id=eq.' + x.op.id + '&conciliado=eq.false&select=id') || [];
@@ -7537,8 +7569,9 @@ window.aplicarMatcheos = async function() {
       }
       n++;
     }
+    MF_COMPROMISOS = null;
     closeMatcheos();
-    toast('✓ ' + n + ' pagos conciliados', 'success');
+    toast('✓ ' + n + ' conciliados', 'success');
     await concCargarLista();
   } catch (e) { toast('No se pudo aplicar: ' + ((e && e.message) || e), 'error'); }
   finally { btn.disabled = false; btn.textContent = t; }
@@ -7791,6 +7824,9 @@ async function mfAsegurarCompromisos() {
     const items = [];
     medios.forEach(function(m){ const op = opMap[m.orden_pago_id] || {}; const p = CMP_PROV_MAP[op.proveedor_id]; const emp = rzMap[op.razon_social_id] || '(sin empresa)'; items.push({ fecha: m.vencimiento, tipo: 'comprometido', emp: emp, detalle: emp + ' · ' + (op.numero || 'OP') + (p ? ' · ' + p.razon_social : '') + (m.documento ? ' · chq ' + m.documento : ''), importe: parseFloat(m.importe) || 0 }); });
     comps.forEach(function(c){ const p = CMP_PROV_MAP[c.proveedor_id]; const emp = rzMap[c.razon_social_id] || '(sin empresa)'; items.push({ fecha: c.fecha_pago, tipo: 'previsto', emp: emp, detalle: emp + ' · ' + (p ? p.razon_social : '') + ' · ' + (c.tipo || '') + ' ' + (c.numero || ''), importe: parseFloat(c.total) || 0 }); });
+    // Cheques emitidos aún no debitados (cargados por Excel): egreso comprometido en su fecha de débito.
+    const chqs = await api('cheques_emitidos?debitado=eq.false&select=razon_social_id,fecha_vto,beneficiario,numero,importe') || [];
+    chqs.forEach(function(ch){ const emp = rzMap[ch.razon_social_id] || '(sin empresa)'; items.push({ fecha: ch.fecha_vto, tipo: 'comprometido', emp: emp, detalle: emp + ' · chq ' + (ch.numero || '') + (ch.beneficiario ? ' · ' + ch.beneficiario : ''), importe: parseFloat(ch.importe) || 0 }); });
     items.sort(function(a, b){ return (a.fecha || '9999').localeCompare(b.fecha || '9999'); });
     MF_COMPROMISOS = items; return true;
   } catch (e) { MF_COMPROMISOS = null; return false; }
