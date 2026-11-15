@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-13-EK | ULTIMA | FIX 401 "No API key": la funcion api() perdia el apikey cuando una llamada pasaba headers propios (Prefer en los upsert). Afectaba subir la Planilla de Resultados y guardar el Panel Fiscal. Corregido el orden del merge de headers. No requiere SQL. Antes: cheques emitidos (backlog + baja por conciliacion) ===== */
+/* ===== BUILD 2026-11-14-EL | ULTIMA | FIX "Unexpected end of JSON input": los upsert con Prefer return=minimal responden SIN cuerpo; api() ahora tolera respuestas vacias (devuelve null en vez de romper). Junto con el FIX 401 del apikey, deja funcionando subir la Planilla de Resultados y guardar el Panel Fiscal. No requiere SQL. Antes: FIX 401 apikey ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -117,7 +117,10 @@ async function api(path, options = {}) {
   }
 
   if (res.status === 204) return null;
-  return res.json();
+  // Algunas respuestas (ej. upsert con Prefer return=minimal) vienen sin cuerpo: evitar romper al parsear JSON.
+  const txt = await res.text();
+  if (!txt) return null;
+  try { return JSON.parse(txt); } catch (e) { return null; }
 }
 
 // Trae TODAS las filas de un endpoint paginando (Supabase corta en ~1000 por request).
