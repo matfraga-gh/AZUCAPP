@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-16-EM | ULTIMA | FIX montos: un numero con puntos de miles y SIN coma de decimales (ej 1.790.000) se interpretaba como 1,79. Ahora _parseMoney entiende los puntos de miles. Afecta todos los campos de dinero (saldos, comprobantes, etc). Ojo: los saldos ya cargados mal (ej Caja pesos) hay que volver a cargarlos. No requiere SQL. Antes: FIX respuestas vacias (JSON) + apikey ===== */
+/* ===== BUILD 2026-11-16-EN | ULTIMA | Panel: cuando una cuenta tiene subcuentas con datos, su total = SUMA de las subcuentas (se ignora el monto viejo migrado en el padre). Evita el doble conteo (ej. Alimentos). No requiere SQL. Antes: FIX _parseMoney puntos de miles ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -12281,7 +12281,11 @@ function renderPanelResultadosHier(agregado, byCuenta, comp, objPct, objVN, esYT
   const subsDe = function(id){ return (subs[id] || []).slice().sort(function(a,b){ return (a.orden||0)-(b.orden||0); }); };
   const cuentaTotal = function(c){
     if (c.es_automatica) return (c.codigo === 'vn_resto') ? comp.resto : (c.codigo === 'vn_mye') ? (comp.most + comp.eventos + comp.especiales) : (byCuenta[c.id] || 0);
-    let t = byCuenta[c.id] || 0; (subs[c.id] || []).forEach(function(s){ t += byCuenta[s.id] || 0; }); return t;
+    const hijos = subs[c.id] || [];
+    const subSum = hijos.reduce(function(s, x){ return s + (byCuenta[x.id] || 0); }, 0);
+    // Si la cuenta tiene subcuentas con datos, el total es la suma de las subcuentas (se ignora el monto viejo del padre).
+    const hayData = hijos.some(function(x){ return (byCuenta[x.id] || 0) !== 0; });
+    return (hijos.length && hayData) ? subSum : (byCuenta[c.id] || 0);
   };
   const grpTotal = function(g){ return cuentasDe(g).filter(function(c){ return !c.es_automatica; }).reduce(function(s,c){ return s + cuentaTotal(c); }, 0); };
   const VN_CM = comp.resto + comp.most + comp.eventos + comp.especiales;
@@ -12389,7 +12393,7 @@ async function _pnData(locales, mes) {
 function _pnSubsByParent() { const o = {}; PLAN_CUENTAS.forEach(function(c){ if (c.parent_id) (o[c.parent_id] = o[c.parent_id] || []).push(c); }); return o; }
 function _pnTotales(d) {
   const subs = _pnSubsByParent();
-  const cuentaTotal = function(c){ let t = d.byCuenta[c.id] || 0; (subs[c.id] || []).forEach(function(s){ t += d.byCuenta[s.id] || 0; }); return t; };
+  const cuentaTotal = function(c){ const h = subs[c.id] || []; const ss = h.reduce(function(s, x){ return s + (d.byCuenta[x.id] || 0); }, 0); const hay = h.some(function(x){ return (d.byCuenta[x.id] || 0) !== 0; }); return (h.length && hay) ? ss : (d.byCuenta[c.id] || 0); };
   const grp = function(g){ return PLAN_CUENTAS.filter(function(c){ return c.grupo === g && !c.parent_id && !c.es_automatica; }).reduce(function(s, c){ return s + cuentaTotal(c); }, 0); };
   const CM = grp('CM'), CL = grp('CL'), GO = grp('GO'), GA = grp('GA');
   const vnCargables = grp('VN');
@@ -12420,7 +12424,7 @@ window.renderPanelNuevo = async function() {
     const d = await _pnData(locales, PN_MES);
     const t = _pnTotales(d);
     const subs = _pnSubsByParent();
-    const cuentaTotal = function(c){ let v = d.byCuenta[c.id] || 0; (subs[c.id] || []).forEach(function(s){ v += d.byCuenta[s.id] || 0; }); return v; };
+    const cuentaTotal = function(c){ const h = subs[c.id] || []; const ss = h.reduce(function(s, x){ return s + (d.byCuenta[x.id] || 0); }, 0); const hay = h.some(function(x){ return (d.byCuenta[x.id] || 0) !== 0; }); return (h.length && hay) ? ss : (d.byCuenta[c.id] || 0); };
     const m = function(v){ return _pvMoney(Math.round(v || 0)); };
     const COL = { VN: '#2E7D32', CM: '#C77DAE', CL: '#C87A2C', GO: '#2D7FC4', GA: '#6FA8DC' };
     const gtotByG = { VN: t.VN, CM: t.CM, CL: t.CL, GO: t.GO, GA: t.GA };
