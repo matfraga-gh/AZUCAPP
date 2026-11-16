@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-14-EL | ULTIMA | FIX "Unexpected end of JSON input": los upsert con Prefer return=minimal responden SIN cuerpo; api() ahora tolera respuestas vacias (devuelve null en vez de romper). Junto con el FIX 401 del apikey, deja funcionando subir la Planilla de Resultados y guardar el Panel Fiscal. No requiere SQL. Antes: FIX 401 apikey ===== */
+/* ===== BUILD 2026-11-16-EM | ULTIMA | FIX montos: un numero con puntos de miles y SIN coma de decimales (ej 1.790.000) se interpretaba como 1,79. Ahora _parseMoney entiende los puntos de miles. Afecta todos los campos de dinero (saldos, comprobantes, etc). Ojo: los saldos ya cargados mal (ej Caja pesos) hay que volver a cargarlos. No requiere SQL. Antes: FIX respuestas vacias (JSON) + apikey ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -5990,7 +5990,7 @@ window.onFiltroComprobantes = function(){ openComprobantes(); };
 function _money2(v){ const n = parseFloat(v) || 0; return '$' + n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function _cmpMoney(v){ return _money2(v); }
 // Parseo tolerante de montos escritos como "$1.234.567,89", "1234567.89" o "1234567,89".
-function _parseMoney(v){ if (v == null) return 0; let s = String(v).trim().replace(/[$\s]/g, ''); if (!s) return 0; if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.'); return parseFloat(s) || 0; }
+function _parseMoney(v){ if (v == null) return 0; let s = String(v).trim().replace(/[$\s]/g, ''); if (!s) return 0; if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.'); else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, ''); return parseFloat(s) || 0; }
 function _fmtMoneyStr(v){ const n = _parseMoney(v); return n ? ('$' + n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) : ''; }
 // Campos de texto de dinero: al entrar se muestran "en crudo" para editar; al salir se formatean.
 window.moneyFocus = function(el){ const n = _parseMoney(el.value); el.value = n ? String(n) : ''; };
