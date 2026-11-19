@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-16-EN | ULTIMA | Panel: cuando una cuenta tiene subcuentas con datos, su total = SUMA de las subcuentas (se ignora el monto viejo migrado en el padre). Evita el doble conteo (ej. Alimentos). No requiere SQL. Antes: FIX _parseMoney puntos de miles ===== */
+/* ===== BUILD 2026-11-19-EO | ULTIMA | Flujo: los cheques/compromisos VENCIDOS y no conciliados ya no desaparecen; se traen a hoy marcados "vencido" hasta que se concilien. Conciliacion: el matcheo de cheques ahora matchea por IMPORTE (el extracto ECHEQ no trae el numero), sugiriendo el de fecha mas cercana para confirmar. No requiere SQL. Antes: total de cuenta = suma de subcuentas ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -5967,21 +5967,21 @@ function _cmpPrepMoneyInputs(){
     e.setAttribute('inputmode', 'decimal');
     if (!e._moneyBound) {
       e.addEventListener('focus', function(){ moneyFocus(e); });
-      e.addEventListener('blur', function(){ moneyBlur(e); if (id === 'cmpNeto') cmpSumaDist(); });
+      e.addEventListener('blur', function(){ moneyBlur(e); if (id === 'cmpNeto' || id === 'cmpTotal') cmpSumaDist(); });
       e._moneyBound = true;
     }
   });
 }
-// Prellena la primera línea de distribución: monto = neto y cuenta por defecto del proveedor (si tiene). El local lo elige la persona.
+// Prellena la primera línea de distribución: monto = total y cuenta por defecto del proveedor (si tiene). El local lo elige la persona.
 function cmpPrefillDist() {
-  const neto = _parseMoney(document.getElementById('cmpNeto').value);
-  if (neto <= 0) return;
+  const total = _parseMoney(document.getElementById('cmpTotal').value);
+  if (total <= 0) return;
   const provTxt = (document.getElementById('cmpProv').value || '').trim().toLowerCase();
   const prov = CMP_PROVEEDORES.find(function(p){ return (p.razon_social || '').toLowerCase() === provTxt; });
   const cuentaDef = (prov && prov.cuenta_default_id) ? prov.cuenta_default_id : '';
   _leerDist();
   if (CMP_DIST.length === 1 && (parseFloat(CMP_DIST[0].monto) || 0) <= 0) {
-    CMP_DIST[0].monto = neto;
+    CMP_DIST[0].monto = total;
     if (!CMP_DIST[0].cuenta_id && cuentaDef) CMP_DIST[0].cuenta_id = cuentaDef;
     renderDistComprobante();
   }
@@ -6119,18 +6119,18 @@ window.cmpQuitarLinea = function(i){ _leerDist(); CMP_DIST.splice(i, 1); renderD
 // Si hay una sola línea vacía, le pone la diferencia que falta para llegar al neto.
 window.cmpAutocompletarResto = function(){
   _leerDist();
-  const neto = _parseMoney(document.getElementById('cmpNeto').value);
-  if (!(neto > 0)) return;
+  const total = _parseMoney(document.getElementById('cmpTotal').value);
+  if (!(total > 0)) return;
   let suma = 0; const vacias = [];
   CMP_DIST.forEach(function(d, i){ const m = parseFloat(d.monto) || 0; if (m > 0) suma += m; else vacias.push(i); });
-  const resto = Math.round((neto - suma) * 100) / 100;
+  const resto = Math.round((total - suma) * 100) / 100;
   if (vacias.length === 1 && resto > 0) { CMP_DIST[vacias[0]].monto = resto; renderDistComprobante(); }
 };
 window.cmpSumaDist = function(){
   let s = 0; document.querySelectorAll('#cmpDistLista .cmp-d-monto').forEach(function(el){ s += _parseMoney(el.value); });
-  const neto = _parseMoney(document.getElementById('cmpNeto').value);
+  const total = _parseMoney(document.getElementById('cmpTotal').value);
   const el = document.getElementById('cmpDistSuma');
-  if (el) { el.textContent = 'Distribuido: ' + _cmpMoney(s) + (neto ? ' / Neto: ' + _cmpMoney(neto) : ''); el.style.color = (neto && Math.abs(s - neto) > 1) ? 'var(--c-error)' : 'var(--c-muted)'; }
+  if (el) { el.textContent = 'Distribuido: ' + _cmpMoney(s) + (total ? ' / Total: ' + _cmpMoney(total) : ''); el.style.color = (total && Math.abs(s - total) > 1) ? 'var(--c-error)' : 'var(--c-muted)'; }
 };
 function _cmpLimpiarForm() {
   ['cmpPtoVenta','cmpNumero','cmpFechaEmision','cmpFechaVto','cmpNeto','cmpIva','cmpPercep','cmpOtros','cmpTotal','cmpCae','cmpFirmado','cmpObs','cmpTc'].forEach(function(id){ const e = document.getElementById(id); if (e) e.value = ''; });
@@ -7493,9 +7493,14 @@ function _matchCheque(m, cheques) {
   hit = cheques.find(function(c){ return c.numero && nums.indexOf(String(c.numero)) >= 0; });
   if (hit) return hit;
   const byImp = cheques.filter(function(c){ return Math.abs((parseFloat(c.importe) || 0) - imp) < 1; });
+  if (!byImp.length) return null;
   if (byImp.length === 1) return byImp[0];
-  return null;
+  // Varios cheques con el mismo importe: sugerir el de fecha de débito más cercana al movimiento (la persona confirma).
+  const md = String(m.fecha || '').slice(0, 10);
+  byImp.sort(function(a, b){ return Math.abs(_diasEntre(a.fecha_vto, md)) - Math.abs(_diasEntre(b.fecha_vto, md)); });
+  return byImp[0];
 }
+function _diasEntre(a, b){ const da = new Date(String(a || '').slice(0, 10) + 'T00:00:00'), db = new Date(String(b || '').slice(0, 10) + 'T00:00:00'); if (isNaN(da) || isNaN(db)) return 99999; return Math.round((da - db) / 86400000); }
 window.concMatchearPagos = async function() {
   const razonId = document.getElementById('concRazon').value;
   if (!razonId) { toast('Elegí la razón social', 'error'); return; }
@@ -7830,6 +7835,9 @@ async function mfAsegurarCompromisos() {
     // Cheques emitidos aún no debitados (cargados por Excel): egreso comprometido en su fecha de débito.
     const chqs = await api('cheques_emitidos?debitado=eq.false&select=razon_social_id,fecha_vto,beneficiario,numero,importe') || [];
     chqs.forEach(function(ch){ const emp = rzMap[ch.razon_social_id] || '(sin empresa)'; items.push({ fecha: ch.fecha_vto, tipo: 'comprometido', emp: emp, detalle: emp + ' · chq ' + (ch.numero || '') + (ch.beneficiario ? ' · ' + ch.beneficiario : ''), importe: parseFloat(ch.importe) || 0 }); });
+    // Vencidos no conciliados: no desaparecen. Se traen a hoy (siguen pendientes hasta que se concilien).
+    const _hoyMf = hoyStr();
+    items.forEach(function(it){ if (it.fecha && it.fecha < _hoyMf) { it.vencido = true; it.fecha = _hoyMf; it.detalle = '⚠ vencido · ' + it.detalle; } });
     items.sort(function(a, b){ return (a.fecha || '9999').localeCompare(b.fecha || '9999'); });
     MF_COMPROMISOS = items; return true;
   } catch (e) { MF_COMPROMISOS = null; return false; }

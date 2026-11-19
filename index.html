@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261116en">
+<link rel="stylesheet" href="styles.css?v=20261119eo">
 </head>
 <body>
 
@@ -2305,7 +2305,7 @@
         <label class="field" style="flex:1"><span class="field-label">Percepciones</span><input type="text" inputmode="decimal" id="cmpPercep" placeholder="$0,00" onfocus="moneyFocus(this)" onblur="moneyBlur(this)"></label>
         <label class="field" style="flex:1"><span class="field-label">Otros imp.</span><input type="text" inputmode="decimal" id="cmpOtros" placeholder="$0,00" onfocus="moneyFocus(this)" onblur="moneyBlur(this)"></label>
       </div>
-      <label class="field"><span class="field-label">Total</span><input type="text" inputmode="decimal" id="cmpTotal" placeholder="$0,00" onfocus="moneyFocus(this)" onblur="moneyBlur(this);cmpCalcArs()"></label>
+      <label class="field"><span class="field-label">Total</span><input type="text" inputmode="decimal" id="cmpTotal" placeholder="$0,00" oninput="cmpSumaDist()" onfocus="moneyFocus(this)" onblur="moneyBlur(this);cmpCalcArs();cmpSumaDist()"></label>
 
       <div class="field-label" style="margin-top:6px">Distribución (local + cuenta + monto)</div>
       <div id="cmpDistLista"></div>
@@ -3004,6 +3004,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261116en"></script>
+<script src="app.js?v=20261119eo"></script>
 </body>
 </html>
