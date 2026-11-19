@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-19-EP | ULTIMA | (1) Flujo: cheques/compromisos vencidos no conciliados no desaparecen (se traen a hoy, marcados "vencido"). (2) Conciliacion: matcheo de cheques por IMPORTE (ECHEQ sin numero), sugiere el de fecha mas cercana. (3) Distribucion de comprobantes ahora cuadra contra el TOTAL (con impuestos), no el neto: contador, autocompletado y prellenado usan el total. No requiere SQL. Antes: total de cuenta = suma de subcuentas ===== */
+/* ===== BUILD 2026-11-19-EQ | ULTIMA | Permisos: (1) se agrega "Comprobante simple" (editor_comp_simple) a Editores y permisos para poder asignarlo. (2) Quien tiene permiso de Comprobantes ahora puede ANULAR comprobantes; la anulacion de uno que YA tiene pago/conciliacion queda solo para admin. No requiere SQL. Antes: Flujo vencidos + matcheo cheques por importe + distribucion sobre total ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -4681,6 +4681,7 @@ const PERMISOS_DEF = [
   { key: 'editor_cierres',    label: 'Cierres de caja', icon: 'ti-cash-register', tipo: 'editor' },
   { key: 'editor_estadisticas', label: 'Estadísticas', icon: 'ti-chart-line',   tipo: 'editor' },
   { key: 'editor_comprobantes', label: 'Comprobantes', icon: 'ti-file-invoice', tipo: 'editor' },
+  { key: 'editor_comp_simple', label: 'Comprobante simple', icon: 'ti-receipt', tipo: 'editor' },
   { key: 'editor_proveedores', label: 'Proveedores', icon: 'ti-truck', tipo: 'editor' }
 ];
 
@@ -6232,7 +6233,7 @@ window.abrirEditarComprobante = async function(id) {
   } catch (e) { CMP_DIST = [{ local:'', cuenta_id:'', monto:'' }]; }
   try { await ensureFirmantes(); } catch (e) {}
   renderDistComprobante();
-  document.getElementById('cmpBorrarBtn').style.display = (isMaster() || isAdmin()) ? '' : 'none';
+  document.getElementById('cmpBorrarBtn').style.display = puedeComprobantes() ? '' : 'none';
   document.getElementById('modalComprobante').classList.add('show');
 };
 window.closeComprobante = function() { document.getElementById('modalComprobante').classList.remove('show'); };
@@ -6390,7 +6391,8 @@ window.guardarComprobante = async function() {
   finally { btn.disabled = false; btn.textContent = t; }
 };
 window.eliminarComprobante = async function(id, refresh) {
-  if (!(isMaster() || isAdmin())) return;
+  const esAdmin = isMaster() || isAdmin();
+  if (!(esAdmin || (currentUser && currentUser.editor_comprobantes))) return;
   // Detectar dependencias (orden de pago y conciliación) para avisar y limpiar de forma segura.
   let ocs = [];
   try { ocs = await api('orden_pago_comprobantes?comprobante_id=eq.' + id + '&select=orden_pago_id,importe_saldado') || []; } catch (e) {}
@@ -6399,6 +6401,8 @@ window.eliminarComprobante = async function(id, refresh) {
   try { movs = movs.concat(await api('movimientos_bancarios?comprobante_id=eq.' + id + '&select=id') || []); } catch (e) {}
   if (opIds.length) { try { movs = movs.concat(await api('movimientos_bancarios?orden_pago_id=in.(' + opIds.join(',') + ')&select=id') || []); } catch (e) {} }
   const hayPago = opIds.length > 0, hayConc = movs.length > 0;
+  // Un comprobante que ya tiene pago/conciliación solo lo anula un administrador.
+  if ((hayPago || hayConc) && !esAdmin) { toast('Este comprobante ya tiene un pago asociado. Pedile a un administrador que lo anule.', 'error'); return; }
   let msg = 'Se va a eliminar el comprobante y su distribución. ¿Confirmás?';
   if (hayPago || hayConc) {
     msg = 'Este comprobante tiene un pago asociado. Al anularlo se lo saca de su orden de pago (si la OP queda vacía, se elimina)';
