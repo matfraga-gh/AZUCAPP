@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-19-EQ | ULTIMA | Permisos: (1) se agrega "Comprobante simple" (editor_comp_simple) a Editores y permisos para poder asignarlo. (2) Quien tiene permiso de Comprobantes ahora puede ANULAR comprobantes; la anulacion de uno que YA tiene pago/conciliacion queda solo para admin. No requiere SQL. Antes: Flujo vencidos + matcheo cheques por importe + distribucion sobre total ===== */
+/* ===== BUILD 2026-11-20-ER | ULTIMA | Comprobantes: la lista ya NO se corta en 300 (cargaba las mas antiguas y dejaba afuera las recientes); carga TODAS, asi "Todos" y el buscador por numero encuentran cualquier factura, y los comprobantes simples (pendientes y pagados) se ven en la seccion. Nuevo filtro "Pago completado". No requiere SQL. Antes: permisos comp. simple + anular para editores ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -5823,11 +5823,11 @@ async function openComprobantes() {
     if (!PLAN_CUENTAS.length) { try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || []; } catch (e) {} }
     CMP_RAZONES = await api('razones_sociales?activo=eq.true&order=nombre.asc') || [];
     const est = (document.getElementById('cmpEstadoFiltro') || {}).value || '';
-    let q = 'comprobantes?select=*&order=fecha_emision.asc.nullslast,id.asc&limit=300';
+    let q = 'comprobantes?select=*&order=fecha_emision.asc.nullslast,id.asc';
     if (est) q += '&estado=eq.' + est;
     // Cta Cte Socios: solo visible para Paula/Silvina/Matías (admin/master), no para los editores (Lauti/Andy).
     if (!isMaster() && !isAdmin()) q += '&es_socios=eq.false';
-    CMP_LISTA = await api(q) || [];
+    CMP_LISTA = await apiAll(q) || [];
     // Nombres de proveedor: solo los referenciados en la lista (rápido)
     const pids = Array.from(new Set(CMP_LISTA.map(function(c){ return c.proveedor_id; }).filter(Boolean)));
     if (pids.length) { const ps = await api('proveedores?id=in.(' + pids.join(',') + ')&select=id,razon_social') || []; ps.forEach(function(p){ CMP_PROV_MAP[p.id] = p; }); }
