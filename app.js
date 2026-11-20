@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-20-ER | ULTIMA | Comprobantes: la lista ya NO se corta en 300 (cargaba las mas antiguas y dejaba afuera las recientes); carga TODAS, asi "Todos" y el buscador por numero encuentran cualquier factura, y los comprobantes simples (pendientes y pagados) se ven en la seccion. Nuevo filtro "Pago completado". No requiere SQL. Antes: permisos comp. simple + anular para editores ===== */
+/* ===== BUILD 2026-11-20-ES | ULTIMA | (1) En la lista de comprobantes, si tiene observacion/comentario se muestra abajo (en amarillo, con icono y texto completo al pasar el mouse) para identificarlo a simple vista. (2) Comprobante simple: nuevos campos Pto venta, Numero, Neto, IVA, Percepciones, Otros imp. ademas del Total (antes solo importe). No requiere SQL. Antes: lista de comprobantes carga todas (sin corte 300) ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -6039,6 +6039,7 @@ function renderComprobantes() {
         '</span>' +
       '</div>' +
       '<div style="font-size:11px;color:var(--c-sand);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(c.tipo || '') + (nro ? ' · ' + esc(nro) : '') + '</div>' +
+      (c.observaciones ? '<div style="font-size:11px;color:#E0A53B;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(c.observaciones) + '"><i class="ti ti-message-2-exclamation"></i> ' + esc(c.observaciones) + '</div>' : '') +
       (['pago_emitido', 'pago_confirmado', 'pago_completado'].indexOf(c.estado) >= 0 && c.fecha_pago ? '<div style="font-size:11px;color:#3BA55D;margin-top:2px">Pagado: ' + _pagoFecha(c.fecha_pago) + '</div>' : '') +
     '</div>';
   }).join('');
@@ -7134,7 +7135,7 @@ async function abrirCompSimple() {
   document.getElementById('csCuenta').innerHTML = _cuentaOptionsHTML('', 'Elegí la cuenta…');
   csMediosPorRazon();
   document.getElementById('csFecha').value = hoyStr();
-  ['csProv', 'csImporte', 'csObs'].forEach(function(id){ const e = document.getElementById(id); if (e) e.value = ''; });
+  ['csProv', 'csPtoVenta', 'csNumero', 'csNeto', 'csIva', 'csPercep', 'csOtros', 'csImporte', 'csObs'].forEach(function(id){ const e = document.getElementById(id); if (e) e.value = ''; });
   document.getElementById('csError').textContent = '';
   CS_ADJUNTO_PATH = null; document.getElementById('csAdjEstado').innerHTML = '';
   const imp = document.getElementById('csImporte'); if (imp && !imp._mb) { imp.addEventListener('focus', function(){ moneyFocus(imp); }); imp.addEventListener('blur', function(){ moneyBlur(imp); }); imp._mb = true; }
@@ -7193,10 +7194,14 @@ window.guardarCompSimple = async function() {
   if (!esSocio && !local) { err.textContent = 'Elegí el local.'; return; }
   const rz = document.getElementById('csRazon').value;
   const socioCuentaIds = PLAN_CUENTAS.filter(function(c){ return c.grupo === 'SOCIOS'; }).map(function(c){ return c.id; });
+  const _n = function(id){ const e = document.getElementById(id); return e ? _parseMoney(e.value) : 0; };
   const rec = {
     tipo: document.getElementById('csTipo').value || 'Otro', proveedor_id: prov.id,
     razon_social_id: rz ? parseInt(rz, 10) : null, fecha_emision: document.getElementById('csFecha').value || null,
-    neto: importe, total: importe, estado: 'aprobacion_pendiente', es_simple: true,
+    punto_venta: (document.getElementById('csPtoVenta') || {}).value ? document.getElementById('csPtoVenta').value.trim() : null,
+    numero: (document.getElementById('csNumero') || {}).value ? document.getElementById('csNumero').value.trim() : null,
+    neto: _n('csNeto') || importe, iva: _n('csIva'), percepciones: _n('csPercep'), otros_imp: _n('csOtros'),
+    total: importe, estado: 'aprobacion_pendiente', es_simple: true,
     es_socios: cuentaVal ? socioCuentaIds.indexOf(parseInt(cuentaVal, 10)) >= 0 : false,
     medio_pago_id: document.getElementById('csMedio').value ? parseInt(document.getElementById('csMedio').value, 10) : null,
     fecha_pago: document.getElementById('csFecha').value || null,
