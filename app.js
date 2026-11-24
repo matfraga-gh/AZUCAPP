@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-20-ES | ULTIMA | (1) En la lista de comprobantes, si tiene observacion/comentario se muestra abajo (en amarillo, con icono y texto completo al pasar el mouse) para identificarlo a simple vista. (2) Comprobante simple: nuevos campos Pto venta, Numero, Neto, IVA, Percepciones, Otros imp. ademas del Total (antes solo importe). No requiere SQL. Antes: lista de comprobantes carga todas (sin corte 300) ===== */
+/* ===== BUILD 2026-11-24-ET | ULTIMA | Modales: NINGUNO se cierra al clickear afuera ni con Escape (para no perder lo cargado). Solo el dialogo de confirmacion si/no se descarta clickeando afuera o con Escape. El resto se cierra con la X o Cancelar. Aplica a toda la app. No requiere SQL. Antes: indicio de observacion + campos del comprobante simple ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -406,41 +406,24 @@ function closeConfirm(result) {
 // CIERRE UNIFICADO DE MODALES
 // (click afuera + tecla Escape)
 // ============================================
+// Click afuera: NO cierra los modales (para no perder lo cargado). Solo el diálogo de confirmación
+// se puede descartar clickeando afuera (resuelve como cancelar). El resto se cierra con la X o Cancelar.
 document.addEventListener('click', (e) => {
-  // Si el click es directamente sobre el overlay (no en el contenido), cerrarlo
-  if (e.target.classList && e.target.classList.contains('modal-overlay')) {
-    const card = e.target.querySelector('.modal-card');
-    if (card && card.hasAttribute('data-prevent-close')) return;
+  if (e.target.classList && e.target.classList.contains('modal-overlay') && e.target.id === 'modalConfirm') {
     e.target.classList.remove('show');
     e.target.style.display = '';
-    // Si era el modal de confirmación, resolver como cancelar
-    if (e.target.id === 'modalConfirm' && _confirmResolve) {
-      const r = _confirmResolve;
-      _confirmResolve = null;
-      r(false);
-    }
+    if (_confirmResolve) { const r = _confirmResolve; _confirmResolve = null; r(false); }
   }
 });
 
+// Escape: igual que arriba, solo descarta el diálogo de confirmación.
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    // Buscar el modal abierto más reciente y cerrarlo
-    const modales = document.querySelectorAll('.modal-overlay');
-    for (let i = modales.length - 1; i >= 0; i--) {
-      const m = modales[i];
-      if (m.style.display === 'flex' || m.classList.contains('show')) {
-        const card = m.querySelector('.modal-card');
-        if (card && card.hasAttribute('data-prevent-close')) break;
-        m.classList.remove('show');
-        m.style.display = '';
-        if (m.id === 'modalConfirm' && _confirmResolve) {
-          const r = _confirmResolve;
-          _confirmResolve = null;
-          r(false);
-        }
-        break;
-      }
-    }
+  if (e.key !== 'Escape') return;
+  const m = document.getElementById('modalConfirm');
+  if (m && (m.style.display === 'flex' || m.classList.contains('show'))) {
+    m.classList.remove('show');
+    m.style.display = '';
+    if (_confirmResolve) { const r = _confirmResolve; _confirmResolve = null; r(false); }
   }
 });
 
@@ -8078,16 +8061,8 @@ window.showChangePass = function() {
   showView('vChangePassVoluntary');
 };
 
-// Cerrar modales clicando el overlay
-document.querySelectorAll('.modal-overlay').forEach(ov => {
-  ov.addEventListener('click', (e) => {
-    if (e.target === ov) {
-      const card = ov.querySelector('.modal-card');
-      if (card && card.hasAttribute('data-prevent-close')) return;
-      ov.classList.remove('show');
-    }
-  });
-});
+// Nota: el cierre por click afuera se maneja arriba (solo para el diálogo de confirmación).
+// Los demás modales NO cierran al clickear afuera, para no perder lo cargado.
 
 // ============================================
 // INICIALIZACIÓN
