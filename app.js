@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-25-EU | ULTIMA | Usuarios con TRANSVERSAL ahora ven TODOS los locales en Panel/Estadisticas (antes quedaban en cero, ej. Pili). TRANSVERSAL = todos, y ofrece la opcion "Todos los locales" (consolidado). No requiere SQL. Antes: modales no cierran al clickear afuera ===== */
+/* ===== BUILD 2026-11-26-EV | ULTIMA | Comprobantes: nuevo selector "Ordenar por" (fecha de emision nuevas/viejas, proveedor A-Z, monto mayor/menor). No requiere SQL. Antes: usuarios TRANSVERSAL ven todos los locales en Panel ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -5745,7 +5745,7 @@ window.eliminarProveedor = async function(id) {
 // ============================================
 // COMPROBANTES (compras y pagos — captura)
 // ============================================
-let CMP_LISTA = [], CMP_EDIT_ID = null, CMP_ADJUNTO_PATH = null, CMP_DIST = [], CMP_Q = '';
+let CMP_LISTA = [], CMP_EDIT_ID = null, CMP_ADJUNTO_PATH = null, CMP_DIST = [], CMP_Q = '', CMP_SORT = 'fecha_desc';
 let CMP_PROVEEDORES = [], CMP_RAZONES = [], CMP_PROV_MAP = {};
 const CMP_TIPOS = ['Factura A', 'Factura B', 'Factura C', 'Nota de Crédito', 'Nota de Débito', 'Recibo', 'Remito valorizado', 'Impuesto / DDJJ', 'Remito', 'Otro'];
 // Comprobantes que son Nota de Crédito (restan: generan saldo a favor en la OP)
@@ -5980,6 +5980,24 @@ function _fmtMoneyStr(v){ const n = _parseMoney(v); return n ? ('$' + n.toLocale
 window.moneyFocus = function(el){ const n = _parseMoney(el.value); el.value = n ? String(n) : ''; };
 window.moneyBlur = function(el){ el.value = _fmtMoneyStr(el.value); };
 window.onBuscarComprobante = function(v){ CMP_Q = (v || '').trim().toLowerCase(); renderComprobantes(); };
+window.onOrdenComprobantes = function(v){ CMP_SORT = v || 'fecha_desc'; renderComprobantes(); };
+function _cmpOrdenar(lista){
+  const arr = lista.slice();
+  const provName = function(c){ const p = CMP_PROV_MAP[c.proveedor_id]; return (p && p.razon_social || '').toLowerCase(); };
+  const fecha = function(c){ return c.fecha_emision || ''; };
+  const monto = function(c){ return Number(c.total) || 0; };
+  arr.sort(function(a, b){
+    switch (CMP_SORT) {
+      case 'fecha_asc':  return fecha(a).localeCompare(fecha(b)) || (a.id - b.id);
+      case 'prov_asc':   return provName(a).localeCompare(provName(b), 'es') || fecha(b).localeCompare(fecha(a));
+      case 'monto_desc': return monto(b) - monto(a);
+      case 'monto_asc':  return monto(a) - monto(b);
+      case 'fecha_desc':
+      default:           return fecha(b).localeCompare(fecha(a)) || (b.id - a.id);
+    }
+  });
+  return arr;
+}
 function renderComprobantes() {
   const cont = document.getElementById('comprobantesLista');
   if (!cont) return;
@@ -5993,6 +6011,7 @@ function renderComprobantes() {
     });
   }
   if (!lista.length) { cont.innerHTML = '<div class="empty-list">No hay comprobantes que coincidan con “' + esc(CMP_Q) + '”.</div>'; return; }
+  lista = _cmpOrdenar(lista);
   cont.innerHTML = lista.map(function(c){
     const prov = CMP_PROV_MAP[c.proveedor_id];
     const est = CMP_ESTADOS[c.estado] || { label: c.estado || '—', color: '#888' };
