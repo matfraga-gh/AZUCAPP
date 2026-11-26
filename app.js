@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-26-EZ | ULTIMA | Maestro de Articulos: el boton Excel ahora descarga un .xlsx de verdad (antes bajaba sin extension) y con formato (anchos de columna, filtro en encabezado, fila fija, miles/decimales en costos). Antes: Cant sin $ y CUA 0.00.00.00.0000 ===== */
+/* ===== BUILD 2026-11-26-FA | ULTIMA | Maestro de Articulos: Excel con mejor formato (encabezados en negrita con fondo, letra chica, filas bajas, enteros sin coma, numeros a la derecha, filtro + fila fija). Carga xlsx-js-style solo para esta descarga. Antes: descarga .xlsx + anchos/filtros ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -11464,9 +11464,23 @@ async function maAsignarCuaConReintento(prefijo, id) {
   }
   throw new Error('no se pudo asignar un CUA libre');
 }
-window.maDescargarExcel = function() {
+// Carga, bajo demanda, una versión de SheetJS CON estilos (negrita, tamaños, alto de fila),
+// sin pisar el XLSX general de la app. Si falla, se usa el XLSX común.
+let _xlsxStyle = null;
+function maAsegurarXLSXStyle() {
+  if (_xlsxStyle) return Promise.resolve(_xlsxStyle);
+  const prev = window.XLSX;
+  return _cargarScript('https://unpkg.com/xlsx-js-style@1.2.0/dist/xlsx.bundle.js').then(function(){
+    _xlsxStyle = window.XLSX;     // la versión con estilos
+    window.XLSX = prev;           // restauro el XLSX original (para el resto de la app)
+    return _xlsxStyle;
+  });
+}
+window.maDescargarExcel = async function() {
   if (!MAESTRO_ARTS.length) { toast('No hay artículos para exportar', 'error'); return; }
-  if (typeof XLSX === 'undefined') { toast('No se pudo cargar el exportador de Excel', 'error'); return; }
+  let X = null;
+  try { X = await maAsegurarXLSXStyle(); } catch (e) { X = (typeof XLSX !== 'undefined') ? XLSX : null; }
+  if (!X) { toast('No se pudo cargar el exportador de Excel', 'error'); return; }
   const filas = MAESTRO_ARTS.map(function(a){
     return {
       'Nombre': a.nombre || '', 'Formato': a.formato || '', 'Unidad base': a.unidad_base || '',
@@ -11477,23 +11491,39 @@ window.maDescargarExcel = function() {
       'CUA': a.cua || '', 'Activo': a.activo ? 'Sí' : 'No'
     };
   });
-  const ws = XLSX.utils.json_to_sheet(filas);
-  // Anchos de columna (en caracteres) para que se lea cómodo
-  ws['!cols'] = [34, 20, 11, 13, 14, 18, 28, 30, 18, 8].map(function(w){ return { wch: w }; });
-  // Filtro en el encabezado y fila fija
+  const ws = X.utils.json_to_sheet(filas);
+  // Anchos de columna
+  ws['!cols'] = [32, 20, 10, 12, 13, 16, 26, 28, 17, 8].map(function(w){ return { wch: w }; });
+  // Alto de filas: encabezado un poco más alto, filas de datos bajas
+  const nrows = filas.length + 1;
+  ws['!rows'] = [{ hpt: 16 }];
+  for (var i = 1; i < nrows; i++) ws['!rows'][i] = { hpt: 12 };
+  // Filtro en el encabezado y primera fila fija
   if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] };
   ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
-  // Formato de miles/decimales en las columnas de costo (E, F) y cantidad (D)
-  const range = XLSX.utils.decode_range(ws['!ref']);
-  for (var r = 1; r <= range.e.r; r++) {
-    [3, 4, 5].forEach(function(cIdx){
-      const cell = ws[XLSX.utils.encode_cell({ r: r, c: cIdx })];
-      if (cell && typeof cell.v === 'number') cell.z = (cIdx === 3) ? '#,##0.###' : '#,##0.00';
-    });
+  const range = X.utils.decode_range(ws['!ref']);
+  const esNum = function(c){ return c === 3 || c === 4 || c === 5; };
+  const headFill = { patternType: 'solid', fgColor: { rgb: '1F3864' } };
+  // Encabezado en negrita, fondo azul, texto blanco
+  for (var c = range.s.c; c <= range.e.c; c++) {
+    const h = ws[X.utils.encode_cell({ r: 0, c: c })];
+    if (h) h.s = { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, fill: headFill, alignment: { horizontal: esNum(c) ? 'right' : 'left', vertical: 'center' } };
   }
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Maestro');
-  XLSX.writeFile(wb, 'Maestro_Articulos_' + hoyStr() + '.xlsx');
+  // Cuerpo: letra chica, números a la derecha, enteros sin coma
+  for (var r = 1; r <= range.e.r; r++) {
+    for (var c2 = range.s.c; c2 <= range.e.c; c2++) {
+      const cell = ws[X.utils.encode_cell({ r: r, c: c2 })];
+      if (!cell) continue;
+      cell.s = { font: { name: 'Calibri', sz: 9 }, alignment: { horizontal: esNum(c2) ? 'right' : 'left', vertical: 'center' } };
+      if (typeof cell.v === 'number') {
+        if (c2 === 3) cell.z = Number.isInteger(cell.v) ? '#,##0' : '#,##0.###';
+        else cell.z = Number.isInteger(cell.v) ? '#,##0' : '#,##0.00';
+      }
+    }
+  }
+  const wb = X.utils.book_new();
+  X.utils.book_append_sheet(wb, ws, 'Maestro');
+  X.writeFile(wb, 'Maestro_Articulos_' + hoyStr() + '.xlsx');
 };
 
 // ---- CARGAR (editor y admin) ----
