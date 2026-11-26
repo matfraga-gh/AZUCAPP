@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-26-EX | ULTIMA | Stock: nueva pestania "Maestro" (lista paralela maestro_articulos, NO toca Insumos ni EERR). Campos: nombre, formato, unidad base, cant x envase, costo x envase, costo/unidad base (auto), proveedor, subcuenta (plan actual) y CUA auto (5 niveles, nunca se repite). REQUIERE correr maestro_articulos.sql (crea tabla + precarga 634 validados). Antes: comprobantes orden + aprobacion masiva ===== */
+/* ===== BUILD 2026-11-26-EY | ULTIMA | Maestro de Articulos (Stock): "Cant por envase" sin formato de pesos; CUA con formato de digitos 0.00.00.00.0000 (Capitulo1.Rubro2.Cuenta2.Subcuenta2.Articulo4), auto y sin repetir. Antes: alta del Maestro (pestania nueva, tabla maestro_articulos, requiere maestro_articulos.sql) ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -11268,7 +11268,8 @@ function maConstruirPrefijos() {
     const cuentaIdx = cuentasGrupo.findIndex(function(x){ return x.id === c.id; }) + 1;
     const subsCuenta = subs.filter(function(x){ return x.parent_id === c.id; }).sort(function(a,b){ return (a.orden||0)-(b.orden||0); });
     subsCuenta.forEach(function(sc, i){
-      const prefijo = capDe(c.grupo) + '.' + rubroIdx + '.' + pad(cuentaIdx, 2) + '.' + pad(i + 1, 3);
+      // Formato CUA: Capítulo(1) . Rubro(2) . Cuenta(2) . Subcuenta(2) . Artículo(4)  → 0.00.00.00.0000
+      const prefijo = capDe(c.grupo) + '.' + pad(rubroIdx, 2) + '.' + pad(cuentaIdx, 2) + '.' + pad(i + 1, 2);
       MAESTRO_PREFIX[sc.id] = prefijo;
       MAESTRO_SUBCUENTAS.push({ id: sc.id, nombre: sc.nombre, cuenta: c.nombre, grupo: c.grupo, prefijo: prefijo });
     });
@@ -11356,7 +11357,7 @@ window.maPreviewCua = function() {
   const subId = (document.getElementById('maSubcuenta') || {}).value;
   if (subId && MAESTRO_PREFIX[subId]) {
     if (cua) cua.value = '';
-    if (hint) hint.textContent = 'Se asignará con el prefijo ' + MAESTRO_PREFIX[subId] + '.### al guardar.';
+    if (hint) hint.textContent = 'Se asignará con el prefijo ' + MAESTRO_PREFIX[subId] + '.#### al guardar.';
   } else if (hint) {
     hint.textContent = 'Lo asigna la app automáticamente (5 niveles), sin repetir nunca. Elegí la subcuenta.';
   }
@@ -11380,7 +11381,7 @@ window.abrirEditarMaestroArt = function(id) {
   document.getElementById('maNombre').value = a.nombre || '';
   document.getElementById('maFormato').value = a.formato || '';
   document.getElementById('maUnidad').value = a.unidad_base || '';
-  document.getElementById('maCant').value = a.cant_por_envase != null ? _fmtMoneyStr(String(a.cant_por_envase)) : '';
+  document.getElementById('maCant').value = a.cant_por_envase != null ? String(a.cant_por_envase).replace('.', ',') : '';
   document.getElementById('maCostoEnv').value = a.costo_envase != null ? _fmtMoneyStr(String(a.costo_envase)) : '';
   document.getElementById('maCostoUnid').value = a.costo_unidad_base != null ? _fmtMoneyStr(String(a.costo_unidad_base)) : '';
   document.getElementById('maProveedor').value = a.proveedor || '';
@@ -11402,7 +11403,7 @@ async function maProximoCua(prefijo) {
     const m = String(r.cua || '').match(/\.(\d+)$/);
     if (m) { const n = parseInt(m[1], 10); if (n > max) max = n; }
   });
-  return prefijo + '.' + String(max + 1).padStart(3, '0');
+  return prefijo + '.' + String(max + 1).padStart(4, '0');
 }
 window.guardarMaestroArt = async function() {
   const err = document.getElementById('maError'); err.textContent = '';
