@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-24-ET | ULTIMA | Modales: NINGUNO se cierra al clickear afuera ni con Escape (para no perder lo cargado). Solo el dialogo de confirmacion si/no se descarta clickeando afuera o con Escape. El resto se cierra con la X o Cancelar. Aplica a toda la app. No requiere SQL. Antes: indicio de observacion + campos del comprobante simple ===== */
+/* ===== BUILD 2026-11-25-EU | ULTIMA | Usuarios con TRANSVERSAL ahora ven TODOS los locales en Panel/Estadisticas (antes quedaban en cero, ej. Pili). TRANSVERSAL = todos, y ofrece la opcion "Todos los locales" (consolidado). No requiere SQL. Antes: modales no cierran al clickear afuera ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -10295,6 +10295,7 @@ function pedLocalesPermitidos() {
   const activos = getLocalesActivos().filter(l => l !== tv);
   if (isMaster() || isAdmin()) return activos;
   const mios = (currentUser && currentUser.locales_asignados) || [];
+  if (mios.indexOf(tv) !== -1) return activos; // TRANSVERSAL = todos los locales
   return activos.filter(l => mios.indexOf(l) !== -1);
 }
 const PED_ESTADOS = {
@@ -11928,7 +11929,7 @@ function poblarFiltrosPanel() {
   selMes.innerHTML = opsMes.join('');
 
   const reales = panelLocalesReales();
-  const puedeTodos = isMaster() || isAdmin();
+  const puedeTodos = isMaster() || isAdmin() || (((currentUser && currentUser.locales_asignados) || []).indexOf(getSlugTransversal()) !== -1);
   const validos = (puedeTodos ? ['__ALL__'] : []).concat(reales);
   if (!PV_LOCAL || validos.indexOf(PV_LOCAL) === -1) PV_LOCAL = validos.length ? validos[0] : '';
   let optsLoc = '';
