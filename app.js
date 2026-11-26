@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-26-EV | ULTIMA | Comprobantes: nuevo selector "Ordenar por" (fecha de emision nuevas/viejas, proveedor A-Z, monto mayor/menor). No requiere SQL. Antes: usuarios TRANSVERSAL ven todos los locales en Panel ===== */
+/* ===== BUILD 2026-11-26-EW | ULTIMA | Comprobantes: (1) selector "Ordenar por" (fecha emision nuevas/viejas, proveedor A-Z, monto mayor/menor); (2) aprobacion MASIVA de comprobantes simples: checkbox en cada simple pendiente + "Seleccionar todos" + boton "Aprobar seleccionados". No requiere SQL. Antes: TRANSVERSAL ve todos los locales ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -5745,7 +5745,7 @@ window.eliminarProveedor = async function(id) {
 // ============================================
 // COMPROBANTES (compras y pagos — captura)
 // ============================================
-let CMP_LISTA = [], CMP_EDIT_ID = null, CMP_ADJUNTO_PATH = null, CMP_DIST = [], CMP_Q = '', CMP_SORT = 'fecha_desc';
+let CMP_LISTA = [], CMP_EDIT_ID = null, CMP_ADJUNTO_PATH = null, CMP_DIST = [], CMP_Q = '', CMP_SORT = 'fecha_desc', CMP_SEL = {};
 let CMP_PROVEEDORES = [], CMP_RAZONES = [], CMP_PROV_MAP = {};
 const CMP_TIPOS = ['Factura A', 'Factura B', 'Factura C', 'Nota de Crédito', 'Nota de Débito', 'Recibo', 'Remito valorizado', 'Impuesto / DDJJ', 'Remito', 'Otro'];
 // Comprobantes que son Nota de Crédito (restan: generan saldo a favor en la OP)
@@ -6012,17 +6012,40 @@ function renderComprobantes() {
   }
   if (!lista.length) { cont.innerHTML = '<div class="empty-list">No hay comprobantes que coincidan con “' + esc(CMP_Q) + '”.</div>'; return; }
   lista = _cmpOrdenar(lista);
-  cont.innerHTML = lista.map(function(c){
+  const esAdmin = isMaster() || isAdmin();
+  const _selable = function(c){ return esAdmin && c.es_simple === true && c.estado === 'aprobacion_pendiente'; };
+  const simplesPend = lista.filter(_selable);
+  // limpio de la selección lo que ya no está en la lista
+  Object.keys(CMP_SEL).forEach(function(id){ if (!simplesPend.some(function(c){ return String(c.id) === String(id); })) delete CMP_SEL[id]; });
+  const nSel = Object.keys(CMP_SEL).length;
+  let barra = '';
+  if (simplesPend.length) {
+    const todos = nSel === simplesPend.length && simplesPend.length > 0;
+    barra = '<div style="position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;background:var(--c-card,#2a2a2a);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:7px 10px;margin-bottom:8px">' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--c-sand);cursor:pointer;white-space:nowrap">' +
+        '<input type="checkbox" ' + (todos ? 'checked' : '') + ' onclick="cmpSelTodosSimples(this.checked)"> ' +
+        (todos ? 'Quitar todos' : 'Seleccionar todos') + ' <span style="opacity:.7">(' + simplesPend.length + ' simples pend.)</span>' +
+      '</label>' +
+      '<span style="flex:1"></span>' +
+      '<button class="btn-primary" style="padding:6px 12px;font-size:12.5px;white-space:nowrap' + (nSel ? '' : ';opacity:.5;pointer-events:none') + '" onclick="cmpAprobarSeleccionados()"><i class="ti ti-checks"></i> Aprobar seleccionados' + (nSel ? ' (' + nSel + ')' : '') + '</button>' +
+    '</div>';
+  }
+  cont.innerHTML = barra + lista.map(function(c){
     const prov = CMP_PROV_MAP[c.proveedor_id];
     const est = CMP_ESTADOS[c.estado] || { label: c.estado || '—', color: '#888' };
     const nro = [c.punto_venta, c.numero].filter(Boolean).join('-');
     const nc = cmpEsNC(c.tipo);
     const vencida = _cmpVencida(c);
+    const selable = _selable(c);
+    const chk = selable
+      ? '<input type="checkbox" ' + (CMP_SEL[c.id] ? 'checked' : '') + ' onclick="cmpToggleSel(' + c.id + ', this.checked)" style="flex:0 0 auto;width:17px;height:17px;cursor:pointer" title="Seleccionar para aprobar">'
+      : '';
     const vtoTxt = c.fecha_vto
       ? ('vto <b style="color:' + (vencida ? '#E5534B' : 'var(--c-cream)') + '">' + _pagoFecha(c.fecha_vto) + (vencida ? ' ⚠' : '') + '</b>')
       : 'sin vto';
-    return '<div class="ped-card" style="padding:8px 10px;margin-bottom:6px;border-left:3px solid ' + est.color + '">' +
+    return '<div class="ped-card" style="padding:8px 10px;margin-bottom:6px;border-left:3px solid ' + est.color + (CMP_SEL[c.id] ? ';background:rgba(59,165,93,.08)' : '') + '">' +
       '<div style="display:flex;align-items:center;gap:8px">' +
+        chk +
         '<span style="font-weight:700;color:var(--c-cream);min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(prov ? prov.razon_social : '(proveedor s/d)') + '</span>' +
         '<span style="text-align:right;white-space:nowrap">' +
           '<span style="font-weight:800;font-size:15px;color:' + (nc ? '#4CAF7A' : 'var(--c-cream)') + '">' + (nc ? '− ' : '') + _cmpMoney(c.total) + '</span>' +
@@ -7219,6 +7242,50 @@ window.guardarCompSimple = async function() {
     toast('✓ Comprobante cargado (queda pendiente de aprobación)', 'success');
   } catch (e) { err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e); }
   finally { btn.disabled = false; btn.textContent = t; }
+};
+window.cmpToggleSel = function(id, on){ if (on) CMP_SEL[id] = true; else delete CMP_SEL[id]; renderComprobantes(); };
+window.cmpSelTodosSimples = function(on){
+  CMP_SEL = {};
+  if (on) {
+    const esAdmin = isMaster() || isAdmin();
+    CMP_LISTA.forEach(function(c){ if (esAdmin && c.es_simple === true && c.estado === 'aprobacion_pendiente') CMP_SEL[c.id] = true; });
+  }
+  renderComprobantes();
+};
+window.cmpAprobarSeleccionados = async function(){
+  if (!(isMaster() || isAdmin())) return;
+  const ids = Object.keys(CMP_SEL).map(function(x){ return parseInt(x, 10); }).filter(Boolean);
+  if (!ids.length) { toast('No hay comprobantes seleccionados', 'error'); return; }
+  // traigo imputaciones de todos de una sola vez
+  let ds = [];
+  try { ds = await apiAll('comprobante_distribuciones?comprobante_id=in.(' + ids.join(',') + ')&select=comprobante_id,local,cuenta_id') || []; } catch (e) {}
+  const byId = {};
+  ds.forEach(function(d){ (byId[d.comprobante_id] = byId[d.comprobante_id] || []).push(d); });
+  const validos = [], sinImput = [];
+  ids.forEach(function(id){
+    const c = CMP_LISTA.find(function(x){ return x.id === id; });
+    const dd = byId[id] || [];
+    const esSoc = c && c.es_socios === true;
+    const ok = dd.length && dd.every(function(d){ return d.cuenta_id && (d.local || esSoc); });
+    if (ok) validos.push(id); else sinImput.push(id);
+  });
+  if (!validos.length) {
+    toast('Ninguno tiene local + cuenta asignados. Editalos antes de aprobar.', 'error');
+    return;
+  }
+  const extra = sinImput.length ? ' (se omiten ' + sinImput.length + ' sin local/cuenta, hay que editarlos)' : '';
+  const ok = await showConfirm({
+    title: 'Aprobar ' + validos.length + ' comprobante' + (validos.length > 1 ? 's' : ''),
+    msg: 'Se aprueban ' + validos.length + ' comprobante(s) simple(s)' + extra + '. ¿Confirmás?',
+    type: 'info', okLabel: 'Aprobar', cancelLabel: 'Cancelar'
+  });
+  if (!ok) return;
+  try {
+    await api('comprobantes?id=in.(' + validos.join(',') + ')', { method: 'PATCH', body: JSON.stringify({ estado: 'pago_completado', actualizado_en: new Date().toISOString() }) });
+    CMP_SEL = {};
+    toast('✓ ' + validos.length + ' aprobado(s)' + (sinImput.length ? ' · ' + sinImput.length + ' quedaron pendientes' : ''), 'success');
+    await openComprobantes();
+  } catch (e) { toast('No se pudo: ' + ((e && e.message) || e), 'error'); }
 };
 window.aprobarComprobante = async function(id) {
   if (!(isMaster() || isAdmin())) return;
