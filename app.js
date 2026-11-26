@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-26-EY | ULTIMA | Maestro de Articulos (Stock): "Cant por envase" sin formato de pesos; CUA con formato de digitos 0.00.00.00.0000 (Capitulo1.Rubro2.Cuenta2.Subcuenta2.Articulo4), auto y sin repetir. Antes: alta del Maestro (pestania nueva, tabla maestro_articulos, requiere maestro_articulos.sql) ===== */
+/* ===== BUILD 2026-11-26-EZ | ULTIMA | Maestro de Articulos: el boton Excel ahora descarga un .xlsx de verdad (antes bajaba sin extension) y con formato (anchos de columna, filtro en encabezado, fila fija, miles/decimales en costos). Antes: Cant sin $ y CUA 0.00.00.00.0000 ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -11466,17 +11466,34 @@ async function maAsignarCuaConReintento(prefijo, id) {
 }
 window.maDescargarExcel = function() {
   if (!MAESTRO_ARTS.length) { toast('No hay artículos para exportar', 'error'); return; }
+  if (typeof XLSX === 'undefined') { toast('No se pudo cargar el exportador de Excel', 'error'); return; }
   const filas = MAESTRO_ARTS.map(function(a){
     return {
       'Nombre': a.nombre || '', 'Formato': a.formato || '', 'Unidad base': a.unidad_base || '',
-      'Cant. x envase': a.cant_por_envase != null ? a.cant_por_envase : '',
-      'Costo x envase': a.costo_envase != null ? a.costo_envase : '',
-      'Costo / unidad base': a.costo_unidad_base != null ? a.costo_unidad_base : '',
+      'Cant. x envase': a.cant_por_envase != null ? Number(a.cant_por_envase) : '',
+      'Costo x envase': a.costo_envase != null ? Number(a.costo_envase) : '',
+      'Costo / unidad base': a.costo_unidad_base != null ? Number(a.costo_unidad_base) : '',
       'Proveedor': a.proveedor || '', 'Subcuenta': a.subcuenta_id ? maSubLabel(a.subcuenta_id) : '',
       'CUA': a.cua || '', 'Activo': a.activo ? 'Sí' : 'No'
     };
   });
-  exportarAExcel('maestro_articulos_' + hoyStr(), [{ nombre: 'Maestro', filas: filas }]);
+  const ws = XLSX.utils.json_to_sheet(filas);
+  // Anchos de columna (en caracteres) para que se lea cómodo
+  ws['!cols'] = [34, 20, 11, 13, 14, 18, 28, 30, 18, 8].map(function(w){ return { wch: w }; });
+  // Filtro en el encabezado y fila fija
+  if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] };
+  ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
+  // Formato de miles/decimales en las columnas de costo (E, F) y cantidad (D)
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (var r = 1; r <= range.e.r; r++) {
+    [3, 4, 5].forEach(function(cIdx){
+      const cell = ws[XLSX.utils.encode_cell({ r: r, c: cIdx })];
+      if (cell && typeof cell.v === 'number') cell.z = (cIdx === 3) ? '#,##0.###' : '#,##0.00';
+    });
+  }
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Maestro');
+  XLSX.writeFile(wb, 'Maestro_Articulos_' + hoyStr() + '.xlsx');
 };
 
 // ---- CARGAR (editor y admin) ----
