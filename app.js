@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-26-EW | ULTIMA | Comprobantes: (1) selector "Ordenar por" (fecha emision nuevas/viejas, proveedor A-Z, monto mayor/menor); (2) aprobacion MASIVA de comprobantes simples: checkbox en cada simple pendiente + "Seleccionar todos" + boton "Aprobar seleccionados". No requiere SQL. Antes: TRANSVERSAL ve todos los locales ===== */
+/* ===== BUILD 2026-11-26-EX | ULTIMA | Stock: nueva pestania "Maestro" (lista paralela maestro_articulos, NO toca Insumos ni EERR). Campos: nombre, formato, unidad base, cant x envase, costo x envase, costo/unidad base (auto), proveedor, subcuenta (plan actual) y CUA auto (5 niveles, nunca se repite). REQUIERE correr maestro_articulos.sql (crea tabla + precarga 634 validados). Antes: comprobantes orden + aprobacion masiva ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -11240,9 +11240,243 @@ window.stockOnChangeLocal = function() {
 function stockRender() {
   const tab = (isMaster() || isAdmin()) ? STOCK_TAB : 'cargar';
   if (tab === 'articulos') stockRenderArticulos();
+  else if (tab === 'maestro') stockRenderMaestro();
   else if (tab === 'reportes') stockRenderReportes();
   else stockRenderCargar();
 }
+
+// ============================================
+// MAESTRO DE ARTÍCULOS (tabla maestro_articulos, lista paralela — NO toca ingredientes ni EERR)
+// ============================================
+let MAESTRO_ARTS = [], MAESTRO_ART_EDIT = null, MAESTRO_Q = '', MAESTRO_SUBCUENTAS = [], MAESTRO_PREFIX = {};
+// Construye, para cada subcuenta (plan actual de 3 niveles), su prefijo CUA de 4 niveles: Capitulo.Rubro.Cuenta.Subcuenta.
+function maConstruirPrefijos() {
+  MAESTRO_SUBCUENTAS = []; MAESTRO_PREFIX = {};
+  const plan = (typeof PLAN_CUENTAS !== 'undefined' && PLAN_CUENTAS) ? PLAN_CUENTAS : [];
+  if (!plan.length) return;
+  const cuentas = plan.filter(function(c){ return !c.parent_id; });
+  const subs = plan.filter(function(c){ return c.parent_id; });
+  // orden de rubros (grupos) por primera aparición
+  const grupos = [];
+  cuentas.slice().sort(function(a,b){ return (a.orden||0)-(b.orden||0); }).forEach(function(c){ if (grupos.indexOf(c.grupo) === -1) grupos.push(c.grupo); });
+  const pad = function(n, w){ return String(n).padStart(w, '0'); };
+  // capítulo: EGRESOS=5 por defecto (estos artículos son costos); INGRESOS=4 si el grupo lo indica.
+  const capDe = function(g){ const s = (g || '').toLowerCase(); if (s.indexOf('ingreso') >= 0 || s.indexOf('venta') >= 0) return 4; return 5; };
+  cuentas.forEach(function(c){
+    const rubroIdx = grupos.indexOf(c.grupo) + 1;
+    const cuentasGrupo = cuentas.filter(function(x){ return x.grupo === c.grupo; }).sort(function(a,b){ return (a.orden||0)-(b.orden||0); });
+    const cuentaIdx = cuentasGrupo.findIndex(function(x){ return x.id === c.id; }) + 1;
+    const subsCuenta = subs.filter(function(x){ return x.parent_id === c.id; }).sort(function(a,b){ return (a.orden||0)-(b.orden||0); });
+    subsCuenta.forEach(function(sc, i){
+      const prefijo = capDe(c.grupo) + '.' + rubroIdx + '.' + pad(cuentaIdx, 2) + '.' + pad(i + 1, 3);
+      MAESTRO_PREFIX[sc.id] = prefijo;
+      MAESTRO_SUBCUENTAS.push({ id: sc.id, nombre: sc.nombre, cuenta: c.nombre, grupo: c.grupo, prefijo: prefijo });
+    });
+  });
+  MAESTRO_SUBCUENTAS.sort(function(a, b){ return (a.cuenta + ' ' + a.nombre).localeCompare(b.cuenta + ' ' + b.nombre, 'es'); });
+}
+async function maCargar() {
+  if (typeof PLAN_CUENTAS === 'undefined' || !PLAN_CUENTAS || !PLAN_CUENTAS.length) {
+    try { PLAN_CUENTAS = await api('plan_cuentas?order=grupo,orden,nombre') || []; } catch (e) {}
+  }
+  maConstruirPrefijos();
+  try { MAESTRO_ARTS = await apiAll('maestro_articulos?select=*&order=nombre.asc') || []; }
+  catch (e) { MAESTRO_ARTS = []; console.warn('maestro_articulos:', e); }
+}
+function maSubLabel(id) {
+  const s = MAESTRO_SUBCUENTAS.find(function(x){ return String(x.id) === String(id); });
+  return s ? (s.cuenta + ' › ' + s.nombre) : '';
+}
+window.onBuscarMaestro = function(v){ MAESTRO_Q = (v || '').trim().toLowerCase(); maRenderLista(); };
+async function stockRenderMaestro() {
+  const body = document.getElementById('stockBody');
+  body.innerHTML = '<div class="loading">Cargando maestro...</div>';
+  await maCargar();
+  body.innerHTML =
+    '<button class="btn-primary" style="width:100%;margin-bottom:12px;" onclick="abrirNuevoMaestroArt()"><i class="ti ti-plus"></i> Nuevo artículo</button>' +
+    '<label class="field" style="margin-bottom:6px"><input type="text" id="maBuscar" placeholder="Buscar por nombre, proveedor o CUA…" oninput="onBuscarMaestro(this.value)" autocomplete="off"></label>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+      '<span style="font-size:11.5px;color:var(--c-muted)" id="maConteo"></span>' +
+      '<button class="btn-ghost" style="padding:5px 11px;font-size:12px" onclick="maDescargarExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>' +
+    '</div>' +
+    '<div id="maLista"></div>';
+  maRenderLista();
+}
+function maRenderLista() {
+  const cont = document.getElementById('maLista');
+  if (!cont) return;
+  let lista = MAESTRO_ARTS;
+  if (MAESTRO_Q) {
+    lista = MAESTRO_ARTS.filter(function(a){
+      const hay = ((a.nombre || '') + ' ' + (a.formato || '') + ' ' + (a.proveedor || '') + ' ' + (a.cua || '')).toLowerCase();
+      return hay.indexOf(MAESTRO_Q) >= 0;
+    });
+  }
+  const cnt = document.getElementById('maConteo');
+  if (cnt) cnt.textContent = lista.length + ' de ' + MAESTRO_ARTS.length + ' artículos';
+  if (!lista.length) { cont.innerHTML = '<div class="empty-list">No hay artículos' + (MAESTRO_Q ? ' que coincidan.' : ' todavía.') + '</div>'; return; }
+  cont.innerHTML = lista.map(function(a){
+    const inact = a.activo ? '' : ' <span style="color:var(--c-muted);font-weight:400;font-size:11px;">(inactivo)</span>';
+    const cub = (a.costo_unidad_base != null) ? _cmpMoney(a.costo_unidad_base) + (a.unidad_base ? ' / ' + esc(a.unidad_base) : '') : '';
+    const sub = a.subcuenta_id ? maSubLabel(a.subcuenta_id) : '';
+    return '<div class="ped-card" onclick="abrirEditarMaestroArt(' + a.id + ')"' + (a.activo ? '' : ' style="opacity:.55;"') + '>' +
+      '<div class="ped-card-top"><span class="ped-local">' + esc(a.nombre) + inact + '</span>' +
+        (a.cua ? '<span style="font-size:11px;color:var(--c-sand);font-family:monospace">' + esc(a.cua) + '</span>' : '<span style="font-size:10px;color:var(--c-muted)">sin CUA</span>') +
+      '</div>' +
+      '<div class="ped-card-sub">' + esc([a.formato, a.proveedor].filter(Boolean).join(' · ')) + (cub ? ' · ' + cub : '') + '</div>' +
+      (sub ? '<div style="font-size:11px;color:var(--c-muted);margin-top:2px">' + esc(sub) + '</div>' : '') +
+    '</div>';
+  }).join('');
+}
+function maLlenarSubcuentas(sel) {
+  const el = document.getElementById('maSubcuenta');
+  if (!el) return;
+  el.innerHTML = '<option value="">— Elegí la subcuenta —</option>' + MAESTRO_SUBCUENTAS.map(function(s){
+    return '<option value="' + s.id + '"' + (String(s.id) === String(sel) ? ' selected' : '') + '>' + esc(s.cuenta + ' › ' + s.nombre) + '</option>';
+  }).join('');
+}
+function maLlenarProveedores() {
+  const dl = document.getElementById('maProvList');
+  if (!dl) return;
+  const provs = Array.from(new Set(MAESTRO_ARTS.map(function(a){ return a.proveedor; }).filter(Boolean))).sort(function(a,b){ return a.localeCompare(b, 'es'); });
+  dl.innerHTML = provs.map(function(p){ return '<option value="' + esc(p) + '"></option>'; }).join('');
+}
+window.maCalcCostoUnid = function() {
+  const env = _parseMoney((document.getElementById('maCostoEnv') || {}).value || '');
+  const cant = _parseMoney((document.getElementById('maCant') || {}).value || '');
+  const out = document.getElementById('maCostoUnid');
+  if (!out) return;
+  if (cant > 0 && env > 0) out.value = _fmtMoneyStr(String(Math.round((env / cant) * 100) / 100));
+  else out.value = '';
+};
+window.maPreviewCua = function() {
+  const hint = document.getElementById('maCuaHint');
+  const cua = document.getElementById('maCua');
+  if (MAESTRO_ART_EDIT && cua && cua.value) return; // ya tiene CUA asignado
+  const subId = (document.getElementById('maSubcuenta') || {}).value;
+  if (subId && MAESTRO_PREFIX[subId]) {
+    if (cua) cua.value = '';
+    if (hint) hint.textContent = 'Se asignará con el prefijo ' + MAESTRO_PREFIX[subId] + '.### al guardar.';
+  } else if (hint) {
+    hint.textContent = 'Lo asigna la app automáticamente (5 niveles), sin repetir nunca. Elegí la subcuenta.';
+  }
+};
+window.abrirNuevoMaestroArt = function() {
+  MAESTRO_ART_EDIT = null;
+  document.getElementById('maTitulo').textContent = 'Nuevo artículo';
+  ['maNombre','maFormato','maUnidad','maCant','maCostoEnv','maCostoUnid','maProveedor','maCua'].forEach(function(id){ const e = document.getElementById(id); if (e) e.value = ''; });
+  document.getElementById('maActivo').checked = true;
+  maLlenarSubcuentas('');
+  maLlenarProveedores();
+  document.getElementById('maCuaHint').textContent = 'Lo asigna la app automáticamente (5 niveles), sin repetir nunca. Elegí la subcuenta.';
+  document.getElementById('maError').textContent = '';
+  document.getElementById('modalMaestroArt').classList.add('show');
+};
+window.abrirEditarMaestroArt = function(id) {
+  const a = MAESTRO_ARTS.find(function(x){ return x.id === id; });
+  if (!a) return;
+  MAESTRO_ART_EDIT = id;
+  document.getElementById('maTitulo').textContent = 'Editar artículo';
+  document.getElementById('maNombre').value = a.nombre || '';
+  document.getElementById('maFormato').value = a.formato || '';
+  document.getElementById('maUnidad').value = a.unidad_base || '';
+  document.getElementById('maCant').value = a.cant_por_envase != null ? _fmtMoneyStr(String(a.cant_por_envase)) : '';
+  document.getElementById('maCostoEnv').value = a.costo_envase != null ? _fmtMoneyStr(String(a.costo_envase)) : '';
+  document.getElementById('maCostoUnid').value = a.costo_unidad_base != null ? _fmtMoneyStr(String(a.costo_unidad_base)) : '';
+  document.getElementById('maProveedor').value = a.proveedor || '';
+  document.getElementById('maCua').value = a.cua || '';
+  document.getElementById('maActivo').checked = !!a.activo;
+  maLlenarSubcuentas(a.subcuenta_id || '');
+  maLlenarProveedores();
+  document.getElementById('maCuaHint').textContent = a.cua ? 'CUA ya asignado (no cambia).' : 'Se asignará al guardar según la subcuenta.';
+  document.getElementById('maError').textContent = '';
+  document.getElementById('modalMaestroArt').classList.add('show');
+};
+window.closeMaestroArt = function() { document.getElementById('modalMaestroArt').classList.remove('show'); };
+// Próximo CUA libre para un prefijo dado (consulta la base; reintenta ante choque de unicidad).
+async function maProximoCua(prefijo) {
+  let rows = [];
+  try { rows = await apiAll('maestro_articulos?cua=like.' + encodeURIComponent(prefijo + '.') + '*&select=cua') || []; } catch (e) {}
+  let max = 0;
+  rows.forEach(function(r){
+    const m = String(r.cua || '').match(/\.(\d+)$/);
+    if (m) { const n = parseInt(m[1], 10); if (n > max) max = n; }
+  });
+  return prefijo + '.' + String(max + 1).padStart(3, '0');
+}
+window.guardarMaestroArt = async function() {
+  const err = document.getElementById('maError'); err.textContent = '';
+  const nombre = (document.getElementById('maNombre').value || '').trim();
+  if (!nombre) { err.textContent = 'Poné el nombre del artículo.'; return; }
+  const subId = document.getElementById('maSubcuenta').value;
+  const yaTeniaCua = MAESTRO_ART_EDIT && (document.getElementById('maCua').value || '').trim();
+  if (!subId && !yaTeniaCua) { err.textContent = 'Elegí la subcuenta (es necesaria para asignar el CUA).'; return; }
+  const env = _parseMoney(document.getElementById('maCostoEnv').value || '');
+  const cant = _parseMoney(document.getElementById('maCant').value || '');
+  const payload = {
+    nombre: nombre,
+    formato: (document.getElementById('maFormato').value || '').trim() || null,
+    unidad_base: (document.getElementById('maUnidad').value || '').trim() || null,
+    cant_por_envase: cant > 0 ? cant : null,
+    costo_envase: env > 0 ? env : null,
+    costo_unidad_base: (cant > 0 && env > 0) ? Math.round((env / cant) * 100) / 100 : null,
+    proveedor: (document.getElementById('maProveedor').value || '').trim() || null,
+    subcuenta_id: subId ? parseInt(subId, 10) : null,
+    activo: document.getElementById('maActivo').checked,
+    actualizado_en: new Date().toISOString()
+  };
+  const btn = document.getElementById('maGuardarBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Guardando...';
+  try {
+    if (MAESTRO_ART_EDIT) {
+      await api('maestro_articulos?id=eq.' + MAESTRO_ART_EDIT, { method: 'PATCH', body: JSON.stringify(payload) });
+      // Si no tenía CUA y ahora hay subcuenta, se lo asignamos (sin repetir).
+      if (!yaTeniaCua && subId && MAESTRO_PREFIX[subId]) await maAsignarCuaConReintento(MAESTRO_PREFIX[subId], MAESTRO_ART_EDIT);
+    } else {
+      payload.creado_por = currentUser ? currentUser.id : null;
+      await maInsertarConCua(payload, MAESTRO_PREFIX[subId]);
+    }
+    closeMaestroArt();
+    await maCargar();
+    maRenderLista();
+    toast('✓ Artículo guardado', 'success');
+  } catch (e) { err.textContent = 'No se pudo guardar: ' + ((e && e.message) || e); }
+  finally { btn.disabled = false; btn.textContent = t; }
+};
+// Inserta un artículo nuevo asignando el próximo CUA; reintenta si choca la unicidad.
+async function maInsertarConCua(payload, prefijo) {
+  for (let intento = 0; intento < 6; intento++) {
+    const p = Object.assign({}, payload);
+    if (prefijo) p.cua = await maProximoCua(prefijo);
+    try { await api('maestro_articulos', { method: 'POST', body: JSON.stringify(p) }); return; }
+    catch (e) { if (prefijo && /duplicate|unique|conflict|23505/i.test(String((e && e.message) || e))) continue; throw e; }
+  }
+  throw new Error('no se pudo asignar un CUA libre');
+}
+// Asigna CUA a un artículo existente (PATCH) con reintento por unicidad; devuelve el CUA asignado.
+async function maAsignarCuaConReintento(prefijo, id) {
+  for (let intento = 0; intento < 6; intento++) {
+    const cua = await maProximoCua(prefijo);
+    try {
+      await api('maestro_articulos?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ cua: cua }) });
+      return cua;
+    } catch (e) { if (/duplicate|unique|conflict|23505/i.test(String((e && e.message) || e))) continue; throw e; }
+  }
+  throw new Error('no se pudo asignar un CUA libre');
+}
+window.maDescargarExcel = function() {
+  if (!MAESTRO_ARTS.length) { toast('No hay artículos para exportar', 'error'); return; }
+  const filas = MAESTRO_ARTS.map(function(a){
+    return {
+      'Nombre': a.nombre || '', 'Formato': a.formato || '', 'Unidad base': a.unidad_base || '',
+      'Cant. x envase': a.cant_por_envase != null ? a.cant_por_envase : '',
+      'Costo x envase': a.costo_envase != null ? a.costo_envase : '',
+      'Costo / unidad base': a.costo_unidad_base != null ? a.costo_unidad_base : '',
+      'Proveedor': a.proveedor || '', 'Subcuenta': a.subcuenta_id ? maSubLabel(a.subcuenta_id) : '',
+      'CUA': a.cua || '', 'Activo': a.activo ? 'Sí' : 'No'
+    };
+  });
+  exportarAExcel('maestro_articulos_' + hoyStr(), [{ nombre: 'Maestro', filas: filas }]);
+};
 
 // ---- CARGAR (editor y admin) ----
 async function stockRenderCargar() {

@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261126ew">
+<link rel="stylesheet" href="styles.css?v=20261126ex">
 </head>
 <body>
 
@@ -763,6 +763,52 @@
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeStockArticulo()">Cancelar</button>
       <button class="btn-primary" id="saGuardarBtn" onclick="guardarStockArticulo()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalMaestroArt">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2 class="modal-title" id="maTitulo">Nuevo artículo</h2>
+      <button class="modal-close" onclick="closeMaestroArt()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <label class="field"><span class="field-label">Nombre del artículo</span>
+        <input type="text" id="maNombre" placeholder="Ej: ACEITE DE COCO"></label>
+      <label class="field"><span class="field-label">Formato / Descripción comercial</span>
+        <input type="text" id="maFormato" placeholder="Ej: LATA LITRO"></label>
+      <div style="display:flex;gap:10px">
+        <label class="field" style="flex:1"><span class="field-label">Unidad base</span>
+          <input type="text" id="maUnidad" placeholder="Ej: lt, kg, un" list="maUnidadList">
+          <datalist id="maUnidadList"><option value="un"></option><option value="lt"></option><option value="kg"></option><option value="gr"></option><option value="ml"></option></datalist></label>
+        <label class="field" style="flex:1"><span class="field-label">Cant. por envase</span>
+          <input type="text" id="maCant" inputmode="decimal" placeholder="Ej: 1" oninput="maCalcCostoUnid()"></label>
+      </div>
+      <div style="display:flex;gap:10px">
+        <label class="field" style="flex:1"><span class="field-label">Costo del envase ($)</span>
+          <input type="text" id="maCostoEnv" inputmode="decimal" placeholder="$ 0" onfocus="moneyFocus(this)" onblur="moneyBlur(this)" oninput="maCalcCostoUnid()"></label>
+        <label class="field" style="flex:1"><span class="field-label">Costo / unidad base</span>
+          <input type="text" id="maCostoUnid" readonly placeholder="—" style="opacity:.8">
+          <span class="field-hint">Calculado automáticamente</span></label>
+      </div>
+      <label class="field"><span class="field-label">Proveedor</span>
+        <input type="text" id="maProveedor" placeholder="Nombre del proveedor" list="maProvList">
+        <datalist id="maProvList"></datalist></label>
+      <label class="field"><span class="field-label">Subcuenta (plan de cuentas)</span>
+        <select id="maSubcuenta" onchange="maPreviewCua()"><option value="">— Elegí la subcuenta —</option></select></label>
+      <label class="field"><span class="field-label">CUA — Código Único Azuca</span>
+        <input type="text" id="maCua" readonly placeholder="Se asigna solo al guardar" style="opacity:.85">
+        <span class="field-hint" id="maCuaHint">Lo asigna la app automáticamente (5 niveles: Capítulo.Rubro.Cuenta.Subcuenta.Artículo), sin repetir nunca.</span></label>
+      <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
+        <input type="checkbox" id="maActivo" checked style="width:auto;">
+        <span class="field-label" style="margin:0;">Artículo activo</span>
+      </label>
+      <div class="login-error" id="maError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeMaestroArt()">Cancelar</button>
+      <button class="btn-primary" id="maGuardarBtn" onclick="guardarMaestroArt()">Guardar</button>
     </div>
   </div>
 </div>
@@ -2546,6 +2592,7 @@
     <div id="stockTabs" class="stock-tabs" style="display:none;">
       <button class="stock-tab active" data-tab="cargar" onclick="stockCambiarTab('cargar')">Cargar</button>
       <button class="stock-tab" data-tab="articulos" onclick="stockCambiarTab('articulos')">Artículos</button>
+      <button class="stock-tab" data-tab="maestro" onclick="stockCambiarTab('maestro')">Maestro</button>
       <button class="stock-tab" data-tab="reportes" onclick="stockCambiarTab('reportes')">Reportes</button>
     </div>
     <div id="stockBody"></div>
@@ -3025,6 +3072,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261126ew"></script>
+<script src="app.js?v=20261126ex"></script>
 </body>
 </html>
