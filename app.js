@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-27-FC | ULTIMA | Conciliacion/Pagos FASE 1: pago PARCIAL de comprobantes. Al generar una OP se indica el monto a pagar de cada comprobante (por defecto, su saldo pendiente); si no se salda todo, el comprobante queda "Pagado parcial" con su saldo y sigue pagable (se puede re-programar y pagar en otra OP). La lista de Pagos muestra el saldo pendiente. No requiere SQL (usa importe_saldado + estado pagado_parcial ya existentes). Pendiente FASE 2: que la conciliacion complete el comprobante solo cuando se salda del todo. Antes: filtros por fecha + export filtrado ===== */
+/* ===== BUILD 2026-11-27-FD | ULTIMA | Conciliacion FASE 2: (1) el comprobante pasa a Pago completado SOLO cuando se salda del todo y sus OP estan conciliadas (si no, queda Pagado parcial/Pago emitido) — vale para pagos parciales; (2) ASOCIACION MANUAL de un movimiento del banco a una OP ya generada (boton "OP" -> elegir de la lista); (3) marcar movimiento NEUTRO (sin impacto, solo conciliar). No requiere SQL. Antes: FASE 1 pagos parciales ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -7584,7 +7584,11 @@ function _concRenderDebitos() {
           (regla ? '<span style="font-size:11px;color:#3E86C7;margin-left:6px">Regla: ' + esc(_nombreCuenta(regla.cuenta_id)) + '</span>' : '') +
         '</span>' +
         (m.estado === 'pendiente'
-          ? '<button class="btn-ghost" style="flex:0 0 auto;padding:3px 9px;font-size:12px" onclick="categorizarMov(' + m.id + ')">Categorizar</button>'
+          ? '<span style="display:flex;gap:4px;flex:0 0 auto">' +
+              '<button class="btn-ghost" style="padding:3px 8px;font-size:11.5px" title="Asociar a una OP ya generada" onclick="concAsociarOP(' + m.id + ')"><i class="ti ti-link"></i> OP</button>' +
+              '<button class="btn-ghost" style="padding:3px 8px;font-size:11.5px" title="Sin impacto en resultados: solo conciliar" onclick="concMarcarNeutro(' + m.id + ')">Neutro</button>' +
+              '<button class="btn-ghost" style="padding:3px 8px;font-size:11.5px" onclick="categorizarMov(' + m.id + ')">Categorizar</button>' +
+            '</span>'
           : '<button class="btn-ghost" style="flex:0 0 auto;padding:3px 7px;font-size:12px;color:var(--c-error)" title="Volver a pendiente" onclick="desconciliarMov(' + m.id + ')"><i class="ti ti-arrow-back-up"></i></button>') +
       '</div>' +
     '</div>';
@@ -7755,12 +7759,8 @@ window.aplicarMatcheos = async function() {
       }
       await api('orden_pago_medios?id=eq.' + x.medio.id, { method: 'PATCH', body: JSON.stringify({ conciliado: true, mov_id: x.mov.id }) });
       await api('movimientos_bancarios?id=eq.' + x.mov.id, { method: 'PATCH', body: JSON.stringify({ estado: 'conciliado', orden_pago_id: x.op.id, nota: 'Pago ' + (x.op ? x.op.numero : 'OP') }) });
-      const rest = await api('orden_pago_medios?orden_pago_id=eq.' + x.op.id + '&conciliado=eq.false&select=id') || [];
-      if (!rest.length) {
-        const ocs = await api('orden_pago_comprobantes?orden_pago_id=eq.' + x.op.id + '&select=comprobante_id') || [];
-        const cids = ocs.map(function(o){ return o.comprobante_id; });
-        if (cids.length) await api('comprobantes?id=in.(' + cids.join(',') + ')', { method: 'PATCH', body: JSON.stringify({ estado: 'pago_completado', fecha_pago: x.mov.fecha, actualizado_en: new Date().toISOString() }) });
-      }
+      const ocs = await api('orden_pago_comprobantes?orden_pago_id=eq.' + x.op.id + '&select=comprobante_id') || [];
+      await _concResolverComprobantes(ocs.map(function(o){ return o.comprobante_id; }), x.mov.fecha);
       n++;
     }
     MF_COMPROMISOS = null;
@@ -7833,15 +7833,110 @@ window.desconciliarMov = async function(id) {
   if (!ok) return;
   try {
     if (m && m.orden_pago_id) {
-      // Deshacer el matcheo con la OP: liberar el medio y volver los comprobantes a Pago emitido.
+      // Deshacer el matcheo con la OP: liberar el medio y recalcular el estado de los comprobantes por saldo.
       await api('orden_pago_medios?mov_id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ conciliado: false, mov_id: null }) });
       const ocs = await api('orden_pago_comprobantes?orden_pago_id=eq.' + m.orden_pago_id + '&select=comprobante_id') || [];
-      const cids = ocs.map(function(o){ return o.comprobante_id; });
-      if (cids.length) await api('comprobantes?id=in.(' + cids.join(',') + ')&estado=eq.pago_completado', { method: 'PATCH', body: JSON.stringify({ estado: 'pago_emitido', actualizado_en: new Date().toISOString() }) });
+      await _concResolverComprobantes(ocs.map(function(o){ return o.comprobante_id; }), null);
     }
     await api('movimientos_bancarios?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ estado: 'pendiente', cuenta_id: null, local: null, nota: null, orden_pago_id: null }) });
     toast('✓ Actualizado', 'success'); await concCargarLista();
   } catch (e) { toast('No se pudo: ' + ((e && e.message) || e), 'error'); }
+};
+// Recalcula el estado de cada comprobante según su saldo real (pagos parciales):
+// saldado < total -> Pagado parcial; saldado completo y todas las OP conciliadas -> Pago completado; completo pero falta conciliar -> Pago emitido.
+async function _concResolverComprobantes(cids, fechaMov) {
+  const ids = Array.from(new Set((cids || []).filter(function(x){ return x != null; })));
+  for (let k = 0; k < ids.length; k++) {
+    const cid = ids[k];
+    let total = 0;
+    try { const cr = await api('comprobantes?id=eq.' + cid + '&select=total'); const c0 = Array.isArray(cr) ? cr[0] : cr; total = Math.abs(parseFloat(c0 && c0.total) || 0); } catch (e) { continue; }
+    const ocs = await api('orden_pago_comprobantes?comprobante_id=eq.' + cid + '&select=orden_pago_id,importe_saldado') || [];
+    const saldado = ocs.reduce(function(s, o){ return s + Math.abs(parseFloat(o.importe_saldado) || 0); }, 0);
+    const opIds = Array.from(new Set(ocs.map(function(o){ return o.orden_pago_id; }).filter(function(x){ return x != null; })));
+    let estado;
+    if (saldado < total - 1) estado = 'pagado_parcial';
+    else {
+      let pend = [];
+      if (opIds.length) { try { pend = await api('orden_pago_medios?orden_pago_id=in.(' + opIds.join(',') + ')&conciliado=eq.false&select=id') || []; } catch (e) {} }
+      estado = pend.length ? 'pago_emitido' : 'pago_completado';
+    }
+    const patch = { estado: estado, actualizado_en: new Date().toISOString() };
+    if (estado === 'pago_completado' && fechaMov) patch.fecha_pago = fechaMov;
+    try { await api('comprobantes?id=eq.' + cid, { method: 'PATCH', body: JSON.stringify(patch) }); } catch (e) {}
+  }
+}
+// Marcar un movimiento como NEUTRO (sin impacto en resultados): solo conciliar.
+window.concMarcarNeutro = async function(id) {
+  const m = CONC_LISTA.find(function(x){ return x.id === id; }); if (!m) return;
+  const ok = await showConfirm({ title: 'Marcar neutro', msg: 'El movimiento se concilia como "sin impacto" (ej. transferencia entre cuentas propias). No genera comprobante ni toca el Estado de Resultados. ¿Confirmás?', type: 'info', okLabel: 'Sí, neutro', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  try {
+    await api('movimientos_bancarios?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ estado: 'conciliado', cuenta_id: null, local: null, orden_pago_id: null, nota: 'Neutro (sin impacto)' }) });
+    toast('✓ Marcado neutro', 'success'); await concCargarLista();
+  } catch (e) { toast('No se pudo: ' + ((e && e.message) || e), 'error'); }
+};
+// ---- Asociación manual de un movimiento a una OP ya generada ----
+let CONC_AOP_MOV = null, CONC_AOP_OPS = [], CONC_AOP_Q = '';
+window.concAsociarOP = async function(movId) {
+  const m = CONC_LISTA.find(function(x){ return x.id === movId; }); if (!m) return;
+  CONC_AOP_MOV = m; CONC_AOP_Q = '';
+  document.getElementById('aopMovInfo').innerHTML = _pagoFecha(m.fecha) + ' · ' + esc(m.descripcion || m.referencia || '—') + ' · <b style="color:#E5534B">' + _money2(m.importe) + '</b>';
+  document.getElementById('aopBuscar').value = '';
+  document.getElementById('aopLista').innerHTML = '<div class="loading">Cargando OP…</div>';
+  document.getElementById('modalAsociarOP').classList.add('show');
+  // OPs "abiertas" = las que tienen al menos un medio sin conciliar.
+  let abiertas = new Set();
+  try { const med = await apiAll('orden_pago_medios?conciliado=eq.false&select=orden_pago_id') || []; med.forEach(function(x){ if (x.orden_pago_id != null) abiertas.add(x.orden_pago_id); }); } catch (e) {}
+  let ops = [];
+  try { ops = await api('ordenes_pago?select=id,numero,proveedor_id,total,fecha&order=creado_en.desc&limit=300') || []; } catch (e) {}
+  CONC_AOP_OPS = ops.filter(function(o){ return abiertas.has(o.id); });
+  // nombres de proveedor
+  const pids = Array.from(new Set(CONC_AOP_OPS.map(function(o){ return o.proveedor_id; }).filter(Boolean)));
+  if (pids.length) { try { const ps = await api('proveedores?id=in.(' + pids.join(',') + ')&select=id,razon_social') || []; ps.forEach(function(p){ CMP_PROV_MAP[p.id] = p; }); } catch (e) {} }
+  aopRenderLista();
+};
+window.closeAsociarOP = function(){ document.getElementById('modalAsociarOP').classList.remove('show'); };
+window.onBuscarAOP = function(v){ CONC_AOP_Q = (v || '').trim().toLowerCase(); aopRenderLista(); };
+function aopRenderLista() {
+  const cont = document.getElementById('aopLista'); if (!cont) return;
+  let lista = CONC_AOP_OPS;
+  if (CONC_AOP_Q) {
+    lista = CONC_AOP_OPS.filter(function(o){
+      const p = CMP_PROV_MAP[o.proveedor_id];
+      const hay = ((o.numero || '') + ' ' + (p && p.razon_social || '')).toLowerCase();
+      return hay.indexOf(CONC_AOP_Q) >= 0;
+    });
+  }
+  if (!lista.length) { cont.innerHTML = '<div class="empty-list">No hay órdenes de pago abiertas' + (CONC_AOP_Q ? ' que coincidan.' : '.') + '</div>'; return; }
+  cont.innerHTML = lista.map(function(o){
+    const p = CMP_PROV_MAP[o.proveedor_id];
+    return '<div class="ped-card" style="padding:8px 10px;margin-bottom:5px;cursor:pointer" onclick="concConfirmarAsociarOP(' + o.id + ')">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px">' +
+        '<span style="font-weight:700;color:var(--c-cream)">' + esc(o.numero || ('OP-' + o.id)) + '</span>' +
+        '<span style="font-weight:700;color:var(--c-cream);white-space:nowrap">' + _cmpMoney(o.total) + '</span>' +
+      '</div>' +
+      '<div style="font-size:11.5px;color:var(--c-sand);margin-top:2px">' + esc(p ? p.razon_social : '(proveedor)') + ' · ' + _pagoFecha(o.fecha) + '</div>' +
+    '</div>';
+  }).join('');
+}
+window.concConfirmarAsociarOP = async function(opId) {
+  const m = CONC_AOP_MOV; if (!m) return;
+  const op = CONC_AOP_OPS.find(function(o){ return o.id === opId; }) || { id: opId };
+  const ok = await showConfirm({ title: 'Asociar a ' + (op.numero || ('OP-' + opId)), msg: 'El movimiento del banco se concilia contra esta orden de pago. ¿Confirmás?', type: 'info', okLabel: 'Sí, asociar', cancelLabel: 'Cancelar' });
+  if (!ok) return;
+  try {
+    // Elegir el medio sin conciliar más parecido por importe (si hay varios).
+    const medios = await api('orden_pago_medios?orden_pago_id=eq.' + opId + '&conciliado=eq.false&select=id,importe') || [];
+    let medio = null; const amt = Math.abs(Math.round((parseFloat(m.importe) || 0) * 100));
+    medios.forEach(function(md){ if (!medio || Math.abs(Math.round((parseFloat(md.importe) || 0) * 100) - amt) < Math.abs(Math.round((parseFloat(medio.importe) || 0) * 100) - amt)) medio = md; });
+    if (medio) await api('orden_pago_medios?id=eq.' + medio.id, { method: 'PATCH', body: JSON.stringify({ conciliado: true, mov_id: m.id }) });
+    await api('movimientos_bancarios?id=eq.' + m.id, { method: 'PATCH', body: JSON.stringify({ estado: 'conciliado', orden_pago_id: opId, nota: 'Pago ' + (op.numero || ('OP-' + opId)) + ' (manual)' }) });
+    const ocs = await api('orden_pago_comprobantes?orden_pago_id=eq.' + opId + '&select=comprobante_id') || [];
+    await _concResolverComprobantes(ocs.map(function(o){ return o.comprobante_id; }), m.fecha);
+    closeAsociarOP();
+    toast('✓ Movimiento asociado a ' + (op.numero || ('OP-' + opId)), 'success');
+    await concCargarLista();
+  } catch (e) { toast('No se pudo asociar: ' + ((e && e.message) || e), 'error'); }
 };
 window.concAplicarReglas = async function() {
   const pend = CONC_LISTA.filter(function(m){ return m.estado === 'pendiente'; });

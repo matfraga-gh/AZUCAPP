@@ -19,7 +19,7 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css">
 
-<link rel="stylesheet" href="styles.css?v=20261127fc">
+<link rel="stylesheet" href="styles.css?v=20261127fd">
 </head>
 <body>
 
@@ -2095,6 +2095,23 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modalAsociarOP">
+  <div class="modal-card cierre-card">
+    <div class="modal-header">
+      <h2 class="modal-title">Asociar a una Orden de Pago</h2>
+      <button class="modal-close" onclick="closeAsociarOP()" aria-label="Cerrar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body cierre-body">
+      <div id="aopMovInfo" class="cierre-hint" style="margin-bottom:10px"></div>
+      <label class="field" style="margin-bottom:8px"><input type="text" id="aopBuscar" placeholder="Buscar por N° de OP o proveedor…" oninput="onBuscarAOP(this.value)" autocomplete="off"></label>
+      <div id="aopLista"><div class="loading">Cargando OP…</div></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeAsociarOP()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <div id="vMisFinanzas" class="view">
   <div class="module-wrap">
     <div class="module-header">
@@ -3079,6 +3096,6 @@
 
 <!-- Librería para exportar a Excel (SheetJS) -->
 <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=20261127fc"></script>
+<script src="app.js?v=20261127fd"></script>
 </body>
 </html>
