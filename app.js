@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-27-FD | ULTIMA | Conciliacion FASE 2: (1) el comprobante pasa a Pago completado SOLO cuando se salda del todo y sus OP estan conciliadas (si no, queda Pagado parcial/Pago emitido) — vale para pagos parciales; (2) ASOCIACION MANUAL de un movimiento del banco a una OP ya generada (boton "OP" -> elegir de la lista); (3) marcar movimiento NEUTRO (sin impacto, solo conciliar). No requiere SQL. Antes: FASE 1 pagos parciales ===== */
+/* ===== BUILD 2026-11-27-FE | ULTIMA | Pagos: se ELIMINA el paso de "Programar". Ahora se genera la Orden de Pago DIRECTO desde "Por pagar" (se seleccionan los comprobantes y "Generar orden de pago"). Se quito la solapa "Programados" (los pago_programado que queden aparecen en "Por pagar" y se pueden pagar igual). No requiere SQL. Antes: FASE 2 conciliacion ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -6615,8 +6615,8 @@ window.onPagoFecha = function() {
 window.limpiarFechaPago = function() { PAGOS_FDESDE = ''; PAGOS_FHASTA = ''; PAGOS_SEL = {}; renderPagos(); };
 window.onPagoBuscar = function(v) { PAGOS_Q = (v || '').trim().toLowerCase(); renderPagos(); };
 window.togglePagoSel = function(id) { if (PAGOS_SEL[id]) delete PAGOS_SEL[id]; else PAGOS_SEL[id] = true; renderPagos(); };
-function _pagoModo() { return PAGOS_FILTRO === 'programados' ? 'op' : 'programar'; }
-function _pagoSeleccionable(c) { return _pagoModo() === 'op' ? (c.estado === 'pago_programado') : (c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial'); }
+// Estados pagables: se puede generar una OP directamente (sin paso de "programar").
+function _pagoSeleccionable(c) { return c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial' || c.estado === 'pago_programado'; }
 window.pagosSeleccionarTodo = function() {
   const arr = _pagosFiltradas().filter(_pagoSeleccionable);
   const todosSel = arr.length && arr.every(function(c){ return PAGOS_SEL[c.id]; });
@@ -6638,8 +6638,7 @@ function _pagosFiltradas() {
     });
   }
   if (PAGOS_FILTRO === 'sin_firma') arr = arr.filter(function(c){ return c.estado === 'sin_firma'; });
-  else if (PAGOS_FILTRO === 'por_pagar') arr = arr.filter(function(c){ return c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial'; });
-  else if (PAGOS_FILTRO === 'programados') arr = arr.filter(function(c){ return c.estado === 'pago_programado'; });
+  else if (PAGOS_FILTRO === 'por_pagar') arr = arr.filter(function(c){ return c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial' || c.estado === 'pago_programado'; });
   else if (PAGOS_FILTRO === 'simples') arr = arr.filter(function(c){ return c.es_simple === true; });
   else arr = arr.filter(function(c){ return c.estado !== 'pago_completado' && c.estado !== 'sin_firma'; }); // "Todos": sin completados ni sin firma
   if (PAGOS_Q) {
@@ -6670,7 +6669,7 @@ function renderPagos() {
   const todosSel = selec.length && selec.every(function(c){ return PAGOS_SEL[c.id]; });
   const totalVista = arr.reduce(function(s, c){ return s + _pagoSigno(c) * (parseFloat(c.total) || 0); }, 0);
   ctrl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">' +
-    chip('sin_firma', 'Sin firma') + chip('por_pagar', 'Por pagar') + chip('programados', 'Programados') + chip('simples', 'Simples') + chip('todos', 'Todos') + chip('ordenes', 'Órdenes') +
+    chip('sin_firma', 'Sin firma') + chip('por_pagar', 'Por pagar') + chip('simples', 'Simples') + chip('todos', 'Todos') + chip('ordenes', 'Órdenes') +
     '<span style="margin-left:auto;font-size:12px;color:var(--c-sand)">Ordenar: </span>' +
     '<select onchange="onPagoSort(this.value)" style="padding:5px 8px;border-radius:8px;font-size:12px">' +
       '<option value="vto"' + (PAGOS_SORT === 'vto' ? ' selected' : '') + '>Vencimiento</option>' +
@@ -6754,9 +6753,7 @@ function _pagosFooter() {
   }
   if (!ids.length) { bar.style.display = 'none'; return; }
   bar.style.display = 'flex';
-  const btn = _pagoModo() === 'op'
-    ? '<button class="btn-primary" style="padding:8px 16px" onclick="abrirGenerarOP()"><i class="ti ti-file-dollar"></i> Generar orden de pago</button>'
-    : '<button class="btn-primary" style="padding:8px 16px" onclick="abrirProgramarPago()"><i class="ti ti-calendar-dollar"></i> Programar pago</button>';
+  const btn = '<button class="btn-primary" style="padding:8px 16px" onclick="abrirGenerarOP()"><i class="ti ti-file-dollar"></i> Generar orden de pago</button>';
   bar.innerHTML = '<span style="font-size:13px;color:var(--c-cream)"><b>' + ids.length + '</b> sel. · ' + _cmpMoney(total) + '</span>' + btn;
 }
 
@@ -6882,8 +6879,8 @@ async function _opAplicarTcComp(c, tcPago) {
 }
 function _opMediosRaz(rzId) { return PAGOS_MEDIOS.filter(function(m){ return rzId == null || m.razon_social_id === rzId; }); }
 window.abrirGenerarOP = async function() {
-  const comps = PAGOS_LISTA.filter(function(c){ return PAGOS_SEL[c.id] && c.estado === 'pago_programado'; });
-  if (!comps.length) { toast('Seleccioná comprobantes en Pago Programado', 'error'); return; }
+  const comps = PAGOS_LISTA.filter(function(c){ return PAGOS_SEL[c.id] && (c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial' || c.estado === 'pago_programado'); });
+  if (!comps.length) { toast('Seleccioná comprobantes para pagar', 'error'); return; }
   const provIds = Array.from(new Set(comps.map(function(c){ return c.proveedor_id; })));
   const rzIds = Array.from(new Set(comps.map(function(c){ return c.razon_social_id; })));
   if (provIds.length > 1) { toast('Una orden de pago es por proveedor. Seleccioná comprobantes de un solo proveedor.', 'error'); return; }
@@ -7053,7 +7050,7 @@ function renderOrdenes(chip) {
   });
   const totalOps = ops.reduce(function(s, o){ return s + (parseFloat(o.total) || 0); }, 0);
   ctrl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">' +
-    chip('sin_firma', 'Sin firma') + chip('por_pagar', 'Por pagar') + chip('programados', 'Programados') + chip('simples', 'Simples') + chip('todos', 'Todos') + chip('ordenes', 'Órdenes') + '</div>' +
+    chip('sin_firma', 'Sin firma') + chip('por_pagar', 'Por pagar') + chip('simples', 'Simples') + chip('todos', 'Todos') + chip('ordenes', 'Órdenes') + '</div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">' +
       '<span style="font-size:12px;color:var(--c-sand)"><b style="color:var(--c-cream)">' + ops.length + '</b> OP · ' + _cmpMoney(totalOps) + '</span>' +
       '<button class="btn-ghost" style="padding:4px 10px;font-size:12px" onclick="descargarOrdenesExcel()"><i class="ti ti-file-spreadsheet"></i> Excel</button>' +
