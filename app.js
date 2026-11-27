@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-27-FB | ULTIMA | Filtros por fecha de emision (desde/hasta) en Comprobantes y en Pagos; el Excel ahora baja SOLO lo filtrado en pantalla (Comprobantes, Pagos y Maestro). FIX: el Excel de Comprobantes ahora trae el Medio de pago (antes salia vacio porque no cargaba medios_pago en esa pantalla). No requiere SQL. Antes: Excel del Maestro con formato ===== */
+/* ===== BUILD 2026-11-27-FC | ULTIMA | Conciliacion/Pagos FASE 1: pago PARCIAL de comprobantes. Al generar una OP se indica el monto a pagar de cada comprobante (por defecto, su saldo pendiente); si no se salda todo, el comprobante queda "Pagado parcial" con su saldo y sigue pagable (se puede re-programar y pagar en otra OP). La lista de Pagos muestra el saldo pendiente. No requiere SQL (usa importe_saldado + estado pagado_parcial ya existentes). Pendiente FASE 2: que la conciliacion complete el comprobante solo cuando se salda del todo. Antes: filtros por fecha + export filtrado ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -6514,7 +6514,7 @@ window.rechazarComprobante = async function(id, refresh) {
 // ============================================
 // PAGOS — Bandeja y programación de pagos (Fase A)
 // ============================================
-let PAGOS_LISTA = [], PAGOS_DIST = {}, PAGOS_MEDIOS = [], PAGOS_SEL = {}, PAGOS_SORT = 'vto', PAGOS_FILTRO = 'por_pagar', PAGOS_Q = '', PAGOS_OPS = [], PAGOS_RZ = '', PAGOS_RAZONES = [], PAGOS_FDESDE = '', PAGOS_FHASTA = '';
+let PAGOS_LISTA = [], PAGOS_DIST = {}, PAGOS_MEDIOS = [], PAGOS_SEL = {}, PAGOS_SORT = 'vto', PAGOS_FILTRO = 'por_pagar', PAGOS_Q = '', PAGOS_OPS = [], PAGOS_RZ = '', PAGOS_RAZONES = [], PAGOS_FDESDE = '', PAGOS_FHASTA = '', PAGOS_SALDADO = {};
 const PAGOS_TOPE = 400;
 function puedePagos() { return isMaster() || isAdmin(); }
 function _pagoFecha(f) { return f ? f.slice(0, 10).split('-').reverse().join('/') : '—'; }
@@ -6592,6 +6592,11 @@ async function openPagos() {
     if (cids.length) {
       const ds = await apiAll('comprobante_distribuciones?comprobante_id=in.(' + cids.join(',') + ')&select=comprobante_id,local,cuenta_id,monto') || [];
       ds.forEach(function(d){ (PAGOS_DIST[d.comprobante_id] = PAGOS_DIST[d.comprobante_id] || []).push(d); });
+    }
+    // Saldado por comprobante (suma de importes de OP) para mostrar el saldo pendiente.
+    PAGOS_SALDADO = {};
+    if (cids.length) {
+      try { const sd = await apiAll('orden_pago_comprobantes?comprobante_id=in.(' + cids.join(',') + ')&select=comprobante_id,importe_saldado') || []; sd.forEach(function(r){ PAGOS_SALDADO[r.comprobante_id] = (PAGOS_SALDADO[r.comprobante_id] || 0) + Math.abs(parseFloat(r.importe_saldado) || 0); }); } catch (e) {}
     }
   } catch (e) { cont.innerHTML = '<div class="empty-list" style="color:var(--c-error)">No se pudieron cargar los pagos. ¿Corriste pagos_fase_a.sql?</div>'; return; }
   PAGOS_SEL = {};
@@ -6726,6 +6731,7 @@ function renderPagos() {
         '</span>' +
       '</div>' +
       '<div style="font-size:11px;color:var(--c-sand);margin-top:2px;padding-left:25px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(c.tipo || '') + (nro ? ' · ' + esc(nro) : '') + (nc ? ' · ' : '') + (nc ? '<span style="color:#4CAF7A">NC</span>' : '') + (imputa ? ' · ' + esc(imputa) : '') + '</div>' +
+      ((PAGOS_SALDADO[c.id] || 0) > 0 && ['pendiente_pago', 'pagado_parcial', 'pago_programado'].indexOf(c.estado) >= 0 && (Math.abs(parseFloat(c.total) || 0) - (PAGOS_SALDADO[c.id] || 0)) > 1 ? '<div style="font-size:11px;color:#C87A2C;margin-top:2px;padding-left:25px">Saldo pendiente: <b>' + _cmpMoney(Math.max(0, Math.abs(parseFloat(c.total) || 0) - (PAGOS_SALDADO[c.id] || 0))) + '</b> · pagado ' + _cmpMoney(PAGOS_SALDADO[c.id] || 0) + ' de ' + _cmpMoney(Math.abs(parseFloat(c.total) || 0)) + '</div>' : '') +
       (programado ? '<div style="font-size:11px;color:#3E86C7;margin-top:2px;padding-left:25px">Pago: ' + _pagoFecha(c.fecha_pago) + (c.medio_pago_id ? ' · ' + esc(_nombreMedio(c.medio_pago_id)) : '') + '</div>' : '') +
       (['pago_emitido', 'pago_confirmado', 'pago_completado'].indexOf(c.estado) >= 0 && c.fecha_pago ? '<div style="font-size:11px;color:#3BA55D;margin-top:2px;padding-left:25px">Pagado: ' + _pagoFecha(c.fecha_pago) + (c.medio_pago_id ? ' · ' + esc(_nombreMedio(c.medio_pago_id)) : '') + (c.es_simple ? ' · simple' : '') + '</div>' : '') +
     '</div>';
@@ -6814,20 +6820,54 @@ function opCompTotalARS(c) {
   if (c && c.moneda === 'USD' && OP_TC > 0 && c.total_origen != null) return Math.round((parseFloat(c.total_origen) || 0) * OP_TC);
   return parseFloat(c.total) || 0;
 }
-function _opTotalOP() { return OP_COMPS.reduce(function(s, c){ return s + _pagoSigno(c) * opCompTotalARS(c); }, 0); }
+// Monto a pagar (magnitud, ARS) de un comprobante dentro de la OP: por defecto su saldo pendiente.
+function opCompPagar(c) { return (c && c._pagar != null) ? (parseFloat(c._pagar) || 0) : Math.abs(opCompTotalARS(c)); }
+function _opTotalOP() { return OP_COMPS.reduce(function(s, c){ return s + _pagoSigno(c) * opCompPagar(c); }, 0); }
+// Suma ya saldada (magnitud) por comprobante, a partir de las OP existentes.
+async function _opSaldadoPrevio(ids) {
+  const map = {};
+  if (!ids.length) return map;
+  try {
+    const rows = await apiAll('orden_pago_comprobantes?comprobante_id=in.(' + ids.join(',') + ')&select=comprobante_id,importe_saldado') || [];
+    rows.forEach(function(r){ map[r.comprobante_id] = (map[r.comprobante_id] || 0) + Math.abs(parseFloat(r.importe_saldado) || 0); });
+  } catch (e) {}
+  return map;
+}
 function opRenderComps() {
   const cont = document.getElementById('opComps'); if (!cont) return;
-  cont.innerHTML = OP_COMPS.map(function(c){
+  cont.innerHTML = OP_COMPS.map(function(c, i){
     const nc = cmpEsNC(c.tipo);
-    const ars = opCompTotalARS(c);
-    const usdNote = (c.moneda === 'USD') ? '<br><span style="font-size:10.5px;color:var(--c-sand)">US$ ' + _fmtMoneyStr(String(c.total_origen != null ? c.total_origen : '')) + (OP_TC > 0 ? ' · TC ' + _pvMoney(OP_TC) : '') + '</span>' : '';
-    return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px solid var(--c-cream-border)">' +
-      '<span style="color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis">' + esc(c.tipo || '') + ' ' + esc([c.punto_venta, c.numero].filter(Boolean).join('-')) + '</span>' +
-      '<span style="white-space:nowrap;text-align:right;color:' + (nc ? '#4CAF7A' : 'var(--c-cream)') + '">' + (nc ? '− ' : '') + _cmpMoney(ars) + usdNote + '</span></div>';
+    const saldo = (c._saldo != null) ? c._saldo : Math.abs(opCompTotalARS(c));
+    const usdNote = (c.moneda === 'USD') ? ' · <span style="font-size:10px;color:var(--c-sand)">US$ ' + _fmtMoneyStr(String(c.total_origen != null ? c.total_origen : '')) + (OP_TC > 0 ? ' · TC ' + _pvMoney(OP_TC) : '') + '</span>' : '';
+    return '<div style="padding:5px 0;border-bottom:1px solid var(--c-cream-border)">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px">' +
+        '<span style="color:var(--c-sand);min-width:0;overflow:hidden;text-overflow:ellipsis">' + esc(c.tipo || '') + ' ' + esc([c.punto_venta, c.numero].filter(Boolean).join('-')) + '</span>' +
+        '<span style="white-space:nowrap;color:var(--c-sand)">saldo ' + (nc ? '− ' : '') + _cmpMoney(saldo) + usdNote + '</span>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:6px;margin-top:3px">' +
+        '<span style="font-size:11px;color:var(--c-muted)">Paga:</span>' +
+        '<input type="text" inputmode="decimal" value="' + esc(_fmtMoneyStr(String(opCompPagar(c)))) + '" oninput="opSetPagar(' + i + ',this.value)" onfocus="moneyFocus(this)" onblur="moneyBlur(this)" style="flex:1;padding:4px 6px;font-size:12px">' +
+        '<button type="button" class="btn-ghost" style="padding:3px 8px;font-size:11px" onclick="opPagarTodo(' + i + ')">Todo</button>' +
+      '</div>' +
+    '</div>';
   }).join('');
 }
+window.opSetPagar = function(i, v) {
+  OP_COMPS[i]._pagar = _parseMoney(v);
+  if (OP_MEDIOS.length === 1) OP_MEDIOS[0].importe = Math.round(_opTotalOP() * 100) / 100;
+  _opRenderMedios();
+};
+window.opPagarTodo = function(i) {
+  OP_COMPS[i]._pagar = (OP_COMPS[i]._saldo != null) ? OP_COMPS[i]._saldo : Math.abs(opCompTotalARS(OP_COMPS[i]));
+  if (OP_MEDIOS.length === 1) OP_MEDIOS[0].importe = Math.round(_opTotalOP() * 100) / 100;
+  opRenderComps(); _opRenderMedios();
+};
 window.opRecalcUSD = function(){
   OP_TC = _parseMoney((document.getElementById('opTc') || {}).value) || 0;
+  // Recalcular el saldo pendiente de los comprobantes en USD con el nuevo TC.
+  OP_COMPS.forEach(function(c){
+    if (c.moneda === 'USD') { const tot = Math.abs(opCompTotalARS(c)); c._saldo = Math.max(0, Math.round(tot - (c._prevSaldado || 0))); c._pagar = c._saldo; }
+  });
   opRenderComps();
   if (OP_MEDIOS.length === 1) OP_MEDIOS[0].importe = Math.round(_opTotalOP() * 100) / 100;
   _opRenderMedios();
@@ -6861,6 +6901,15 @@ window.abrirGenerarOP = async function() {
   OP_TC = 0;
   const _tcEl = document.getElementById('opTc'); if (_tcEl) _tcEl.value = '';
   if (hayUSD) { const v = await tcOficialVenta(); OP_TC = v || 0; if (_tcEl && v) _tcEl.value = _fmtMoneyStr(String(v)); const info = document.getElementById('opTcInfo'); if (info) info.innerHTML = v ? 'TC oficial (venta) sugerido — editable.' : 'No se pudo traer el TC. Cargalo a mano.'; }
+  // Saldo pendiente por comprobante (total − ya saldado en OP anteriores). Por defecto se paga todo el saldo.
+  const _prevSaldado = await _opSaldadoPrevio(OP_COMPS.map(function(c){ return c.id; }));
+  OP_COMPS.forEach(function(c){
+    const tot = Math.abs(opCompTotalARS(c));
+    const yap = _prevSaldado[c.id] || 0;
+    c._prevSaldado = yap;
+    c._saldo = Math.max(0, Math.round(tot - yap));
+    c._pagar = c._saldo;
+  });
   const total = _opTotalOP();
   // Prefill de medios: uno por cada medio distinto ya programado; si no, uno vacío con el total
   const medioComp = comps.find(function(c){ return c.medio_pago_id; });
@@ -6926,6 +6975,9 @@ window.confirmarGenerarOP = async function() {
   const hayUSD = OP_COMPS.some(function(c){ return c.moneda === 'USD'; });
   if (hayUSD) { OP_TC = _parseMoney((document.getElementById('opTc') || {}).value) || 0; if (!(OP_TC > 0)) { err.textContent = 'Ingresá el TC del pago para los comprobantes en USD.'; return; } }
   const total = _opTotalOP();
+  if (total === 0) { err.textContent = 'El total a pagar es cero. Cargá cuánto se paga de cada comprobante.'; return; }
+  const sobre = OP_COMPS.find(function(c){ return opCompPagar(c) > (c._saldo != null ? c._saldo : Math.abs(opCompTotalARS(c))) + 1; });
+  if (sobre) { err.textContent = 'No podés pagar más que el saldo pendiente de un comprobante.'; return; }
   const rzId = OP_COMPS[0].razon_social_id;
   const btn = document.getElementById('opBtn'); btn.disabled = true; const t = btn.textContent; btn.textContent = 'Generando...';
   try {
@@ -6935,16 +6987,23 @@ window.confirmarGenerarOP = async function() {
     const numero = 'OP-' + String(op.id).padStart(5, '0');
     await api('ordenes_pago?id=eq.' + op.id, { method: 'PATCH', body: JSON.stringify({ numero: numero }) });
     // Comprobantes de la OP (importe saldado con el TC del pago para los USD)
-    const filasC = OP_COMPS.map(function(c){ return { orden_pago_id: op.id, comprobante_id: c.id, importe_saldado: _pagoSigno(c) * opCompTotalARS(c) }; });
+    const filasC = OP_COMPS.map(function(c){ return { orden_pago_id: op.id, comprobante_id: c.id, importe_saldado: _pagoSigno(c) * Math.round(opCompPagar(c)) }; });
     await api('orden_pago_comprobantes', { method: 'POST', body: JSON.stringify(filasC) });
     // Recalcular los comprobantes en USD con el TC del día del pago (actualiza su valor de referencia en pesos).
     if (hayUSD) { for (let i = 0; i < OP_COMPS.length; i++) { if (OP_COMPS[i].moneda === 'USD') { try { await _opAplicarTcComp(OP_COMPS[i], OP_TC); } catch (e) {} } } }
     // Medios de la OP
     const filasM = medios.map(function(m){ return { orden_pago_id: op.id, medio_pago_id: parseInt(m.medio_pago_id, 10), documento: m.documento || null, vencimiento: m.vencimiento || null, importe: parseFloat(m.importe) || 0 }; });
     await api('orden_pago_medios', { method: 'POST', body: JSON.stringify(filasM) });
-    // Comprobantes -> Pago Emitido. La fecha de pago queda tomada de la OP (para cheques, su fecha de débito se ajusta luego en la conciliación).
+    // Comprobantes: los que quedan saldados por completo -> Pago Emitido; los que quedan con saldo -> Pagado parcial (siguen pagables).
     const fechaPagoOP = (medios.find(function(m){ return m.vencimiento; }) || {}).vencimiento || fecha;
-    await api('comprobantes?id=in.(' + OP_COMPS.map(function(c){ return c.id; }).join(',') + ')', { method: 'PATCH', body: JSON.stringify({ estado: 'pago_emitido', fecha_pago: fechaPagoOP, actualizado_en: new Date().toISOString() }) });
+    const idsEmit = [], idsParc = [];
+    OP_COMPS.forEach(function(c){
+      const tot = Math.abs(opCompTotalARS(c));
+      const nuevoSaldado = (c._prevSaldado || 0) + opCompPagar(c);
+      if (nuevoSaldado >= tot - 1) idsEmit.push(c.id); else idsParc.push(c.id);
+    });
+    if (idsEmit.length) await api('comprobantes?id=in.(' + idsEmit.join(',') + ')', { method: 'PATCH', body: JSON.stringify({ estado: 'pago_emitido', fecha_pago: fechaPagoOP, actualizado_en: new Date().toISOString() }) });
+    if (idsParc.length) await api('comprobantes?id=in.(' + idsParc.join(',') + ')', { method: 'PATCH', body: JSON.stringify({ estado: 'pagado_parcial', fecha_pago: fechaPagoOP, actualizado_en: new Date().toISOString() }) });
     // Email al proveedor (best-effort)
     let emailMsg = '';
     if (document.getElementById('opEmail').checked) {
