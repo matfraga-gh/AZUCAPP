@@ -1,4 +1,4 @@
-/* ===== BUILD 2026-11-26-FA | ULTIMA | Maestro de Articulos: Excel con mejor formato (encabezados en negrita con fondo, letra chica, filas bajas, enteros sin coma, numeros a la derecha, filtro + fila fija). Carga xlsx-js-style solo para esta descarga. Antes: descarga .xlsx + anchos/filtros ===== */
+/* ===== BUILD 2026-11-27-FB | ULTIMA | Filtros por fecha de emision (desde/hasta) en Comprobantes y en Pagos; el Excel ahora baja SOLO lo filtrado en pantalla (Comprobantes, Pagos y Maestro). FIX: el Excel de Comprobantes ahora trae el Medio de pago (antes salia vacio porque no cargaba medios_pago en esa pantalla). No requiere SQL. Antes: Excel del Maestro con formato ===== */
 /* (historial) Deposito C1 (distribucion deposito->locales por Pedidos): en la recepcion del pedido se carga el "costo x unidad" (sugerido del articulo, editable) y se congela por item (requerimiento_items.costo_unitario). Nuevo modulo "Distribucion": costo recibido por local (cantidad recibida x costo) + Excel, en paralelo (no toca el Panel). Requiere deposito_c1.sql. El Deposito Central se agrega como un local mas. Antes: Panel aislado durante pruebas ===== */
 /* ============================================
    AZUCAPP - Lógica principal
@@ -5745,7 +5745,7 @@ window.eliminarProveedor = async function(id) {
 // ============================================
 // COMPROBANTES (compras y pagos — captura)
 // ============================================
-let CMP_LISTA = [], CMP_EDIT_ID = null, CMP_ADJUNTO_PATH = null, CMP_DIST = [], CMP_Q = '', CMP_SORT = 'fecha_desc', CMP_SEL = {};
+let CMP_LISTA = [], CMP_EDIT_ID = null, CMP_ADJUNTO_PATH = null, CMP_DIST = [], CMP_Q = '', CMP_SORT = 'fecha_desc', CMP_SEL = {}, CMP_FDESDE = '', CMP_FHASTA = '';
 let CMP_PROVEEDORES = [], CMP_RAZONES = [], CMP_PROV_MAP = {};
 const CMP_TIPOS = ['Factura A', 'Factura B', 'Factura C', 'Nota de Crédito', 'Nota de Débito', 'Recibo', 'Remito valorizado', 'Impuesto / DDJJ', 'Remito', 'Otro'];
 // Comprobantes que son Nota de Crédito (restan: generan saldo a favor en la OP)
@@ -5981,6 +5981,38 @@ window.moneyFocus = function(el){ const n = _parseMoney(el.value); el.value = n 
 window.moneyBlur = function(el){ el.value = _fmtMoneyStr(el.value); };
 window.onBuscarComprobante = function(v){ CMP_Q = (v || '').trim().toLowerCase(); renderComprobantes(); };
 window.onOrdenComprobantes = function(v){ CMP_SORT = v || 'fecha_desc'; renderComprobantes(); };
+window.onFechaComprobante = function(){
+  CMP_FDESDE = (document.getElementById('cmpFDesde') || {}).value || '';
+  CMP_FHASTA = (document.getElementById('cmpFHasta') || {}).value || '';
+  renderComprobantes();
+};
+window.limpiarFechaComprobante = function(){
+  CMP_FDESDE = ''; CMP_FHASTA = '';
+  const d = document.getElementById('cmpFDesde'); if (d) d.value = '';
+  const h = document.getElementById('cmpFHasta'); if (h) h.value = '';
+  renderComprobantes();
+};
+// Devuelve la lista de comprobantes tal como se ve en pantalla (búsqueda + rango de fechas + orden).
+function _comprobantesFiltrados() {
+  let lista = CMP_LISTA;
+  if (CMP_Q) {
+    lista = lista.filter(function(c){
+      const p = CMP_PROV_MAP[c.proveedor_id];
+      const hay = ((p && p.razon_social || '') + ' ' + (c.punto_venta || '') + ' ' + (c.numero || '')).toLowerCase();
+      return hay.indexOf(CMP_Q) >= 0;
+    });
+  }
+  if (CMP_FDESDE || CMP_FHASTA) {
+    lista = lista.filter(function(c){
+      const f = c.fecha_emision ? String(c.fecha_emision).slice(0, 10) : '';
+      if (!f) return false;
+      if (CMP_FDESDE && f < CMP_FDESDE) return false;
+      if (CMP_FHASTA && f > CMP_FHASTA) return false;
+      return true;
+    });
+  }
+  return _cmpOrdenar(lista);
+}
 function _cmpOrdenar(lista){
   const arr = lista.slice();
   const provName = function(c){ const p = CMP_PROV_MAP[c.proveedor_id]; return (p && p.razon_social || '').toLowerCase(); };
@@ -6002,16 +6034,8 @@ function renderComprobantes() {
   const cont = document.getElementById('comprobantesLista');
   if (!cont) return;
   if (!CMP_LISTA.length) { cont.innerHTML = '<div class="empty-list">No hay comprobantes cargados' + ((document.getElementById('cmpEstadoFiltro')||{}).value ? ' con ese estado' : '') + '.</div>'; return; }
-  let lista = CMP_LISTA;
-  if (CMP_Q) {
-    lista = CMP_LISTA.filter(function(c){
-      const p = CMP_PROV_MAP[c.proveedor_id];
-      const hay = ((p && p.razon_social || '') + ' ' + (c.punto_venta || '') + ' ' + (c.numero || '')).toLowerCase();
-      return hay.indexOf(CMP_Q) >= 0;
-    });
-  }
-  if (!lista.length) { cont.innerHTML = '<div class="empty-list">No hay comprobantes que coincidan con “' + esc(CMP_Q) + '”.</div>'; return; }
-  lista = _cmpOrdenar(lista);
+  let lista = _comprobantesFiltrados();
+  if (!lista.length) { cont.innerHTML = '<div class="empty-list">No hay comprobantes que coincidan con los filtros.</div>'; return; }
   const esAdmin = isMaster() || isAdmin();
   const _selable = function(c){ return esAdmin && c.es_simple === true && c.estado === 'aprobacion_pendiente'; };
   const simplesPend = lista.filter(_selable);
@@ -6490,7 +6514,7 @@ window.rechazarComprobante = async function(id, refresh) {
 // ============================================
 // PAGOS — Bandeja y programación de pagos (Fase A)
 // ============================================
-let PAGOS_LISTA = [], PAGOS_DIST = {}, PAGOS_MEDIOS = [], PAGOS_SEL = {}, PAGOS_SORT = 'vto', PAGOS_FILTRO = 'por_pagar', PAGOS_Q = '', PAGOS_OPS = [], PAGOS_RZ = '', PAGOS_RAZONES = [];
+let PAGOS_LISTA = [], PAGOS_DIST = {}, PAGOS_MEDIOS = [], PAGOS_SEL = {}, PAGOS_SORT = 'vto', PAGOS_FILTRO = 'por_pagar', PAGOS_Q = '', PAGOS_OPS = [], PAGOS_RZ = '', PAGOS_RAZONES = [], PAGOS_FDESDE = '', PAGOS_FHASTA = '';
 const PAGOS_TOPE = 400;
 function puedePagos() { return isMaster() || isAdmin(); }
 function _pagoFecha(f) { return f ? f.slice(0, 10).split('-').reverse().join('/') : '—'; }
@@ -6538,11 +6562,14 @@ window.descargarPagosExcel = async function() {
 };
 window.descargarComprobantesExcel = async function() {
   try { await ensureXLSX(); } catch (e) { toast('No se pudo cargar el exportador de Excel', 'error'); return; }
-  if (!CMP_LISTA.length) { toast('No hay comprobantes para exportar', 'error'); return; }
-  const ids = CMP_LISTA.map(function(c){ return c.id; });
+  const lista = _comprobantesFiltrados();
+  if (!lista.length) { toast('No hay comprobantes para exportar con esos filtros', 'error'); return; }
+  // Los medios de pago solo se cargan en Pagos; acá los traemos si faltan (si no, la columna sale vacía).
+  if (!PAGOS_MEDIOS || !PAGOS_MEDIOS.length) { try { PAGOS_MEDIOS = await api('medios_pago?order=razon_social_id,nombre') || []; } catch (e) {} }
+  const ids = lista.map(function(c){ return c.id; });
   let distMap = {};
   try { const ds = await apiAll('comprobante_distribuciones?comprobante_id=in.(' + ids.join(',') + ')&select=comprobante_id,local,cuenta_id,monto') || []; ds.forEach(function(d){ (distMap[d.comprobante_id] = distMap[d.comprobante_id] || []).push(d); }); } catch (e) {}
-  const filas = CMP_LISTA.map(function(c){ return _filaCmpExcel(c, distMap); });
+  const filas = lista.map(function(c){ return _filaCmpExcel(c, distMap); });
   exportarAExcel('Comprobantes_AZUCA_' + hoyStr() + '.xlsx', [{ nombre: 'Comprobantes', filas: filas }]);
 };
 
@@ -6575,6 +6602,12 @@ window.openPagos = openPagos;
 window.onPagoFiltro = function(v) { PAGOS_FILTRO = v; PAGOS_SEL = {}; renderPagos(); };
 window.onPagoSort = function(v) { PAGOS_SORT = v; renderPagos(); };
 window.onPagoRazon = function(v) { PAGOS_RZ = v; PAGOS_SEL = {}; renderPagos(); };
+window.onPagoFecha = function() {
+  PAGOS_FDESDE = (document.getElementById('pagoFDesde') || {}).value || '';
+  PAGOS_FHASTA = (document.getElementById('pagoFHasta') || {}).value || '';
+  PAGOS_SEL = {}; renderPagos();
+};
+window.limpiarFechaPago = function() { PAGOS_FDESDE = ''; PAGOS_FHASTA = ''; PAGOS_SEL = {}; renderPagos(); };
 window.onPagoBuscar = function(v) { PAGOS_Q = (v || '').trim().toLowerCase(); renderPagos(); };
 window.togglePagoSel = function(id) { if (PAGOS_SEL[id]) delete PAGOS_SEL[id]; else PAGOS_SEL[id] = true; renderPagos(); };
 function _pagoModo() { return PAGOS_FILTRO === 'programados' ? 'op' : 'programar'; }
@@ -6590,6 +6623,15 @@ window.pagosSeleccionarTodo = function() {
 function _pagosFiltradas() {
   let arr = PAGOS_LISTA.slice();
   if (PAGOS_RZ) arr = arr.filter(function(c){ return String(c.razon_social_id) === String(PAGOS_RZ); });
+  if (PAGOS_FDESDE || PAGOS_FHASTA) {
+    arr = arr.filter(function(c){
+      const f = c.fecha_emision ? String(c.fecha_emision).slice(0, 10) : '';
+      if (!f) return false;
+      if (PAGOS_FDESDE && f < PAGOS_FDESDE) return false;
+      if (PAGOS_FHASTA && f > PAGOS_FHASTA) return false;
+      return true;
+    });
+  }
   if (PAGOS_FILTRO === 'sin_firma') arr = arr.filter(function(c){ return c.estado === 'sin_firma'; });
   else if (PAGOS_FILTRO === 'por_pagar') arr = arr.filter(function(c){ return c.estado === 'pendiente_pago' || c.estado === 'pagado_parcial'; });
   else if (PAGOS_FILTRO === 'programados') arr = arr.filter(function(c){ return c.estado === 'pago_programado'; });
@@ -6634,6 +6676,13 @@ function renderPagos() {
     '<select onchange="onPagoRazon(this.value)" style="padding:5px 8px;border-radius:8px;font-size:12px;margin-left:6px" title="Filtrar por razón social"><option value="">Todas las RS</option>' +
       (CMP_RAZONES || []).map(function(r){ return '<option value="' + r.id + '"' + (String(PAGOS_RZ) === String(r.id) ? ' selected' : '') + '>' + esc(r.nombre) + '</option>'; }).join('') +
     '</select></div>' +
+    '<div style="display:flex;align-items:flex-end;gap:6px;margin-bottom:8px">' +
+      '<label class="field" style="margin:0;flex:1"><span class="field-label" style="font-size:10.5px;display:flex;align-items:center;gap:3px"><i class="ti ti-calendar"></i> Emisión desde</span>' +
+        '<input type="date" id="pagoFDesde" value="' + esc(PAGOS_FDESDE) + '" onchange="onPagoFecha()" style="padding:5px 8px;border-radius:8px;font-size:12px"></label>' +
+      '<label class="field" style="margin:0;flex:1"><span class="field-label" style="font-size:10.5px">hasta</span>' +
+        '<input type="date" id="pagoFHasta" value="' + esc(PAGOS_FHASTA) + '" onchange="onPagoFecha()" style="padding:5px 8px;border-radius:8px;font-size:12px"></label>' +
+      (PAGOS_FDESDE || PAGOS_FHASTA ? '<button class="btn-ghost" style="padding:6px 9px;font-size:12px" onclick="limpiarFechaPago()" title="Limpiar fechas"><i class="ti ti-x"></i></button>' : '') +
+    '</div>' +
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">' +
       '<span style="font-size:12px;color:var(--c-sand)"><b style="color:var(--c-cream)">' + arr.length + '</b> comprob. · ' + _cmpMoney(totalVista) + '</span>' +
       '<span style="display:flex;gap:6px">' +
@@ -11481,7 +11530,15 @@ window.maDescargarExcel = async function() {
   let X = null;
   try { X = await maAsegurarXLSXStyle(); } catch (e) { X = (typeof XLSX !== 'undefined') ? XLSX : null; }
   if (!X) { toast('No se pudo cargar el exportador de Excel', 'error'); return; }
-  const filas = MAESTRO_ARTS.map(function(a){
+  let fuente = MAESTRO_ARTS;
+  if (MAESTRO_Q) {
+    fuente = MAESTRO_ARTS.filter(function(a){
+      const hay = ((a.nombre || '') + ' ' + (a.formato || '') + ' ' + (a.proveedor || '') + ' ' + (a.cua || '')).toLowerCase();
+      return hay.indexOf(MAESTRO_Q) >= 0;
+    });
+  }
+  if (!fuente.length) { toast('No hay artículos para exportar con ese filtro', 'error'); return; }
+  const filas = fuente.map(function(a){
     return {
       'Nombre': a.nombre || '', 'Formato': a.formato || '', 'Unidad base': a.unidad_base || '',
       'Cant. x envase': a.cant_por_envase != null ? Number(a.cant_por_envase) : '',
